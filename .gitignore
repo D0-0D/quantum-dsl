@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual envs
+.venv/
+venv/
+env/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Generated meshes / demo outputs (kept-in-tree samples live under examples/dsl/outputs)
+*.msh
+!examples/dsl/outputs/*.msh
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/

@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "quantum-dsl"
+version = "0.1.0"
+description = "Native YAML design DSL that resolves a .metal.yaml into a qiskit-metal QDesign (and an optional Gmsh mesh)."
+readme = "README.md"
+requires-python = ">=3.10,<3.13"
+license = { text = "Apache-2.0" }
+authors = [{ name = "dyk07" }]
+keywords = ["qiskit-metal", "superconducting", "dsl", "yaml", "quantum", "eda"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: Apache Software License",
+    "Topic :: Scientific/Engineering :: Physics",
+]
+dependencies = [
+    "pyyaml>=5.4",
+    "qiskit-metal>=0.5",
+]
+
+[project.optional-dependencies]
+# The Gmsh adapter (quantum_dsl.dsl.gmsh_adapter) additionally needs gmsh.
+gmsh = ["gmsh"]
+test = ["pytest>=7"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["quantum_dsl*"]
+
+[tool.setuptools.package-data]
+# dsl_templates/ is data (no __init__.py); ship the built-in component YAMLs.
+quantum_dsl = [
+    "dsl_templates/*.yaml",
+    "dsl_templates/*/*.yaml",
+    "dsl_templates/**/*.yaml",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
