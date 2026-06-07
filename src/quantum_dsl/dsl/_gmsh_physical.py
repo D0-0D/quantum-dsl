@@ -73,11 +73,50 @@ def _sanitize(name: str) -> str:
     return cleaned
 
 
+def geo_name_to_group(role: str, layer: int, component: str = "",
+                      primitive: str = "") -> str:
+    """把 .geo 作者标注的 ``(role, layer, component, primitive)`` 映射成与
+    ``assign_physical_groups`` 产出**完全一致**的 physical group 名称。
+
+    这是「.geo 作者命名 (输入)」与「PHYSICAL_GROUP_NAMING (输出)」之间的唯一
+    桥: GDS 层映射按 ``(role, layer)`` 引用, Palace attribute 按输出名引用。
+    真正的注册仍由 ``assign_physical_groups`` 在 fragment 之后统一完成 (本函数
+    主要供 geo 加载器与测试做交叉校验, 保证两条路径输出名字节一致)。
+    """
+    if role == "metal":
+        name = PHYSICAL_GROUP_NAMING["component_volume"].format(
+            component=component, primitive=primitive)
+    elif role == "ground":
+        name = PHYSICAL_GROUP_NAMING["ground_volume"].format(layer=layer)
+    elif role == "substrate":
+        name = PHYSICAL_GROUP_NAMING["substrate_volume"].format(layer=layer)
+    elif role == "jj":
+        name = PHYSICAL_GROUP_NAMING["junction_surface"].format(
+            component=component, primitive=primitive)
+    elif role == "port":
+        name = PHYSICAL_GROUP_NAMING["port_lumped"].format(
+            component=component, pin=primitive)
+    elif role == "symmetry":
+        # symmetry 的 plane 名走 primitive 槽 (退化到 component 槽)。
+        name = PHYSICAL_GROUP_NAMING["symmetry_surface"].format(
+            plane=primitive or component)
+    else:
+        raise ValueError(f"unknown geo role {role!r}")
+    return _sanitize(name)
+
+
 class _GroupRegistry:
-    """记录已分配的 physical group, 防重名 + 收集为 `physical_groups` 出参。"""
+    """记录已分配的 physical group, 防重名 + 收集为 `physical_groups` 出参。
+
+    除了向后兼容的 ``{name: (dim, [entity_tags])}`` 几何出参, 还记录每个
+    group 的整数 attribute (``gmsh.model.addPhysicalGroup`` 的返回值)。Palace
+    求解器按整数 attribute (而非 tag 列表) 引用 physical group, 故 `attrs()`
+    暴露 ``{name: int_attr}`` 供 `palace_adapter` 使用。
+    """
 
     def __init__(self) -> None:
         self._taken: dict[str, tuple[int, list[int]]] = {}
+        self._attrs: dict[str, int] = {}
 
     def add(self, name: str, dim: int, tags: list[int]) -> None:
         if not tags:
@@ -87,11 +126,16 @@ class _GroupRegistry:
             raise ValueError(
                 f"physical group name {sane!r} reused (already assigned with "
                 f"dim={self._taken[sane][0]})")
-        gmsh.model.addPhysicalGroup(dim=dim, tags=tags, tag=-1, name=sane)
+        attr = gmsh.model.addPhysicalGroup(dim=dim, tags=tags, tag=-1, name=sane)
         self._taken[sane] = (dim, list(tags))
+        self._attrs[sane] = int(attr)
 
     def as_dict(self) -> dict[str, tuple[int, list[int]]]:
         return dict(self._taken)
+
+    def attrs(self) -> dict[str, int]:
+        """``{physical_group_name: integer_attribute}`` — Palace 引用键。"""
+        return dict(self._attrs)
 
 
 # ---------------------------------------------------------------------------
@@ -166,8 +210,12 @@ def _collect_symmetry_face_tags(tracker: GeomTracker, plane: str,
 def assign_physical_groups(tracker: GeomTracker,
                            layer_stack_si: dict[int, dict],
                            symmetry_specs=None
-                           ) -> dict[str, tuple[int, list[int]]]:
-    """注册所有 physical group, 返回 ``{name: (dim, [tags])}`` 字典。
+                           ) -> tuple[dict[str, tuple[int, list[int]]],
+                                      dict[str, int]]:
+    """注册所有 physical group, 返回 ``(groups, attrs)``。
+
+    - ``groups``: ``{name: (dim, [entity_tags])}`` (向后兼容的几何出参)。
+    - ``attrs``:  ``{name: int_attribute}`` (Palace 求解器引用键)。
 
     调用顺序固定: layers → components → JJ → vacuum → ports →
     symmetry。port / symmetry 模板从 `PHYSICAL_GROUP_NAMING` 取。
@@ -244,4 +292,4 @@ def assign_physical_groups(tracker: GeomTracker,
                     plane=plane)
                 registry.add(name, dim=2, tags=tags)
 
-    return registry.as_dict()
+    return registry.as_dict(), registry.attrs()

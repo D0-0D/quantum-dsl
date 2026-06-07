@@ -24,6 +24,8 @@ dependencies = [
 [project.optional-dependencies]
 # The Gmsh adapter (quantum_dsl.dsl.gmsh_adapter) additionally needs gmsh.
 gmsh = ["gmsh"]
+# The GDSII layout backend (quantum_dsl.dsl.gds_adapter) needs gdstk.
+gds = ["gdstk"]
 test = ["pytest>=7"]
 
 [tool.setuptools.packages.find]

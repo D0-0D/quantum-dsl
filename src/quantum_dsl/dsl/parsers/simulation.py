@@ -5,7 +5,10 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any
+
+import yaml
 
 from ..errors import DesignDslError
 from .._helpers import (
@@ -16,6 +19,10 @@ from ..expression import walk_substitute as _walk_substitute
 from ..ir import ComponentIR
 from ..schema import (
     AIRBOX_KEYS,
+    GDS_LAYER_MAP_ENTRY_KEYS,
+    GDS_SIM_KEYS,
+    GEO_META_ROOT_KEYS,
+    GEO_SURFACE_ROLES,
     GMSH_SIM_KEYS,
     LAYER_STACK_ENTRY_KEYS,
     LAYER_STACK_KINDS,
@@ -25,6 +32,8 @@ from ..schema import (
     PORT_KEYS,
     PORT_TYPES,
     SIMULATION_KEYS,
+    SOLVER_KEYS,
+    SOLVER_TYPES,
     SYMMETRY_CONDITIONS,
     SYMMETRY_KEYS,
     SYMMETRY_PLANES,
@@ -36,10 +45,14 @@ __all__ = [
     "_parse_layer_stack",
     "_parse_airbox",
     "_parse_ports",
+    "_parse_geo_ports",
     "_parse_symmetry",
     "_parse_mesh_settings",
     "_parse_output_settings",
+    "_parse_gds_settings",
+    "_parse_solver_settings",
     "_parse_scalar_with_optional_unit",
+    "parse_geo_meta_sidecar",
     "_SIMPLE_UNIT_SUFFIX_RE",
     "_ALLOWED_IMPEDANCE_UNITS",
 ]
@@ -110,7 +123,17 @@ def _parse_simulation(spec: Any, ctx: Mapping[str, Any],
 
 
 def _parse_gmsh_simulation(node: Any, variables: Mapping[str, Any],
-                            components: list[ComponentIR]) -> dict[str, Any]:
+                            components: list[ComponentIR],
+                            *, geo_mode: bool = False) -> dict[str, Any]:
+    """Parse a ``simulation.gmsh`` block.
+
+    ``geo_mode`` (sidecar / native ``.geo`` path): ports bind by physical-group
+    NAME (``_parse_geo_ports``) instead of ``component.pin`` (existence deferred
+    to ``load_geo``); the ``gds`` and ``solver`` sidecar blocks are parsed; the
+    legacy "stack covers every primitive.layer" check is skipped (there is no
+    component list — the ``.geo`` is the geometry source).  In YAML mode the
+    behaviour is unchanged.
+    """
     if not isinstance(node, Mapping):
         raise DesignDslError("simulation.gmsh must be a mapping")
     _reject_unknown_keys(node, GMSH_SIM_KEYS, "simulation.gmsh")
@@ -121,13 +144,20 @@ def _parse_gmsh_simulation(node: Any, variables: Mapping[str, Any],
     if "airbox" in node:
         out["airbox"] = _parse_airbox(node["airbox"], variables)
     if "ports" in node:
-        out["ports"] = _parse_ports(node["ports"], variables, components)
+        if geo_mode:
+            out["ports"] = _parse_geo_ports(node["ports"], variables)
+        else:
+            out["ports"] = _parse_ports(node["ports"], variables, components)
     if "symmetry" in node:
         out["symmetry"] = _parse_symmetry(node["symmetry"])
     if "mesh" in node:
         out["mesh"] = _parse_mesh_settings(node["mesh"], variables)
     if "output" in node:
         out["output"] = _parse_output_settings(node["output"], variables)
+    if "gds" in node:
+        out["gds"] = _parse_gds_settings(node["gds"], variables)
+    if "solver" in node:
+        out["solver"] = _parse_solver_settings(node["solver"], variables)
 
     # plan §0 end-of-section requirement: when the gmsh block is present,
     # layer_stack is mandatory and must contain at least one metal entry.
@@ -142,17 +172,21 @@ def _parse_gmsh_simulation(node: Any, variables: Mapping[str, Any],
             "simulation.gmsh.layer_stack must contain at least one metal layer")
 
     # plan §10 risk register: stack must cover all primitive.layer values.
-    declared_layers = set(stack.keys())
-    referenced_layers = {
-        primitive.layer
-        for component in components
-        for primitive in component.primitives
-    }
-    missing = referenced_layers - declared_layers
-    if missing:
-        raise DesignDslError(
-            f"simulation.gmsh.layer_stack missing layer(s) referenced by "
-            f"primitives: {sorted(missing)}")
+    # Skipped in geo_mode — geometry comes from the .geo, not a component list;
+    # the .geo's authored layers are validated against the stack in load_geo /
+    # populate_tracker_from_geo instead.
+    if not geo_mode:
+        declared_layers = set(stack.keys())
+        referenced_layers = {
+            primitive.layer
+            for component in components
+            for primitive in component.primitives
+        }
+        missing = referenced_layers - declared_layers
+        if missing:
+            raise DesignDslError(
+                f"simulation.gmsh.layer_stack missing layer(s) referenced by "
+                f"primitives: {sorted(missing)}")
     return out
 
 
@@ -383,3 +417,268 @@ def _parse_output_settings(node: Any,
             owner="simulation.gmsh.output.scaling",
             allowed_units={""})
     return out
+
+
+# ---------------------------------------------------------------------------
+# geo-mode ports — bind by physical-group NAME (existence deferred to load_geo)
+# ---------------------------------------------------------------------------
+
+def _parse_geo_ports(node: Any,
+                     variables: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """Parse ports for the native ``.geo`` path.
+
+    Geo-mode ports reference a physical-group NAME authored in the ``.geo``
+    (the structured ``port::N::C::pin`` / conductor ``metal::N::C::P`` name),
+    NOT a ``component.pin`` against a component list (there is none — the
+    geometry is the ``.geo``).  Existence of the named group is deferred to
+    ``load_geo`` at mesh time.  Accepted entry keys mirror ``PORT_KEYS`` but
+    the ``pin`` field is a group name string (a single token, no ``"."``
+    requirement); ``type`` defaults to ``lumped``.
+    """
+    if not isinstance(node, list):
+        raise DesignDslError("simulation.gmsh.ports must be a list")
+    out: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for index, entry in enumerate(node):
+        owner = f"simulation.gmsh.ports[{index}]"
+        if not isinstance(entry, Mapping):
+            raise DesignDslError(f"{owner} must be a mapping")
+        _reject_unknown_keys(entry, PORT_KEYS, owner)
+        group = entry.get("pin")
+        if not isinstance(group, str) or not group:
+            raise DesignDslError(
+                f"{owner}.pin must be a non-empty physical-group name "
+                f"(geo mode), got {group!r}")
+        if group in seen:
+            raise DesignDslError(
+                f"{owner}.pin reuses physical-group name {group!r}")
+        seen.add(group)
+        port_type = entry.get("type", "lumped")
+        if port_type not in PORT_TYPES:
+            raise DesignDslError(
+                f"{owner}.type must be one of {sorted(PORT_TYPES)}, got "
+                f"{port_type!r}")
+        resolved: dict[str, Any] = {"group": group, "type": port_type}
+        if "impedance" in entry:
+            resolved["impedance"] = _parse_scalar_with_optional_unit(
+                entry["impedance"], variables,
+                owner=f"{owner}.impedance",
+                allowed_units=_ALLOWED_IMPEDANCE_UNITS)
+        if "value" in entry:
+            resolved["value"] = _parse_scalar_with_optional_unit(
+                entry["value"], variables, owner=f"{owner}.value",
+                allowed_units={""})
+        out.append(resolved)
+    return out
+
+
+# ---------------------------------------------------------------------------
+# gds block — GDS layer map + gdstk library settings (sidecar only)
+# ---------------------------------------------------------------------------
+
+def _parse_gds_layer_entry(entry: Any, owner: str) -> dict[str, int]:
+    """Parse one ``{layer, datatype}`` GDS-map entry into ints."""
+    if not isinstance(entry, Mapping):
+        raise DesignDslError(f"{owner} must be a mapping {{layer, datatype}}")
+    _reject_unknown_keys(entry, GDS_LAYER_MAP_ENTRY_KEYS, owner)
+    if "layer" not in entry:
+        raise DesignDslError(f"{owner}.layer is required")
+    resolved: dict[str, int] = {}
+    for key in ("layer", "datatype"):
+        if key in entry:
+            try:
+                resolved[key] = int(entry[key])
+            except (TypeError, ValueError) as exc:
+                raise DesignDslError(
+                    f"{owner}.{key} must be an integer, got "
+                    f"{entry[key]!r}") from exc
+    return resolved
+
+
+def _parse_gds_settings(node: Any,
+                        variables: Mapping[str, Any]) -> dict[str, Any]:
+    """Parse the ``simulation.gmsh.gds`` block (GDS layer map + gdstk opts).
+
+    Validates top-level keys vs ``GDS_SIM_KEYS`` and every ``by_name`` /
+    ``by_role`` / ``by_layer`` entry vs ``GDS_LAYER_MAP_ENTRY_KEYS``.  ``by_role``
+    keys must be valid surface roles.  Resolved values are passed verbatim to
+    ``build_gds(..., layer_map=...)`` (the GDS adapter ships defaults; this
+    block overrides them).
+    """
+    if not isinstance(node, Mapping):
+        raise DesignDslError("simulation.gmsh.gds must be a mapping")
+    _reject_unknown_keys(node, GDS_SIM_KEYS, "simulation.gmsh.gds")
+    out: dict[str, Any] = {}
+
+    for str_key in ("lib_name", "top_cell"):
+        if str_key in node:
+            value = node[str_key]
+            if not isinstance(value, str) or not value:
+                raise DesignDslError(
+                    f"simulation.gmsh.gds.{str_key} must be a non-empty string")
+            out[str_key] = value
+
+    for float_key in ("unit", "precision", "arc_tol_um"):
+        if float_key in node:
+            out[float_key] = _parse_scalar_with_optional_unit(
+                node[float_key], variables,
+                owner=f"simulation.gmsh.gds.{float_key}",
+                allowed_units={""})
+
+    if "default_datatype" in node:
+        try:
+            out["default_datatype"] = int(node["default_datatype"])
+        except (TypeError, ValueError) as exc:
+            raise DesignDslError(
+                "simulation.gmsh.gds.default_datatype must be an integer, got "
+                f"{node['default_datatype']!r}") from exc
+
+    if "union_same_layer" in node:
+        value = node["union_same_layer"]
+        if not isinstance(value, bool):
+            raise DesignDslError(
+                "simulation.gmsh.gds.union_same_layer must be a boolean, got "
+                f"{value!r}")
+        out["union_same_layer"] = value
+
+    for map_key in ("by_name", "by_role", "by_layer"):
+        if map_key not in node:
+            continue
+        block = node[map_key]
+        if not isinstance(block, Mapping):
+            raise DesignDslError(
+                f"simulation.gmsh.gds.{map_key} must be a mapping")
+        resolved_map: dict[Any, dict[str, int]] = {}
+        for raw_key, entry in block.items():
+            owner = f"simulation.gmsh.gds.{map_key}[{raw_key!r}]"
+            if map_key == "by_role" and raw_key not in GEO_SURFACE_ROLES:
+                raise DesignDslError(
+                    f"{owner}: unknown role {raw_key!r} (expected one of "
+                    f"{sorted(GEO_SURFACE_ROLES)})")
+            key: Any = raw_key
+            if map_key == "by_layer":
+                try:
+                    key = int(raw_key)
+                except (TypeError, ValueError) as exc:
+                    raise DesignDslError(
+                        f"{owner}: layer key must be an integer, got "
+                        f"{raw_key!r}") from exc
+            resolved_map[key] = _parse_gds_layer_entry(entry, owner)
+        out[map_key] = resolved_map
+
+    return out
+
+
+# ---------------------------------------------------------------------------
+# solver block — Palace solver settings (sidecar only)
+# ---------------------------------------------------------------------------
+
+def _parse_solver_settings(node: Any,
+                           variables: Mapping[str, Any]) -> dict[str, Any]:
+    """Parse the ``simulation.gmsh.solver`` block (Palace solver settings).
+
+    Validates keys vs ``SOLVER_KEYS`` and ``type`` vs ``SOLVER_TYPES``.
+    Consumed by ``build_palace_config`` (``l0`` / ``order``) and the runner.
+    """
+    if not isinstance(node, Mapping):
+        raise DesignDslError("simulation.gmsh.solver must be a mapping")
+    _reject_unknown_keys(node, SOLVER_KEYS, "simulation.gmsh.solver")
+    out: dict[str, Any] = {}
+    solver_type = node.get("type", "Electrostatic")
+    if solver_type not in SOLVER_TYPES:
+        raise DesignDslError(
+            f"simulation.gmsh.solver.type must be one of "
+            f"{sorted(SOLVER_TYPES)}, got {solver_type!r}")
+    out["type"] = solver_type
+    if "order" in node:
+        try:
+            out["order"] = int(node["order"])
+        except (TypeError, ValueError) as exc:
+            raise DesignDslError(
+                "simulation.gmsh.solver.order must be an integer, got "
+                f"{node['order']!r}") from exc
+        if out["order"] < 1:
+            raise DesignDslError(
+                f"simulation.gmsh.solver.order must be >= 1, got {out['order']}")
+    if "l0" in node:
+        out["l0"] = _parse_scalar_with_optional_unit(
+            node["l0"], variables, owner="simulation.gmsh.solver.l0",
+            allowed_units={""})
+    if "device" in node:
+        device = node["device"]
+        if not isinstance(device, str) or not device:
+            raise DesignDslError(
+                "simulation.gmsh.solver.device must be a non-empty string")
+        out["device"] = device
+    return out
+
+
+# ---------------------------------------------------------------------------
+# standalone *.meta.yaml sidecar loader (Layer-1 physics metadata)
+# ---------------------------------------------------------------------------
+
+def parse_geo_meta_sidecar(path: str | Path) -> dict[str, Any]:
+    """Load + validate a standalone ``*.meta.yaml`` sidecar paired with a ``.geo``.
+
+    The sidecar is **purely physics metadata** (materials / eps_r / mesh / GDS
+    layer map / solver); the geometry lives in the companion ``.geo`` named by
+    the ``geo`` key.  Top-level keys are validated vs ``GEO_META_ROOT_KEYS``
+    (``{schema, geo, vars, simulation}``); ``${var}`` expressions resolve against
+    ``vars``; the ``simulation.gmsh`` block is parsed in **geo mode** (ports bind
+    by group name; gds/solver blocks parsed; no component-layer coverage check).
+
+    Returns ``{"geo": <abs Path>, "simulation": {...}, "vars": {...}}`` — ``geo``
+    resolved to an absolute path RELATIVE TO THE SIDECAR.
+
+    Raises:
+        DesignDslError: file missing / not a mapping / unknown top-level key /
+            missing ``geo`` / referenced ``.geo`` not found.
+    """
+    sidecar = Path(path)
+    if not sidecar.is_file():
+        raise DesignDslError(f"geo meta sidecar not found: {sidecar}")
+    try:
+        raw = yaml.safe_load(sidecar.read_text(encoding="utf-8"))
+    except yaml.YAMLError as exc:
+        raise DesignDslError(
+            f"failed to parse geo meta sidecar {sidecar}: {exc}") from exc
+    if raw is None:
+        raise DesignDslError(f"geo meta sidecar {sidecar} is empty")
+    if not isinstance(raw, Mapping):
+        raise DesignDslError(
+            f"geo meta sidecar {sidecar} must be a mapping at the top level")
+    _reject_unknown_keys(raw, GEO_META_ROOT_KEYS, f"{sidecar.name}")
+
+    variables = raw.get("vars") or {}
+    if not isinstance(variables, Mapping):
+        raise DesignDslError(f"{sidecar.name}: vars must be a mapping")
+
+    if "geo" not in raw:
+        raise DesignDslError(
+            f"{sidecar.name}: 'geo' key (path to companion .geo) is required")
+    geo_ref = raw["geo"]
+    if not isinstance(geo_ref, str) or not geo_ref:
+        raise DesignDslError(
+            f"{sidecar.name}: 'geo' must be a non-empty path string")
+    geo_path = (sidecar.parent / geo_ref).resolve()
+    if not geo_path.is_file():
+        raise DesignDslError(
+            f"{sidecar.name}: companion geo file not found: {geo_path}")
+
+    simulation_block = raw.get("simulation") or {}
+    if not isinstance(simulation_block, Mapping):
+        raise DesignDslError(f"{sidecar.name}: simulation must be a mapping")
+    # Resolve ${var} across the simulation block, then validate keys.
+    simulation_block = _walk_substitute(dict(simulation_block), dict(variables))
+    _reject_unknown_keys(simulation_block, SIMULATION_KEYS,
+                         f"{sidecar.name}.simulation")
+    simulation_out: dict[str, Any] = {}
+    if "gmsh" in simulation_block:
+        simulation_out["gmsh"] = _parse_gmsh_simulation(
+            simulation_block["gmsh"], variables, [], geo_mode=True)
+
+    return {
+        "geo": geo_path,
+        "simulation": simulation_out,
+        "vars": dict(variables),
+    }

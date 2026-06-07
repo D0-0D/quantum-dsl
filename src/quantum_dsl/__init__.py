@@ -76,4 +76,35 @@ __all__ = [
     "GeometryOperationRegistry",
     "evaluate_geometry_operations",
     "resolve_operation_reference",
+    # --- lazily resolved (optional gmsh/gdstk backends) ---
+    "build_mesh",
+    "build_mesh_from_geo",
+    "build_geo",
+    "build_gds",
+    "GdsResult",
+    "build_palace_config",
+    "validate_config",
+    "parse_geo_meta_sidecar",
 ]
+
+# Lazy re-export of the optional gmsh/gdstk-backed entry points.  Delegating to
+# ``quantum_dsl.dsl.__getattr__`` keeps ``import quantum_dsl`` free of any eager
+# gmsh / gdstk import (those backends are only pulled in on first access).
+_LAZY_NAMES = frozenset({
+    "build_mesh",
+    "build_mesh_from_geo",
+    "build_geo",
+    "build_gds",
+    "GdsResult",
+    "build_palace_config",
+    "validate_config",
+    "parse_geo_meta_sidecar",
+})
+
+
+def __getattr__(name: str):
+    """PEP 562 lazy export — defers to :mod:`quantum_dsl.dsl`."""
+    if name in _LAZY_NAMES:
+        from . import dsl
+        return getattr(dsl, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

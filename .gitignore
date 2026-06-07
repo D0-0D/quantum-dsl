@@ -25,3 +25,7 @@ env/
 .DS_Store
 .vscode/
 .idea/
+
+# link Gmsh
+Gmsh/
+

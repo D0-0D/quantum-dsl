@@ -51,6 +51,12 @@ from ._gmsh_layers import (
 )
 from ._gmsh_mesh import define_size_fields, generate_mesh, write_mesh
 from ._gmsh_physical import assign_physical_groups
+from ._gmsh_geo_source import (
+    compute_chip_bbox_from_geo,
+    ensure_dielectric_substrates,
+    load_geo,
+    populate_tracker_from_geo,
+)
 
 try:
     import gmsh
@@ -62,6 +68,7 @@ __all__ = [
     "GmshOptions",
     "GmshMeshResult",
     "build_mesh",
+    "build_mesh_from_geo",
     "DEFAULT_LAYER_STACK_UM",
     "DEFAULT_AIRBOX_UM",
 ]
@@ -118,7 +125,11 @@ class GmshMeshResult:
     physical_groups: dict[str, tuple[int, list[int]]]
     bounding_box_m: tuple[float, float, float, float]
     options: GmshOptions
-    ir: DesignIR
+    # YAML/shapely 路径携带的 ``DesignIR``; ``.geo`` 路径无 IR, 故为 None。
+    ir: Optional[DesignIR] = None
+    # name -> integer physical-group attribute (Palace 求解器引用键)。
+    # generate=False 时为空; generate=True 时与 physical_groups 同名集合。
+    physical_attributes: dict[str, int] = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -424,6 +435,7 @@ def build_mesh(source: Union[str, Path, DesignIR],
 
         mesh_path: Optional[Path] = None
         physical_groups: dict[str, tuple[int, list[int]]] = {}
+        physical_attributes: dict[str, int] = {}
 
         if generate:
             # Stage D': 端口面解析 (cut 之后, fragment 之前) — fragment 也会
@@ -433,8 +445,8 @@ def build_mesh(source: Union[str, Path, DesignIR],
                 resolve_port_surfaces(tracker)
             # Stage E: fragment (共面缝合, dimtag 重映射)
             fragment_everything(tracker)
-            # Stage F: physical groups
-            physical_groups = assign_physical_groups(
+            # Stage F: physical groups (+ integer attributes for Palace)
+            physical_groups, physical_attributes = assign_physical_groups(
                 tracker, resolved_options.layer_stack,
                 symmetry_specs=resolved_options.symmetry)
             # Stage G: mesh size fields + generate(3) + (可选) 写文件
@@ -454,6 +466,7 @@ def build_mesh(source: Union[str, Path, DesignIR],
             bounding_box_m=bbox_si,
             options=resolved_options,
             ir=ir,
+            physical_attributes=physical_attributes,
         )
 
         # Show GUI before finalizing (only runs if show_gui=True).
@@ -464,5 +477,183 @@ def build_mesh(source: Union[str, Path, DesignIR],
         # Bug 3 fix: finalize only if WE initialized (not just cleared).
         # This prevents orphaned gmsh state on exceptions and avoids leaking
         # stale mesh options across repeated build_mesh() calls in notebooks.
+        if _did_initialize and gmsh is not None and gmsh.isInitialized():
+            gmsh.finalize()
+
+
+# ---------------------------------------------------------------------------
+# Native .geo source path (M1 pivot) — Stage A/B swapped, Stage C→G reused
+# ---------------------------------------------------------------------------
+
+def _geo_options_from_sim(sim_gmsh: dict[str, Any]) -> GmshOptions:
+    """从一个 **已解析** 的 ``simulation.gmsh`` block 直接构造 ``GmshOptions``。
+
+    GEO 模式: 不走 ``_normalize_options`` (那条路会跑 legacy 的 port-pin /
+    primitive.layer 存在性校验, 而 ``.geo`` 没有 component 列表, ports 按
+    physical-group 名绑定)。这里把 sidecar 解析出来的 µm 段就地转 SI, 复用
+    与 YAML 路径完全相同的换算函数 (``_layer_stack_to_si`` / ``_airbox_to_si``
+    / ``_check_mesh_length_um`` ×1e-6)。
+
+    ``sim_gmsh`` 形如 ``parse_geo_meta_sidecar(...)["simulation"]["gmsh"]``:
+    已 reject 未知键, 长度仍是 µm float。
+    """
+    layer_stack_um = sim_gmsh.get("layer_stack") or DEFAULT_LAYER_STACK_UM
+    airbox_um = {**DEFAULT_AIRBOX_UM, **(sim_gmsh.get("airbox") or {})}
+
+    layer_stack_si = _layer_stack_to_si(layer_stack_um)
+    airbox_si = _airbox_to_si(airbox_um)
+
+    mesh_block = sim_gmsh.get("mesh", {}) or {}
+    mesh_si: dict[str, Any] = {}
+    for key in ("max_size", "min_size", "max_size_jj"):
+        if key in mesh_block:
+            _check_mesh_length_um(key, mesh_block[key])
+            mesh_si[key] = float(mesh_block[key]) * SI_PER_INTERNAL
+    if "conductor_refine" in mesh_block:
+        refine = mesh_block["conductor_refine"] or {}
+        for key, value in refine.items():
+            _check_mesh_length_um(f"conductor_refine.{key}", value)
+        mesh_si["conductor_refine"] = {
+            key: float(value) * SI_PER_INTERNAL for key, value in refine.items()
+        }
+
+    output = sim_gmsh.get("output", {}) or {}
+    # GEO/Palace 路径默认写 msh2 (2.2) — Palace 读 2.2 (PoC 验证)。sidecar
+    # 可用 output.format 覆盖, 否则缺省 'msh2'。
+    output_format = str(output.get("format", "msh2"))
+
+    return GmshOptions(
+        layer_stack=layer_stack_si,
+        airbox=airbox_si,
+        ports=tuple(sim_gmsh.get("ports") or ()),
+        symmetry=tuple(sim_gmsh.get("symmetry") or ()),
+        mesh=mesh_si,
+        output_format=output_format,
+        output_scaling=float(output.get("scaling", 1.0)),
+    )
+
+
+def build_mesh_from_geo(geo_path: Union[str, Path],
+                        sim_gmsh: dict[str, Any],
+                        *,
+                        output_path: Optional[Union[str, Path]] = None,
+                        generate: bool = True,
+                        show_gui: bool = False) -> GmshMeshResult:
+    """从原生 Gmsh ``.geo`` (Layer 2) + 已解析的 ``simulation.gmsh`` 段构 mesh。
+
+    与 :func:`build_mesh` 共享 Stage C→G (vacuum box / symmetry / cut /
+    fragment / physical groups / size fields / generate / write), 只替换
+    Stage A/B:
+
+    - **Stage A/B (geo)**: ``load_geo(scale_to_si=True)`` (``gmsh.merge`` +
+      ``occ.dilate`` µm→m, 模型转 SI 米) → ``populate_tracker_from_geo``
+      (按 layer_stack thickness extrude 作者标注的面进 ``GeomTracker``) →
+      ``compute_chip_bbox_from_geo`` (SI bbox + side_buffer)。
+    - 没有 ``substrate::`` 面被标注时, ``ensure_dielectric_substrates`` 用
+      bbox 兜底画 dielectric 衬底 (复用 ``render_layer_grounds``)。
+
+    单位 / session 契约 (cross-cutting):
+    - ``.geo`` 以微米书写; ``load_geo(scale_to_si=True)`` dilate µm→m, 之后
+      所有阶段在 SI 米上运行 (与 YAML 路径同一套), ``output_scaling=1.0``。
+    - 用 ``build_mesh`` 同款 ``_did_initialize`` ownership guard: 只 finalize
+      我们自己 initialize 的 session。
+
+    Args:
+        geo_path: ``.geo`` 文件路径。
+        sim_gmsh: 已解析的 ``simulation.gmsh`` dict (来自 sidecar 解析,
+            长度单位 µm float, 已 reject 未知键)。
+        output_path: ``.msh`` 输出路径; ``None`` 时不写文件。
+        generate: True 跑完整流水线 (fragment → physical groups → mesh)。
+        show_gui: True 时打开 gmsh GUI (CI 默认 False)。
+
+    Returns:
+        ``GmshMeshResult`` (``ir=None`` — geo 路径无 DesignIR);
+        ``physical_attributes`` 在 ``generate=True`` 时与 ``physical_groups``
+        同名集合 (Palace 引用键)。
+    """
+    _require_gmsh()
+    resolved_options = _geo_options_from_sim(sim_gmsh)
+
+    # ownership guard (mirror build_mesh): finalize only if WE initialized.
+    _did_initialize = not gmsh.isInitialized()
+    if not gmsh.isInitialized():
+        gmsh.initialize()
+    if resolved_options.headless:
+        gmsh.option.setNumber("General.Terminal", 0)
+
+    try:
+        # Stage A/B (geo): load + dilate µm→m + populate tracker --------------
+        # load_geo creates its own fresh model (session-owned by us) and
+        # dilates the whole model microns→meters; subsequent SI stages reuse it.
+        geo_surfaces = load_geo(geo_path, scale_to_si=True)
+
+        tracker = GeomTracker()
+        populate_tracker_from_geo(
+            geo_surfaces, resolved_options.layer_stack, tracker)
+
+        side_buffer_si = float(resolved_options.airbox.get(
+            "side_buffer", DEFAULT_AIRBOX_UM["side_buffer"] * SI_PER_INTERNAL))
+        bbox_si = compute_chip_bbox_from_geo(geo_surfaces, side_buffer_si)
+
+        # substrate fallback: render dielectric box for any dielectric layer
+        # not explicitly authored as a substrate:: surface.
+        ensure_dielectric_substrates(
+            geo_surfaces, resolved_options.layer_stack, tracker, bbox_si)
+
+        # Stage C: vacuum box (ground sheet is authored, not synthesized) -----
+        render_vacuum_box(bbox_si, resolved_options.airbox, tracker)
+        gmsh.model.occ.synchronize()
+
+        # Stage C': symmetry (rare in geo M1; honored if present) -------------
+        if resolved_options.symmetry:
+            apply_symmetry_cuts(resolved_options.symmetry, tracker,
+                                bbox_si, resolved_options.airbox)
+
+        # Stage D: cut subtract primitives — geo positive-tone => no-op -------
+        apply_cuts(tracker)
+
+        mesh_path: Optional[Path] = None
+        physical_groups: dict[str, tuple[int, list[int]]] = {}
+        physical_attributes: dict[str, int] = {}
+
+        if generate:
+            if tracker.port_box_specs:
+                resolve_port_surfaces(tracker)
+            # Stage E: fragment (共面缝合, dimtag 重映射)
+            fragment_everything(tracker)
+            # IMPORTANT: drop the AUTHORED physical groups so assign_physical_
+            # groups (re-registering from the populated tracker) owns ALL output
+            # names — byte-identical to the YAML path (Palace stays source-
+            # agnostic).  occ.dilate already wiped most assignments, but the
+            # ground BooleanDifference may leave authored groups; remove all.
+            gmsh.model.removePhysicalGroups()
+            # Stage F: physical groups (+ integer attributes for Palace)
+            physical_groups, physical_attributes = assign_physical_groups(
+                tracker, resolved_options.layer_stack,
+                symmetry_specs=resolved_options.symmetry)
+            # Stage G: mesh size fields + generate(3) + (可选) 写文件
+            define_size_fields(tracker, resolved_options.layer_stack,
+                               resolved_options.mesh)
+            generate_mesh(dim=3)
+            if output_path is not None:
+                mesh_path = write_mesh(
+                    Path(output_path),
+                    output_format=resolved_options.output_format,
+                    output_scaling=resolved_options.output_scaling,
+                )
+
+        result = GmshMeshResult(
+            mesh_path=mesh_path,
+            physical_groups=physical_groups,
+            bounding_box_m=bbox_si,
+            options=resolved_options,
+            ir=None,
+            physical_attributes=physical_attributes,
+        )
+
+        _gmsh_finalize_optional(show_gui)
+        return result
+
+    finally:
         if _did_initialize and gmsh is not None and gmsh.isInitialized():
             gmsh.finalize()

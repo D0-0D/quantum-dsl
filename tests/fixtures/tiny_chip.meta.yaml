@@ -1,0 +1,51 @@
+# =====================================================================
+# tiny_chip.meta.yaml — minimal Layer-1 sidecar paired with tiny_chip.geo.
+#
+# 顶层键 = GEO_META_ROOT_KEYS = {schema, geo, vars, simulation}. 单位: µm.
+# 最小集: 单 metal layer 1 + dielectric substrate layer 3 (自动补衬底),
+# 默认 GDS by_role + Electrostatic solver。
+# =====================================================================
+
+schema: qiskit-metal/design-dsl/3
+
+geo: tiny_chip.geo
+
+vars: {}
+
+simulation:
+  gmsh:
+    layer_stack:
+      1:
+        kind: metal
+        thickness: 2
+        z: 0
+        material: pec
+      3:
+        kind: dielectric
+        thickness: -750
+        z: 0
+        material: silicon
+        eps_r: 11.45
+
+    airbox:
+      top: 890
+      bottom: 1650
+      side_buffer: 200
+
+    mesh:
+      max_size: 60
+      min_size: 2
+
+    gds:
+      lib_name: tiny_chip
+      top_cell: tiny_chip
+      unit: 1.0e-6
+      precision: 1.0e-9
+      by_role:
+        metal:  {layer: 1, datatype: 0}
+        ground: {layer: 1, datatype: 0}
+
+    solver:
+      type: Electrostatic
+      order: 2
+      l0: 1.0

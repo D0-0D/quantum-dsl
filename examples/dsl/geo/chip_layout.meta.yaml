@@ -1,0 +1,72 @@
+# =====================================================================
+# chip_layout.meta.yaml — Layer-1 Physics Metadata sidecar for
+# chip_layout.geo (native Gmsh .geo geometry DSL, M1).
+#
+# 顶层键 = GEO_META_ROOT_KEYS = {schema, geo, vars, simulation}.
+# 单位: 微米 (µm) — 与 .geo 几何同单位; adapter 入口统一 ×1e-6 转 SI。
+#
+# `.geo` 保持纯几何; 所有非几何物理量 (材料 / eps_r / mesh / GDS 层映射 /
+# 求解器) 都在这里。绑定通过 layer 序号 (layer_stack 的 int key) 与作者在
+# .geo 里标注的 "role::layer::comp::prim" Physical 名共享。
+# =====================================================================
+
+schema: qiskit-metal/design-dsl/3
+
+# 配套 .geo (相对本 sidecar 的路径)。
+geo: chip_layout.geo
+
+vars: {}
+
+simulation:
+  gmsh:
+    # ---- layer stack (µm) -----------------------------------------
+    # layer key = .geo "role::<layer>::..." 里的 <layer>。
+    layer_stack:
+      1:
+        kind: metal
+        thickness: 2        # 正向 extrude 2 µm
+        z: 0
+        material: pec
+      3:
+        kind: dielectric
+        thickness: -750     # 衬底向 -z 延伸 750 µm
+        z: 0
+        material: silicon
+        eps_r: 11.45
+
+    # ---- airbox (µm) — vacuum 盒上/下方裕量 + chip 四周 buffer -------
+    airbox:
+      top: 890
+      bottom: 1650
+      side_buffer: 200
+
+    # ---- mesh sizing (µm) -----------------------------------------
+    mesh:
+      max_size: 80
+      min_size: 2
+      max_size_jj: 0.5
+      conductor_refine:
+        min_dist: 2
+        max_dist: 40
+
+    # ---- GDS layer map (gdstk) ------------------------------------
+    # 按 role 映射到 (GDS layer, datatype)。GDS 分支以 µm verbatim 写出
+    # (gdstk Library unit=1e-6, precision=1e-9); 不做 SI scaling。
+    gds:
+      lib_name: chip
+      top_cell: chip
+      unit: 1.0e-6
+      precision: 1.0e-9
+      arc_tol_um: 0.01
+      union_same_layer: true
+      default_datatype: 0
+      by_role:
+        metal:     {layer: 1,  datatype: 0}
+        ground:    {layer: 1,  datatype: 0}
+        jj:        {layer: 20, datatype: 0}
+
+    # ---- Palace solver --------------------------------------------
+    solver:
+      type: Electrostatic
+      order: 2
+      l0: 1.0

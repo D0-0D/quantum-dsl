@@ -164,7 +164,12 @@ def define_size_fields(tracker: GeomTracker,
         gmsh.option.setNumber("Mesh.MeshSizeFromCurvature", 0)
         # M5 (M3 r1 建议 4): MeshSizeMin/Max 只在有 size field 时设, 无导体
         # 也无 JJ 的极端 design 走 gmsh 全默认 size, 避免误用 user kwarg。
-        gmsh.option.setNumber("Mesh.MeshSizeMin", size_min)
+        # Mesh.MeshSizeMin 必须 ≤ 任一 size field 的 SizeMin。JJ 细化场
+        # SizeMin=max_size_jj; 当 max_size_jj < min_size 时, 若 MeshSizeMin
+        # 仍取 min_size 会把 JJ 场上钳回 min_size — 几 µm 宽的 JJ 面会因单元
+        # 过粗而 "overlapping facets" 网格失败。故有 JJ 场时取两者较小值。
+        effective_min = min(size_min, size_min_jj) if jj_curves else size_min
+        gmsh.option.setNumber("Mesh.MeshSizeMin", effective_min)
         gmsh.option.setNumber("Mesh.MeshSizeMax", size_max)
 
 
