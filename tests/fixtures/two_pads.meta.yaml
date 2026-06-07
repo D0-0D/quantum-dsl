@@ -1,0 +1,58 @@
+# =====================================================================
+# two_pads.meta.yaml — Layer-1 sidecar for the two-conductor M3 reference.
+#
+# 顶层键 = GEO_META_ROOT_KEYS = {schema, geo, vars, simulation}. 单位: µm.
+# 刻意做小 (浅衬底 + 紧凑 airbox + 粗网格) 以便真实 Palace 求解快速完成。
+# =====================================================================
+
+schema: qiskit-metal/design-dsl/3
+
+geo: two_pads.geo
+
+vars: {}
+
+simulation:
+  gmsh:
+    layer_stack:
+      1:
+        kind: metal
+        thickness: 2
+        z: 0
+        material: pec
+      3:
+        kind: dielectric
+        thickness: -100
+        z: 0
+        material: silicon
+        eps_r: 11.45
+
+    airbox:
+      top: 120
+      bottom: 120
+      side_buffer: 80
+
+    mesh:
+      max_size: 40
+      min_size: 4
+
+    gds:
+      lib_name: two_pads
+      top_cell: two_pads
+      unit: 1.0e-6
+      precision: 1.0e-9
+      by_role:
+        metal: {layer: 1, datatype: 0}
+
+    solver:
+      type: Electrostatic
+      order: 2
+      l0: 1.0
+
+# circuit_model (M6): each pad = a grounded single-island transmon with a 10 nH
+# Josephson junction; the Maxwell C-matrix off-diagonal gives the A↔B coupling.
+# Only consumed on a NON-dry-run Palace solve (build_geo writes the derived
+# Hamiltonian into chip.results.yaml at tier 2).
+circuit_model:
+  qubits:
+    - {name: A, island: A_pad_sfs, L_J: 10nH}
+    - {name: B, island: B_pad_sfs, L_J: 10nH}

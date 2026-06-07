@@ -62,4 +62,56 @@ __all__ = [
     "GeometryOperationRegistry",
     "evaluate_geometry_operations",
     "resolve_operation_reference",
+    # --- lazily resolved (optional gmsh/gdstk backends) ---
+    "build_mesh",
+    "build_mesh_from_geo",
+    "build_geo",
+    "build_gds",
+    "GdsResult",
+    "build_palace_config",
+    "validate_config",
+    "parse_geo_meta_sidecar",
+    "solve_circuit_model",
+    "CircuitModelResult",
+    "JunctionInput",
+    "preview_gds",
+    "GdsPreview",
+    "to_gdsfactory_component",
+    "read_gds_layers",
 ]
+
+
+# Lazy attribute access for the optional gmsh/gdstk-backed entry points so that
+# ``import quantum_dsl.dsl`` does NOT eagerly import gmsh or gdstk.  Each symbol
+# is resolved from its submodule on first access.  Submodules: ``gmsh_adapter``
+# (gmsh), ``gds_adapter`` (gdstk), ``palace_adapter`` (pure), ``geo_build``,
+# ``parsers.simulation`` (pure).
+_LAZY_EXPORTS = {
+    "build_mesh": ("gmsh_adapter", "build_mesh"),
+    "build_mesh_from_geo": ("gmsh_adapter", "build_mesh_from_geo"),
+    "build_geo": ("geo_build", "build_geo"),
+    "build_gds": ("gds_adapter", "build_gds"),
+    "GdsResult": ("gds_adapter", "GdsResult"),
+    "build_palace_config": ("palace_adapter", "build_palace_config"),
+    "validate_config": ("palace_adapter", "validate_config"),
+    "parse_geo_meta_sidecar": ("parsers.simulation", "parse_geo_meta_sidecar"),
+    "solve_circuit_model": ("circuit_model", "solve_circuit_model"),
+    "CircuitModelResult": ("circuit_model", "CircuitModelResult"),
+    "JunctionInput": ("circuit_model", "JunctionInput"),
+    "preview_gds": ("gds_viz", "preview_gds"),
+    "GdsPreview": ("gds_viz", "GdsPreview"),
+    "to_gdsfactory_component": ("gds_viz", "to_gdsfactory_component"),
+    "read_gds_layers": ("gds_viz", "read_gds_layers"),
+}
+
+
+def __getattr__(name: str):
+    """PEP 562 lazy export of optional-backend entry points."""
+    target = _LAZY_EXPORTS.get(name)
+    if target is None:
+        raise AttributeError(
+            f"module {__name__!r} has no attribute {name!r}")
+    import importlib
+    module_name, attr = target
+    module = importlib.import_module(f"{__name__}.{module_name}")
+    return getattr(module, attr)

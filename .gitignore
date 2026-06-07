@@ -25,3 +25,11 @@ env/
 .DS_Store
 .vscode/
 .idea/
+
+# link Gmsh
+Gmsh/
+
+# local Gmsh SDK download (binary, not tracked)
+gmsh-*-Linux64/
+gmsh-*.tgz
+

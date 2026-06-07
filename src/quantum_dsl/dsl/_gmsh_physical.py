@@ -73,11 +73,50 @@ def _sanitize(name: str) -> str:
     return cleaned
 
 
+def geo_name_to_group(role: str, layer: int, component: str = "",
+                      primitive: str = "") -> str:
+    """把 .geo 作者标注的 ``(role, layer, component, primitive)`` 映射成与
+    ``assign_physical_groups`` 产出**完全一致**的 physical group 名称。
+
+    这是「.geo 作者命名 (输入)」与「PHYSICAL_GROUP_NAMING (输出)」之间的唯一
+    桥: GDS 层映射按 ``(role, layer)`` 引用, Palace attribute 按输出名引用。
+    真正的注册仍由 ``assign_physical_groups`` 在 fragment 之后统一完成 (本函数
+    主要供 geo 加载器与测试做交叉校验, 保证两条路径输出名字节一致)。
+    """
+    if role == "metal":
+        name = PHYSICAL_GROUP_NAMING["component_volume"].format(
+            component=component, primitive=primitive)
+    elif role == "ground":
+        name = PHYSICAL_GROUP_NAMING["ground_volume"].format(layer=layer)
+    elif role == "substrate":
+        name = PHYSICAL_GROUP_NAMING["substrate_volume"].format(layer=layer)
+    elif role == "jj":
+        name = PHYSICAL_GROUP_NAMING["junction_surface"].format(
+            component=component, primitive=primitive)
+    elif role == "port":
+        name = PHYSICAL_GROUP_NAMING["port_lumped"].format(
+            component=component, pin=primitive)
+    elif role == "symmetry":
+        # symmetry 的 plane 名走 primitive 槽 (退化到 component 槽)。
+        name = PHYSICAL_GROUP_NAMING["symmetry_surface"].format(
+            plane=primitive or component)
+    else:
+        raise ValueError(f"unknown geo role {role!r}")
+    return _sanitize(name)
+
+
 class _GroupRegistry:
-    """记录已分配的 physical group, 防重名 + 收集为 `physical_groups` 出参。"""
+    """记录已分配的 physical group, 防重名 + 收集为 `physical_groups` 出参。
+
+    除了向后兼容的 ``{name: (dim, [entity_tags])}`` 几何出参, 还记录每个
+    group 的整数 attribute (``gmsh.model.addPhysicalGroup`` 的返回值)。Palace
+    求解器按整数 attribute (而非 tag 列表) 引用 physical group, 故 `attrs()`
+    暴露 ``{name: int_attr}`` 供 `palace_adapter` 使用。
+    """
 
     def __init__(self) -> None:
         self._taken: dict[str, tuple[int, list[int]]] = {}
+        self._attrs: dict[str, int] = {}
 
     def add(self, name: str, dim: int, tags: list[int]) -> None:
         if not tags:
@@ -87,11 +126,16 @@ class _GroupRegistry:
             raise ValueError(
                 f"physical group name {sane!r} reused (already assigned with "
                 f"dim={self._taken[sane][0]})")
-        gmsh.model.addPhysicalGroup(dim=dim, tags=tags, tag=-1, name=sane)
+        attr = gmsh.model.addPhysicalGroup(dim=dim, tags=tags, tag=-1, name=sane)
         self._taken[sane] = (dim, list(tags))
+        self._attrs[sane] = int(attr)
 
     def as_dict(self) -> dict[str, tuple[int, list[int]]]:
         return dict(self._taken)
+
+    def attrs(self) -> dict[str, int]:
+        """``{physical_group_name: integer_attribute}`` — Palace 引用键。"""
+        return dict(self._attrs)
 
 
 # ---------------------------------------------------------------------------
@@ -166,8 +210,12 @@ def _collect_symmetry_face_tags(tracker: GeomTracker, plane: str,
 def assign_physical_groups(tracker: GeomTracker,
                            layer_stack_si: dict[int, dict],
                            symmetry_specs=None
-                           ) -> dict[str, tuple[int, list[int]]]:
-    """注册所有 physical group, 返回 ``{name: (dim, [tags])}`` 字典。
+                           ) -> tuple[dict[str, tuple[int, list[int]]],
+                                      dict[str, int]]:
+    """注册所有 physical group, 返回 ``(groups, attrs)``。
+
+    - ``groups``: ``{name: (dim, [entity_tags])}`` (向后兼容的几何出参)。
+    - ``attrs``:  ``{name: int_attribute}`` (Palace 求解器引用键)。
 
     调用顺序固定: layers → components → JJ → vacuum → ports →
     symmetry。port / symmetry 模板从 `PHYSICAL_GROUP_NAMING` 取。
@@ -192,6 +240,17 @@ def assign_physical_groups(tracker: GeomTracker,
                 layer=layer)
             registry.add(vol_name, dim=3, tags=tags)
 
+    # 1b) carved metal ground (Approach A, geo path / M5a): the sheet was cut OUT
+    # of the vacuum, so it has NO dim-3 volume — only its cavity walls survive as
+    # an EXTERIOR Ground boundary, named gnd_layer{N}_sfs (matches the legacy slab
+    # path's surface name; palace 的 _ground_groups 按 gnd_*_sfs 匹配 Ground 边界)。
+    # Legacy / slab path keeps tracker.ground_faces empty → no-op here.
+    for layer, tags in tracker.ground_faces.items():
+        if not tags:
+            continue
+        sfs_name = PHYSICAL_GROUP_NAMING["ground_surface"].format(layer=layer)
+        registry.add(sfs_name, dim=2, tags=tags)
+
     # 2) component polys / paths (3D volume + 外表面)
     for layer_dict in (tracker.polys, tracker.paths):
         for layer, named in layer_dict.items():
@@ -202,6 +261,15 @@ def assign_physical_groups(tracker: GeomTracker,
                     component=component, primitive=primitive)
                 registry.add(vol_name, dim=3, tags=tags)
                 registry.add(sfs_name, dim=2, tags=_surface_tags_of(tags))
+
+    # 2b) carved conductor terminals (Approach A): 空腔壁 → {C}_{P}_sfs (dim=2)。
+    # 导体已被 cut 出真空, 无 dim=3 体; palace 只按 '_sfs' 后缀匹配 Terminal, 故
+    # 名字与 slab 路径字节一致 (component_volume 体组消失, palace 从不消费它)。
+    for layer, named in tracker.conductor_faces.items():
+        for (component, primitive), tags in named.items():
+            sfs_name = PHYSICAL_GROUP_NAMING["component_surface"].format(
+                component=component, primitive=primitive)
+            registry.add(sfs_name, dim=2, tags=tags)
 
     # 3) JJ surfaces (2D, 不 extrude)
     for layer, named in tracker.juncs.items():
@@ -215,8 +283,13 @@ def assign_physical_groups(tracker: GeomTracker,
         vac_name = PHYSICAL_GROUP_NAMING["vacuum_volume"]
         outer_name = PHYSICAL_GROUP_NAMING["vacuum_outer"]
         registry.add(vac_name, dim=3, tags=[tracker.vacuum_box])
-        registry.add(outer_name, dim=2,
-                     tags=_surface_tags_of([tracker.vacuum_box]))
+        # carve 路径 (Approach A): vacuum_outer = 域 combined 边界 − 空腔壁
+        # (resolve_conductor_faces 已算好, 排除了与 substrate 的内部界面 + 端子腔壁,
+        # 否则 _surface_tags_of(vacuum) 会把腔壁/内部界面错并进 Ground)。
+        # legacy / 无 carve: 退回真空体边界。
+        outer_tags = (tracker.vacuum_outer_faces
+                      or _surface_tags_of([tracker.vacuum_box]))
+        registry.add(outer_name, dim=2, tags=outer_tags)
 
     # 5) 端口面 (M4): tracker.ports 由 `resolve_port_surfaces` 在 cut
     # 之后填好。端口元数据 (`is_lumped` 等) 在 stage B' 时由
@@ -244,4 +317,4 @@ def assign_physical_groups(tracker: GeomTracker,
                     plane=plane)
                 registry.add(name, dim=2, tags=tags)
 
-    return registry.as_dict()
+    return registry.as_dict(), registry.attrs()

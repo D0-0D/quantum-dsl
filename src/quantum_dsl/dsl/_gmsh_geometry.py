@@ -23,7 +23,6 @@ import numpy as np
 
 from qiskit_metal.renderers.renderer_gmsh.gmsh_utils import (
     Vec3DArray,
-    _require_gmsh,
     line_width_offset_pts,
     render_path_curves,
 )
@@ -36,6 +35,19 @@ try:
     import gmsh
 except ImportError:  # pragma: no cover — exercised on lite installs
     gmsh = None
+
+
+def _require_gmsh() -> None:
+    """Guard: 缺少可选依赖 ``gmsh`` 时给出清晰报错。
+
+    qiskit-metal 不再公开 ``gmsh_utils._require_gmsh``, 这里就地实现, 依赖本模块
+    顶层的 ``import gmsh`` try/except 结果。
+    """
+    if gmsh is None:  # pragma: no cover — exercised on lite installs
+        raise ImportError(
+            "Gmsh 网格功能需要可选依赖 `gmsh`。请安装后重试 "
+            "(例如 `pip install gmsh` 或 `conda install -c conda-forge gmsh`)。"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -62,6 +74,31 @@ class GeomTracker:
     # 每个 layer 的 ground plane volume tags (cut 之后会被 remap)
     layer_ground: dict[int, list[int]] = field(default_factory=dict)
     vacuum_box: Optional[int] = None
+    # --- Approach A: conductors-as-voids (geo path) ----------------------
+    # 金属 terminal 在 carve_conductors 之前先 extrude 成实体, 暂存这里 (按
+    # (component, primitive) 键), 然后被 occ.cut OUT of vacuum_box (consumed)。
+    conductor_solids: dict[int, dict[tuple[str, str], list[int]]] = field(
+        default_factory=dict)
+    # (layer, component, primitive) → 该 terminal 实体的 3D bbox (SI 米); cut 后
+    # 用来把空腔壁 face 按质心归位到 (component, primitive)。
+    conductor_bbox: dict[tuple[int, str, str], tuple] = field(
+        default_factory=dict)
+    # carve+fragment 之后解析出的空腔壁 face tags (Terminal 出表面 _sfs)。
+    conductor_faces: dict[int, dict[tuple[str, str], list[int]]] = field(
+        default_factory=dict)
+    # --- Approach A (ground, M5a): 金属地 sheet 也按导体-空腔处理 -----------
+    # 金属 ground::N::* 面 extrude 成实体, 暂存这里 (按 layer), 然后和 terminal
+    # 一起被 occ.cut OUT of vacuum_box (consumed)。这样地的腔壁在 fragment 后是
+    # **外部** 边界面, 满足 Palace 的 Ground 边界不变量 (slab 表面是内部面 → MFEM
+    # 真求解时拒绝)。介质衬底 (substrate::) 仍走 layer_ground (它要作为体网格)。
+    ground_solids: dict[int, list[int]] = field(default_factory=dict)
+    # layer → 该层金属地实体的 3D bbox (SI 米); cut 后用来把腔壁 face 归位。
+    ground_bbox: dict[int, tuple] = field(default_factory=dict)
+    # carve+fragment 之后解析出的金属地腔壁 face tags → gnd_layer{N}_sfs。
+    ground_faces: dict[int, list[int]] = field(default_factory=dict)
+    # carve 路径下真空域的真实外边界 face (= 域 combined boundary − 空腔壁);
+    # 非空即启用 carve 版 vacuum_outer (legacy 路径恒空, 走旧逻辑)。
+    vacuum_outer_faces: list[int] = field(default_factory=list)
     # port_name → [surface_tags] (M4 填充, fragment 之后是真实 face tag)
     ports: dict[str, list[int]] = field(default_factory=dict)
     # port_name → [_PortBoxSpec] (M4 中间态: cut 之前的 endcap box +

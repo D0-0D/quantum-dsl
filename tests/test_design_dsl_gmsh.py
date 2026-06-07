@@ -27,7 +27,7 @@ from quantum_dsl.dsl import (  # noqa: E402
 )
 
 
-EXAMPLE = Path(__file__).resolve().parents[1] / "examples" / "dsl" / (
+EXAMPLE = Path(__file__).resolve().parents[1] / "examples" / "dsl" / "yaml" / (
     "chain_2q_native.metal.yaml")
 
 

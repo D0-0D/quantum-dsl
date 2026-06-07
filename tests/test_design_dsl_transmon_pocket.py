@@ -13,7 +13,7 @@ from qiskit_metal.qlibrary.qubits.transmon_pocket import TransmonPocket
 from quantum_dsl.design_dsl import build_design, build_ir
 
 
-EXAMPLE = Path(__file__).resolve().parents[1] / "examples" / "dsl" / (
+EXAMPLE = Path(__file__).resolve().parents[1] / "examples" / "dsl" / "yaml" / (
     "transmon_pocket_2q.metal.yaml")
 
 
