@@ -32,6 +32,7 @@ from ._helpers import (
 )
 from .errors import DesignDslError
 from .expression import walk_substitute as _walk_substitute
+from ._units import INTERNAL_UNIT
 from .template_registry import ComponentTemplateRegistry
 
 # ---------------------------------------------------------------------------
@@ -216,6 +217,10 @@ def _instantiate_design(design_spec: Mapping[str, Any]):
     _vds(design_spec)
     design_cls = _resolve_design_class(design_spec)
     design = design_cls(**_dik(design_spec))
+    # The DSL's internal unit is µm (see quantum_dsl.dsl._units); declare it on
+    # the QDesign so get_units() and any downstream renderer interpret the
+    # µm-numbered qgeometry / option floats correctly.
+    design.template_options.units = INTERNAL_UNIT
     for key, value in _om(design_spec, "variables").items():
         design.variables[key] = value
 

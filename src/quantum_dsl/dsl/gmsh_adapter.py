@@ -4,7 +4,7 @@
 设计要求 (`02_plan.md §0` 硬性前提):
 - 唯一接入点 = `build_ir()` → `DesignIR`; 不实例化任何 ``QDesign``。
 - 不依赖 ``QGmshRenderer`` / ``LayerStackHandler`` / ``BoundsForPathAndPolyTables``。
-- adapter 内部统一 SI (米); YAML / IR 中的 mm float 在入口处一次性 ×1e-3。
+- adapter 内部统一 SI (米); YAML / IR 中的 µm float 在入口处一次性 ×1e-6。
 
 M2 阶段覆盖 plan §3.3 的 **阶段 A / B / D** (shapely → OCC → extrude → cut)。
 fragment / physical groups / mesh export 留到 M3; ports / symmetry / endcap 留到 M4。
@@ -33,6 +33,7 @@ from .builder import (
     build_ir,
 )
 from ._helpers import deep_merge as _deep_merge
+from ._units import SI_PER_INTERNAL
 from ._gmsh_geometry import (
     GeomTracker,
     compute_chip_bbox_si,
@@ -61,8 +62,8 @@ __all__ = [
     "GmshOptions",
     "GmshMeshResult",
     "build_mesh",
-    "DEFAULT_LAYER_STACK_MM",
-    "DEFAULT_AIRBOX_MM",
+    "DEFAULT_LAYER_STACK_UM",
+    "DEFAULT_AIRBOX_UM",
 ]
 
 
@@ -70,16 +71,16 @@ __all__ = [
 # 默认值 (与 LayerStackHandler / MultiPlanar._uwave_package 数值对齐, 不 import)
 # ---------------------------------------------------------------------------
 
-# 单位: mm (IR 约定)。adapter 入口 ×1e-3 转 SI。
-DEFAULT_LAYER_STACK_MM: dict[int, dict[str, Any]] = {
-    1: {"kind": "metal", "thickness": 0.002, "z": 0.0, "material": "pec"},
-    3: {"kind": "dielectric", "thickness": -0.75, "z": 0.0,
+# 单位: µm (IR 约定)。adapter 入口 ×1e-6 转 SI。
+DEFAULT_LAYER_STACK_UM: dict[int, dict[str, Any]] = {
+    1: {"kind": "metal", "thickness": 2.0, "z": 0.0, "material": "pec"},
+    3: {"kind": "dielectric", "thickness": -750.0, "z": 0.0,
         "material": "silicon", "eps_r": 11.45},
 }
-DEFAULT_AIRBOX_MM: dict[str, float] = {
-    "top": 0.89,
-    "bottom": 1.65,
-    "side_buffer": 0.2,
+DEFAULT_AIRBOX_UM: dict[str, float] = {
+    "top": 890.0,
+    "bottom": 1650.0,
+    "side_buffer": 200.0,
 }
 
 
@@ -124,20 +125,20 @@ class GmshMeshResult:
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _layer_stack_to_si(stack_mm: dict[int, dict[str, Any]]
+def _layer_stack_to_si(stack_um: dict[int, dict[str, Any]]
                        ) -> dict[int, dict[str, Any]]:
     out: dict[int, dict[str, Any]] = {}
-    for layer, spec in stack_mm.items():
+    for layer, spec in stack_um.items():
         out[int(layer)] = {
             **spec,
-            "thickness": float(spec["thickness"]) * 1e-3,
-            "z": float(spec.get("z", 0.0)) * 1e-3,
+            "thickness": float(spec["thickness"]) * SI_PER_INTERNAL,
+            "z": float(spec.get("z", 0.0)) * SI_PER_INTERNAL,
         }
     return out
 
 
-def _airbox_to_si(airbox_mm: dict[str, Any]) -> dict[str, float]:
-    return {key: float(value) * 1e-3 for key, value in airbox_mm.items()}
+def _airbox_to_si(airbox_um: dict[str, Any]) -> dict[str, float]:
+    return {key: float(value) * SI_PER_INTERNAL for key, value in airbox_um.items()}
 
 
 def _ports_ir_to_raw(ports: Any) -> list[dict[str, Any]]:
@@ -162,32 +163,32 @@ def _ports_ir_to_raw(ports: Any) -> list[dict[str, Any]]:
     return out
 
 
-# M5 (M3 r1 建议 3): mesh kwarg 单位防呆 — kwarg 与 IR 段同语义都是 mm float.
-# 0.001 表示 1um (合理), 但若用户误把 SI 米 (5e-6 = 5 nm 当 mm 字面量传)
-# 会触发 ×1e-3 → SI 5 nm → mesh.generate 内存爆炸 (踩坑日志见 walkthrough §5.2)。
-# 上下界 (mm): [1e-5, 100]; 即 [10 nm, 10 cm]. 任何超出此范围的长度都视为
+# M5 (M3 r1 建议 3): mesh kwarg 单位防呆 — kwarg 与 IR 段同语义都是 µm float.
+# 1.0 表示 1um (合理), 但若用户误把 SI 米 (5e-6 = 5e-6 µm 当字面量传)
+# 会触发 ×1e-6 → SI 5e-12 m → mesh.generate 内存爆炸 (踩坑日志见 walkthrough §5.2)。
+# 上下界 (µm): [1e-2, 1e5]; 即 [10 nm, 10 cm]. 任何超出此范围的长度都视为
 # 单位误用, 直接 raise — 这是契约 (walkthrough §5.2), 而非 best-effort 转换。
-_MESH_LENGTH_MIN_MM = 1e-5    # 10 nm in mm
-_MESH_LENGTH_MAX_MM = 100.0   # 10 cm in mm
+_MESH_LENGTH_MIN_UM = 1e-2    # 10 nm in µm
+_MESH_LENGTH_MAX_UM = 1e5     # 10 cm in µm
 
 
-def _check_mesh_length_mm(field: str, value: Any) -> None:
-    """对 mesh kwarg 中的长度字段做 mm 单位合理性检查。"""
+def _check_mesh_length_um(field: str, value: Any) -> None:
+    """对 mesh kwarg 中的长度字段做 µm 单位合理性检查。"""
     try:
         v = float(value)
     except (TypeError, ValueError) as exc:
         raise ValueError(
-            f"simulation.gmsh.mesh.{field}: expected numeric mm value, "
+            f"simulation.gmsh.mesh.{field}: expected numeric µm value, "
             f"got {value!r}") from exc
     if v <= 0:
         raise ValueError(
-            f"simulation.gmsh.mesh.{field}: must be > 0 mm, got {v}")
-    if v < _MESH_LENGTH_MIN_MM or v > _MESH_LENGTH_MAX_MM:
+            f"simulation.gmsh.mesh.{field}: must be > 0 µm, got {v}")
+    if v < _MESH_LENGTH_MIN_UM or v > _MESH_LENGTH_MAX_UM:
         raise ValueError(
-            f"simulation.gmsh.mesh.{field}={v} mm is outside the sane range "
-            f"[{_MESH_LENGTH_MIN_MM} mm, {_MESH_LENGTH_MAX_MM} mm]. mesh "
-            f"kwarg 单位 = mm float (与 IR simulation.gmsh.mesh.* 同语义); "
-            f"若想表示 SI 米数值, 请乘以 1000 (e.g. 5e-6 米 → 0.005 mm)。"
+            f"simulation.gmsh.mesh.{field}={v} µm is outside the sane range "
+            f"[{_MESH_LENGTH_MIN_UM} µm, {_MESH_LENGTH_MAX_UM} µm]. mesh "
+            f"kwarg 单位 = µm float (与 IR simulation.gmsh.mesh.* 同语义); "
+            f"若想表示 SI 米数值, 请乘以 1e6 (e.g. 5e-6 米 → 5 µm)。"
             f"参考 examples/dsl/.note/gmsh_walkthrough.md §5.2.")
 
 
@@ -218,11 +219,11 @@ def _normalize_options(ir_sim: dict[str, Any],
     if gmsh_block:
         gmsh_block = _parse_gmsh_simulation(gmsh_block, variables or {}, components)
 
-    layer_stack_mm = gmsh_block.get("layer_stack") or DEFAULT_LAYER_STACK_MM
-    airbox_mm = {**DEFAULT_AIRBOX_MM, **(gmsh_block.get("airbox") or {})}
+    layer_stack_um = gmsh_block.get("layer_stack") or DEFAULT_LAYER_STACK_UM
+    airbox_um = {**DEFAULT_AIRBOX_UM, **(gmsh_block.get("airbox") or {})}
 
-    layer_stack_si = _layer_stack_to_si(layer_stack_mm)
-    airbox_si = _airbox_to_si(airbox_mm)
+    layer_stack_si = _layer_stack_to_si(layer_stack_um)
+    airbox_si = _airbox_to_si(airbox_um)
 
     output = gmsh_block.get("output", {}) or {}
     mesh_block = gmsh_block.get("mesh", {}) or {}
@@ -230,14 +231,14 @@ def _normalize_options(ir_sim: dict[str, Any],
     mesh_si: dict[str, Any] = {}
     for key in ("max_size", "min_size", "max_size_jj"):
         if key in mesh_block:
-            _check_mesh_length_mm(key, mesh_block[key])
-            mesh_si[key] = float(mesh_block[key]) * 1e-3
+            _check_mesh_length_um(key, mesh_block[key])
+            mesh_si[key] = float(mesh_block[key]) * SI_PER_INTERNAL
     if "conductor_refine" in mesh_block:
         refine = mesh_block["conductor_refine"] or {}
         for key, value in refine.items():
-            _check_mesh_length_mm(f"conductor_refine.{key}", value)
+            _check_mesh_length_um(f"conductor_refine.{key}", value)
         mesh_si["conductor_refine"] = {
-            key: float(value) * 1e-3 for key, value in refine.items()
+            key: float(value) * SI_PER_INTERNAL for key, value in refine.items()
         }
 
     return GmshOptions(
@@ -365,10 +366,10 @@ def build_mesh(source: Union[str, Path, DesignIR],
             不接受 ``QDesign`` 或其它对象 (plan §0)。
         output_path: ``.msh`` 输出路径。``None`` 时不写文件 (`mesh_path` 仍
             为 None), 但 mesh 在内存里已经生成 — 适用于 GUI 调试。
-        options: 覆盖 ``ir.simulation.gmsh``; 单位仍是 mm float, adapter
+        options: 覆盖 ``ir.simulation.gmsh``; 单位仍是 µm float, adapter
             内部转 SI。例:
             ``build_mesh(yaml, options={"layer_stack": {1: {"kind":"metal",
-            "thickness":0.005}}})`` 把 metal 改 5um。
+            "thickness":5}}})`` 把 metal 改 5um。
         show_gui: True 时调 ``gmsh.fltk.run()`` 打开 GUI 看几何; CI 默认 False。
         generate: True 时跑完整流水线 (fragment → physical groups → mesh);
             False 时只跑到 cut, 供 M2 风格的几何调试 (老测试入口)。
@@ -407,7 +408,7 @@ def build_mesh(source: Union[str, Path, DesignIR],
 
         # Stage C: ground plane + vacuum box
         side_buffer_si = float(resolved_options.airbox.get(
-            "side_buffer", DEFAULT_AIRBOX_MM["side_buffer"] * 1e-3))
+            "side_buffer", DEFAULT_AIRBOX_UM["side_buffer"] * SI_PER_INTERNAL))
         bbox_si = compute_chip_bbox_si(ir.components, side_buffer_si)
         render_layer_grounds(bbox_si, resolved_options.layer_stack, tracker)
         render_vacuum_box(bbox_si, resolved_options.airbox, tracker)

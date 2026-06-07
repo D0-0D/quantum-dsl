@@ -30,6 +30,7 @@ from qiskit_metal.renderers.renderer_gmsh.gmsh_utils import (
 from qiskit_metal.toolbox_python.utility_functions import bad_fillet_idxs
 
 from .builder import ComponentIR, PrimitiveIR, PinIR
+from ._units import SI_PER_INTERNAL
 
 try:
     import gmsh
@@ -180,15 +181,15 @@ def render_polygon_primitive(primitive: PrimitiveIR, z_si: float,
                              *, component: str) -> None:
     """画一个 ``kind=poly`` primitive 并 extrude 成 3D volume。
 
-    `primitive.geometry` 是 shapely Polygon, 坐标已经是 mm float; 这里转 SI。
+    `primitive.geometry` 是 shapely Polygon, 坐标已经是 µm float; 这里转 SI。
     内孔: 用 OCC `cut(outer_surface, inner_surface)` 减出来。
     """
     _require_gmsh()
     polygon = primitive.geometry
-    outer_si = np.array(polygon.exterior.coords, dtype=float) * 1e-3
+    outer_si = np.array(polygon.exterior.coords, dtype=float) * SI_PER_INTERNAL
     surface = _add_polygon_surface(outer_si, z_si)
     for interior in polygon.interiors:
-        inner_si = np.array(interior.coords, dtype=float) * 1e-3
+        inner_si = np.array(interior.coords, dtype=float) * SI_PER_INTERNAL
         inner_surface = _add_polygon_surface(inner_si, z_si)
         cut_result, _ = gmsh.model.occ.cut([(2, surface)],
                                            [(2, inner_surface)])
@@ -217,17 +218,18 @@ def render_path_primitive(primitive: PrimitiveIR, z_si: float,
     """画 ``kind=path`` primitive: shapely LineString + width + fillet → 圆角导体。"""
     _require_gmsh()
     line = primitive.geometry
-    width_mm = primitive.width
-    fillet_mm = primitive.fillet
-    if width_mm is None or width_mm <= 0:
+    width_um = primitive.width
+    fillet_um = primitive.fillet
+    if width_um is None or width_um <= 0:
         raise ValueError(
-            f"{component}.{primitive.name}: path width must be > 0 mm")
-    width_si = float(width_mm) * 1e-3
-    fillet_si = float(fillet_mm) * 1e-3 if fillet_mm else 0.0
+            f"{component}.{primitive.name}: path width must be > 0 µm")
+    width_si = float(width_um) * SI_PER_INTERNAL
+    fillet_si = float(fillet_um) * SI_PER_INTERNAL if fillet_um else 0.0
 
-    coords_mm = list(line.coords)
+    coords_um = list(line.coords)
     coords_si = [
-        np.array([float(x) * 1e-3, float(y) * 1e-3, z_si]) for x, y in coords_mm
+        np.array([float(x) * SI_PER_INTERNAL, float(y) * SI_PER_INTERNAL, z_si])
+        for x, y in coords_um
     ]
     vecs = Vec3DArray(points=coords_si)
     # bad_fillet_idxs 期望 list[tuple]; 用 SI 坐标比较距离与 fillet_si 同尺度。
@@ -258,15 +260,16 @@ def render_junction_primitive(primitive: PrimitiveIR, z_si: float,
     """画 JJ 矩形, 留 2D surface 在 layer 中心 z (照 `QGmshRenderer:467` 语义)。"""
     _require_gmsh()
     line = primitive.geometry
-    width_mm = primitive.width
-    if width_mm is None or width_mm <= 0:
+    width_um = primitive.width
+    if width_um is None or width_um <= 0:
         raise ValueError(
-            f"{component}.{primitive.name}: junction width must be > 0 mm")
-    width_si = float(width_mm) * 1e-3
+            f"{component}.{primitive.name}: junction width must be > 0 µm")
+    width_si = float(width_um) * SI_PER_INTERNAL
 
-    coords_mm = list(line.coords)
+    coords_um = list(line.coords)
     coords_si = [
-        np.array([float(x) * 1e-3, float(y) * 1e-3, z_si]) for x, y in coords_mm
+        np.array([float(x) * SI_PER_INTERNAL, float(y) * SI_PER_INTERNAL, z_si])
+        for x, y in coords_um
     ]
     vecs = Vec3DArray(points=coords_si)
     if len(vecs.path_vecs) == 0:
@@ -327,10 +330,10 @@ def render_component(component_ir: ComponentIR,
 # Stage B': open-pin endcap + lumped/ground port 面 (M4)
 # ---------------------------------------------------------------------------
 
-def _pin_midpoint_normal_mm(pin: PinIR) -> tuple[np.ndarray, np.ndarray]:
-    """从 PinIR.points (2 个端点) 算 (midpoint_xy_mm, unit_normal_xy)。
+def _pin_midpoint_normal_um(pin: PinIR) -> tuple[np.ndarray, np.ndarray]:
+    """从 PinIR.points (2 个端点) 算 (midpoint_xy_um, unit_normal_xy)。
 
-    `points` 是 [[x1,y1], [x2,y2]] (mm); pin 朝向是 segment 的 *右手法线*
+    `points` 是 [[x1,y1], [x2,y2]] (µm); pin 朝向是 segment 的 *右手法线*
     指向 chip 外侧 (与 `add_endcaps:669` 的 `normal` 字段语义对齐)。
     """
     p1 = np.asarray(pin.points[0], dtype=float)
@@ -388,7 +391,7 @@ def render_open_pin_endcap(pin: PinIR, layer: int, z_si: float,
         - 若 normal 主轴是 x: dx=gap, dy=width+2*gap; 反之 swap
         - extrude 到 layer thickness 形成 3D box
 
-    单位约定: ``pin.points / width / gap`` 都是 mm; 函数入参 z_si /
+    单位约定: ``pin.points / width / gap`` 都是 µm; 函数入参 z_si /
     thickness_si 是 SI 米; 内部按 SI 算 OCC 坐标。``layer`` 是 pin
     所属 ground layer (调用方按 plan §3.3-B 自己决定; 一般 = component
     的 metal layer)。
@@ -398,11 +401,11 @@ def render_open_pin_endcap(pin: PinIR, layer: int, z_si: float,
         raise ValueError(
             f"pin {pin.component}.{pin.name}: endcap requires positive gap "
             f"(got {pin.gap!r}); declare `gap:` in pin spec.")
-    mid_mm, normal = _pin_midpoint_normal_mm(pin)
-    width_si = float(pin.width) * 1e-3
-    gap_si = float(pin.gap) * 1e-3
-    rect_mid_mm = mid_mm + normal * (pin.gap * 0.5)
-    rect_mid_si = rect_mid_mm * 1e-3
+    mid_um, normal = _pin_midpoint_normal_um(pin)
+    width_si = float(pin.width) * SI_PER_INTERNAL
+    gap_si = float(pin.gap) * SI_PER_INTERNAL
+    rect_mid_um = mid_um + normal * (pin.gap * 0.5)
+    rect_mid_si = rect_mid_um * SI_PER_INTERNAL
 
     if abs(normal[0]) > abs(normal[1]):
         dx, dy = gap_si, width_si + 2 * gap_si
@@ -583,8 +586,8 @@ def compute_chip_bbox_si(components: list[ComponentIR],
     if not np.isfinite(minx):
         raise ValueError("Design has no primitives to compute bbox from")
     return (
-        minx * 1e-3 - side_buffer_si,
-        miny * 1e-3 - side_buffer_si,
-        maxx * 1e-3 + side_buffer_si,
-        maxy * 1e-3 + side_buffer_si,
+        minx * SI_PER_INTERNAL - side_buffer_si,
+        miny * SI_PER_INTERNAL - side_buffer_si,
+        maxx * SI_PER_INTERNAL + side_buffer_si,
+        maxy * SI_PER_INTERNAL + side_buffer_si,
     )

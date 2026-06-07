@@ -94,7 +94,7 @@ def test_build_ir_resolves_circuit_to_geometry():
                if primitive.name == "pad_left")
 
     minx, _, maxx, _ = pad.geometry.bounds
-    assert pytest.approx(maxx - minx) == 0.420
+    assert pytest.approx(maxx - minx) == 420.0
     assert ir.hamiltonian["subsystems"]["Q1"]["C"] == "65fF"
 
 
@@ -105,7 +105,7 @@ def test_build_design_writes_qgeometry_pins_and_netlist():
     assert len(design.qgeometry.tables["path"]) == 2
     assert len(design.qgeometry.tables["junction"]) == 2
     assert "bus" in design.components["Q1"].pins
-    assert design.components["Q1"].pins["bus"].width == pytest.approx(0.012)
+    assert design.components["Q1"].pins["bus"].width == pytest.approx(12.0)
     assert len(design.net_info) == 4
 
 
@@ -144,7 +144,7 @@ def test_derived_contains_bounds_lengths_pins_and_connections():
     derived = ir.derived
 
     bus_data = derived["circuit"]["geometry"]["bus"]
-    assert bus_data["primitives"]["center_trace"]["length"] == pytest.approx(1.72)
+    assert bus_data["primitives"]["center_trace"]["length"] == pytest.approx(1720.0)
     assert bus_data["pins"]["start"]["middle"] == pytest.approx(
         derived["circuit"]["geometry"]["Q1"]["pins"]["bus"]["middle"])
     assert bus_data["pins"]["end"]["middle"] == pytest.approx(
@@ -167,7 +167,7 @@ def test_overrides_recompute_geometry():
                if primitive.name == "pad_left")
     minx, _, maxx, _ = pad.geometry.bounds
 
-    assert pytest.approx(maxx - minx) == 0.500
+    assert pytest.approx(maxx - minx) == 500.0
 
 
 def test_inline_minimal_yaml_builds():
@@ -215,8 +215,8 @@ geometry:
     ir = build_ir(design_file)
 
     assert [component.name for component in ir.components] == ["Q1", "Q2"]
-    assert ir.components[0].primitives[0].geometry.centroid.x == pytest.approx(-1.0)
-    assert ir.components[1].primitives[0].geometry.centroid.x == pytest.approx(1.0)
+    assert ir.components[0].primitives[0].geometry.centroid.x == pytest.approx(-1000.0)
+    assert ir.components[1].primitives[0].geometry.centroid.x == pytest.approx(1000.0)
 
 
 def test_include_cycle_is_rejected(tmp_path):
@@ -264,8 +264,8 @@ geometry:
 """)
 
     comp = ir.components[0]
-    assert comp.primitives[0].geometry.area == pytest.approx(0.5)
-    assert comp.primitives[1].geometry.length == pytest.approx(0.1)
+    assert comp.primitives[0].geometry.area == pytest.approx(500000.0)
+    assert comp.primitives[1].geometry.length == pytest.approx(100.0)
 
 
 def test_pin_width_must_match_pin_points():
@@ -351,7 +351,7 @@ def test_omitted_pin_gap_is_resolved_in_ir_and_export():
     bus_pin = next(pin for pin in q1.pins if pin.name == "bus")
     design = build_design(source)
 
-    assert bus_pin.gap == pytest.approx(0.012 * 0.6)
+    assert bus_pin.gap == pytest.approx(12.0 * 0.6)
     assert ir.derived["circuit"]["geometry"]["Q1"]["pins"]["bus"][
         "gap"] == pytest.approx(bus_pin.gap)
     assert design.metadata["dsl_chain"]["derived"]["circuit"]["geometry"]["Q1"][

@@ -68,7 +68,7 @@ def test_component_template_expands_to_primitives_and_pins():
     assert [pin.name for pin in component.pins] == ["bus"]
 
     minx, _, maxx, _ = component.primitives[0].geometry.bounds
-    assert maxx - minx == pytest.approx(0.5)
+    assert maxx - minx == pytest.approx(500.0)
     assert ir.geometry["components"]["Q1"]["options"]["width"] == "500um"
 
 
@@ -204,13 +204,13 @@ geometry:
     component = ir.components[0]
     primitive = component.primitives[0]
     assert primitive.name == "Q1_pad"
-    assert primitive.geometry.centroid.y == pytest.approx(0.060)
+    assert primitive.geometry.centroid.y == pytest.approx(60.0)
     minx, miny, maxx, maxy = primitive.geometry.bounds
-    assert maxx - minx == pytest.approx(0.024)
-    assert maxy - miny == pytest.approx(0.030)
-    assert component.pins[0].points[0] == pytest.approx([0.0, -0.006])
-    assert component.pins[0].points[1] == pytest.approx([0.0, 0.006])
-    assert component.pins[0].width == pytest.approx(0.012)
+    assert maxx - minx == pytest.approx(24.0)
+    assert maxy - miny == pytest.approx(30.0)
+    assert component.pins[0].points[0] == pytest.approx([0.0, -6.0])
+    assert component.pins[0].points[1] == pytest.approx([0.0, 6.0])
+    assert component.pins[0].width == pytest.approx(12.0)
     assert component.options["source_endpoint"] == "Q1.bus"
 
 
@@ -277,15 +277,15 @@ geometry:
     primitives = {primitive.name: primitive for primitive in component.primitives}
 
     pad = primitives["pad"].geometry
-    assert pad.centroid.x == pytest.approx(0.015)
-    assert pad.centroid.y == pytest.approx(0.025)
+    assert pad.centroid.x == pytest.approx(15.0)
+    assert pad.centroid.y == pytest.approx(25.0)
     minx, miny, maxx, maxy = pad.bounds
-    assert maxx - minx == pytest.approx(0.100)
-    assert maxy - miny == pytest.approx(0.040)
+    assert maxx - minx == pytest.approx(100.0)
+    assert maxy - miny == pytest.approx(40.0)
 
     wire = primitives["wire"].geometry
-    assert list(wire.coords) == pytest.approx([(0.050, 0.000), (0.050, 0.020)])
-    assert primitives["wire"].width == pytest.approx(0.010)
+    assert list(wire.coords) == pytest.approx([(50.0, 0.0), (50.0, 20.0)])
+    assert primitives["wire"].width == pytest.approx(10.0)
     assert primitives["wire_clearance"].subtract is True
     assert primitives["wire_clearance"].geometry.area > 0
 
@@ -317,12 +317,12 @@ geometry:
 """)
 
     primitive = ir.components[0].primitives[0]
-    assert primitive.geometry.area == pytest.approx(0.005)
+    assert primitive.geometry.area == pytest.approx(5000.0)
     minx, miny, maxx, maxy = primitive.geometry.bounds
-    assert minx == pytest.approx(0.900)
-    assert miny == pytest.approx(2.000)
-    assert maxx == pytest.approx(1.000)
-    assert maxy == pytest.approx(2.100)
+    assert minx == pytest.approx(900.0)
+    assert miny == pytest.approx(2000.0)
+    assert maxx == pytest.approx(1000.0)
+    assert maxy == pytest.approx(2100.0)
 
 
 @pytest.mark.parametrize(
@@ -452,16 +452,16 @@ geometry:
     pin = ir.components[0].pins[0]
 
     assert pin.input_as_norm is True
-    np.testing.assert_allclose(pin.normal_points, [[0.0, 0.0], [0.1, 0.0]])
-    np.testing.assert_allclose(pin.points, [[0.1, 0.006], [0.1, -0.006]])
+    np.testing.assert_allclose(pin.normal_points, [[0.0, 0.0], [100.0, 0.0]])
+    np.testing.assert_allclose(pin.points, [[100.0, 6.0], [100.0, -6.0]])
 
     design = build_design(source)
     exported_pin = design.components["Q1"].pins["readout"]
-    np.testing.assert_allclose(exported_pin.middle, [0.1, 0.0])
+    np.testing.assert_allclose(exported_pin.middle, [100.0, 0.0])
     np.testing.assert_allclose(exported_pin.normal, [1.0, 0.0])
     np.testing.assert_allclose(exported_pin.points, pin.points)
-    assert exported_pin.width == pytest.approx(0.012)
-    assert exported_pin.gap == pytest.approx(0.007)
+    assert exported_pin.width == pytest.approx(12.0)
+    assert exported_pin.gap == pytest.approx(7.0)
 
 
 def test_normal_segment_pin_mode_applies_component_transform():
@@ -491,8 +491,8 @@ geometry:
     ir = build_ir(source)
 
     pin = ir.components[0].pins[0]
-    np.testing.assert_allclose(pin.normal_points, [[1.0, 2.0], [1.0, 2.1]])
-    np.testing.assert_allclose(pin.points, [[0.99, 2.1], [1.01, 2.1]])
+    np.testing.assert_allclose(pin.normal_points, [[1000.0, 2000.0], [1000.0, 2100.0]])
+    np.testing.assert_allclose(pin.points, [[990.0, 2100.0], [1010.0, 2100.0]])
 
     design = build_design(source)
     exported_pin = design.components["Q1"].pins["readout"]
@@ -530,8 +530,8 @@ geometry:
     exported_pin = design.components["Q1"].pins["readout"]
 
     np.testing.assert_allclose(pin.normal_points,
-                               [[1.0, 2.0],
-                                [1.0707106781186548, 2.0707106781186546]])
+                               [[1000.0, 2000.0],
+                                [1070.7106781186548, 2070.7106781186546]])
     np.testing.assert_allclose(pin.points, exported_pin.points)
     np.testing.assert_allclose(derived_pin["points"], exported_pin.points)
     np.testing.assert_allclose(exported_pin.middle, pin.normal_points[-1])
@@ -794,11 +794,11 @@ geometry:
 
     left_wire = next(primitive for primitive in component.primitives
                      if primitive.name == "left_wire")
-    assert list(left_wire.geometry.coords) == pytest.approx([(-0.1, 0.0),
-                                                             (-0.2, 0.0)])
+    assert list(left_wire.geometry.coords) == pytest.approx([(-100.0, 0.0),
+                                                             (-200.0, 0.0)])
     left_pin = next(pin for pin in component.pins if pin.name == "left")
-    np.testing.assert_allclose(left_pin.normal_points, [[-0.1, 0.0],
-                                                        [-0.2, 0.0]])
+    np.testing.assert_allclose(left_pin.normal_points, [[-100.0, 0.0],
+                                                        [-200.0, 0.0]])
 
     design = build_design(source)
     assert "left" in design.components["Q1"].pins
@@ -857,15 +857,15 @@ geometry:
     primitive = component.primitives[0]
     assert primitive.chip == "main"
     assert primitive.layer == 3
-    assert primitive.geometry.centroid.x == pytest.approx(1.0)
-    assert primitive.geometry.centroid.y == pytest.approx(2.0)
+    assert primitive.geometry.centroid.x == pytest.approx(1000.0)
+    assert primitive.geometry.centroid.y == pytest.approx(2000.0)
     minx, miny, maxx, maxy = primitive.geometry.bounds
-    assert maxx - minx == pytest.approx(0.050)
-    assert maxy - miny == pytest.approx(0.100)
+    assert maxx - minx == pytest.approx(50.0)
+    assert maxy - miny == pytest.approx(100.0)
 
     pin = component.pins[0]
     assert pin.chip == "main"
-    np.testing.assert_allclose(pin.points, [[1.005, 2.0], [0.995, 2.0]])
+    np.testing.assert_allclose(pin.points, [[1005.0, 2000.0], [995.0, 2000.0]])
 
 
 def test_builtin_base_qubit_template_inherits_qcomponent_and_connection_pads():
@@ -920,7 +920,7 @@ geometry:
     }
     assert component.options["connection_pads"]["drive"]["cpw_width"] == "12um"
     assert component.options["connection_pads"]["drive"]["cpw_gap"] == "9um"
-    assert component.primitives[0].geometry.centroid.x == pytest.approx(0.5)
+    assert component.primitives[0].geometry.centroid.x == pytest.approx(500.0)
 
 
 def test_builtin_transmon_pocket_template_generates_static_pocket_geometry():
@@ -959,17 +959,17 @@ geometry:
     assert primitives["pad_bot"].kind == "poly"
     assert primitives["rect_pk"].subtract is True
     assert primitives["rect_jj"].kind == "junction"
-    assert primitives["rect_jj"].width == pytest.approx(0.020)
+    assert primitives["rect_jj"].width == pytest.approx(20.0)
     assert all(primitive.layer == 4 for primitive in primitives.values())
 
-    assert primitives["pad_top"].geometry.centroid.x == pytest.approx(0.940)
-    assert primitives["pad_top"].geometry.centroid.y == pytest.approx(2.0)
-    assert primitives["pad_bot"].geometry.centroid.x == pytest.approx(1.060)
-    assert primitives["pad_bot"].geometry.centroid.y == pytest.approx(2.0)
+    assert primitives["pad_top"].geometry.centroid.x == pytest.approx(940.0)
+    assert primitives["pad_top"].geometry.centroid.y == pytest.approx(2000.0)
+    assert primitives["pad_bot"].geometry.centroid.x == pytest.approx(1060.0)
+    assert primitives["pad_bot"].geometry.centroid.y == pytest.approx(2000.0)
     minx, miny, maxx, maxy = primitives["rect_pk"].geometry.bounds
-    assert maxx - minx == pytest.approx(0.650)
-    assert maxy - miny == pytest.approx(0.650)
-    assert primitives["rect_jj"].geometry.length == pytest.approx(0.030)
+    assert maxx - minx == pytest.approx(650.0)
+    assert maxy - miny == pytest.approx(650.0)
+    assert primitives["rect_jj"].geometry.length == pytest.approx(30.0)
 
 
 def test_builtin_transmon_pocket_exports_static_rows_without_qlibrary_construction(
@@ -1003,7 +1003,7 @@ geometry:
     rect_pk = poly_rows[poly_rows["name"] == "rect_pk"].iloc[0]
     rect_jj = junction_rows[junction_rows["name"] == "rect_jj"].iloc[0]
     assert bool(rect_pk["subtract"]) is True
-    assert rect_jj["width"] == pytest.approx(0.020)
+    assert rect_jj["width"] == pytest.approx(20.0)
     assert component.metadata["template"]["type"] == "transmon_pocket"
 
 
@@ -1041,31 +1041,31 @@ geometry:
     }
     assert primitives["readout_connector_pad"].kind == "poly"
     assert primitives["readout_wire"].kind == "path"
-    assert primitives["readout_wire"].width == pytest.approx(0.012)
+    assert primitives["readout_wire"].width == pytest.approx(12.0)
     assert primitives["readout_wire_sub"].kind == "path"
-    assert primitives["readout_wire_sub"].width == pytest.approx(0.026)
+    assert primitives["readout_wire_sub"].width == pytest.approx(26.0)
     assert primitives["readout_wire_sub"].subtract is True
     assert all(primitive.layer == 2 for primitive in primitives.values())
 
     readout_wire = primitives["readout_wire"].geometry
     np.testing.assert_allclose(list(readout_wire.coords), [
-        (0.2275, 0.131),
-        (0.2525, 0.131),
-        (0.32, 0.196),
-        (0.425, 0.196),
+        (227.5, 131.0),
+        (252.5, 131.0),
+        (320.0, 196.0),
+        (425.0, 196.0),
     ])
 
     pin = component.pins[0]
     assert pin.name == "readout"
-    assert pin.width == pytest.approx(0.012)
-    assert pin.gap == pytest.approx(0.0072)
-    np.testing.assert_allclose(pin.normal_points, [[0.32, 0.196],
-                                                   [0.425, 0.196]])
+    assert pin.width == pytest.approx(12.0)
+    assert pin.gap == pytest.approx(7.2)
+    np.testing.assert_allclose(pin.normal_points, [[320.0, 196.0],
+                                                   [425.0, 196.0]])
 
     design = build_design(source)
     exported_pin = design.components["Q1"].pins["readout"]
     np.testing.assert_allclose(exported_pin.points, pin.points)
-    assert exported_pin.gap == pytest.approx(0.0072)
+    assert exported_pin.gap == pytest.approx(7.2)
     assert set(design.qgeometry.tables["poly"]["name"]) == {
         "pad_top",
         "pad_bot",
@@ -1097,18 +1097,18 @@ geometry:
     ir = build_ir(source)
     component = ir.components[0]
     primitives = {primitive.name: primitive for primitive in component.primitives}
-    assert primitives["readout_wire"].width == pytest.approx(0.010)
-    assert primitives["readout_wire_sub"].width == pytest.approx(0.022)
+    assert primitives["readout_wire"].width == pytest.approx(10.0)
+    assert primitives["readout_wire_sub"].width == pytest.approx(22.0)
 
     pin = component.pins[0]
     assert pin.name == "readout"
-    assert pin.width == pytest.approx(0.010)
-    assert pin.gap == pytest.approx(0.006)
+    assert pin.width == pytest.approx(10.0)
+    assert pin.gap == pytest.approx(6.0)
 
     design = build_design(source)
     exported_pin = design.components["Q1"].pins["readout"]
-    assert exported_pin.width == pytest.approx(0.010)
-    assert exported_pin.gap == pytest.approx(0.006)
+    assert exported_pin.width == pytest.approx(10.0)
+    assert exported_pin.gap == pytest.approx(6.0)
 
 
 @pytest.mark.parametrize(
@@ -1177,8 +1177,8 @@ geometry:
     q2_primitives = {primitive.name: primitive for primitive in q2.primitives}
     assert q2.options["connection_pads"]["readout"]["cpw_width"] == "16um"
     assert q2.options["connection_pads"]["readout"]["cpw_gap"] == "8um"
-    assert q2_primitives["readout_wire"].width == pytest.approx(0.016)
-    assert q2_primitives["readout_wire_sub"].width == pytest.approx(0.032)
+    assert q2_primitives["readout_wire"].width == pytest.approx(16.0)
+    assert q2_primitives["readout_wire_sub"].width == pytest.approx(32.0)
 
     design = build_design(source)
     assert "readout" in design.components["Q1"].pins
@@ -1214,14 +1214,14 @@ geometry:
     primitives = {primitive.name: primitive for primitive in component.primitives}
     wire = primitives["readout_wire"].geometry
     np.testing.assert_allclose(list(wire.coords), [
-        (0.869, 2.2275),
-        (0.869, 2.2525),
-        (0.804, 2.32),
-        (0.804, 2.425),
+        (869.0, 2227.5),
+        (869.0, 2252.5),
+        (804.0, 2320.0),
+        (804.0, 2425.0),
     ])
     pin = component.pins[0]
-    np.testing.assert_allclose(pin.normal_points, [[0.804, 2.32],
-                                                   [0.804, 2.425]])
+    np.testing.assert_allclose(pin.normal_points, [[804.0, 2320.0],
+                                                   [804.0, 2425.0]])
 
 
 @pytest.mark.parametrize("bad_metadata", ["[]", "''", "false"])
@@ -1323,7 +1323,7 @@ geometry:
     assert [primitive.name for primitive in component.primitives] == ["pad"]
     assert [pin.name for pin in component.pins] == ["bus"]
     minx, _, maxx, _ = component.primitives[0].geometry.bounds
-    assert maxx - minx == pytest.approx(0.450)
+    assert maxx - minx == pytest.approx(450.0)
 
 
 def test_component_template_file_id_mismatch_is_rejected(tmp_path):
