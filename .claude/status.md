@@ -10,20 +10,25 @@ commits, test-count changes)._
 ---
 
 ## At a glance
-- **Active branch**: `feat/native-geo-dsl` (the native Gmsh `.geo` pivot — the primary path).
+- **Active branch**: `feat/native-geo-dsl`. **M5a is being landed on worktree branch
+  `feat/m5a-emit-geo`** (branched from HEAD; merge back when ready).
 - **Current-phase scope** (2026-06-08, phased — not a final ceiling): rounded-corner polygon cells
   + an **electrostatic capacitance matrix**. Eigenmode/driven, lumped ports, and loss are out of
   *this* phase — staged for later, not ruled out.
-- **Done**: **M1 `[x]`** (both branches end-to-end) and **M3 `[x]`** (live Palace C-matrix +
-  `chip.results.yaml` write-back; conductors-as-voids `carve_conductors`).
-- **Current milestone**: **M5a — emit_geo cell library** (lower v3 `transmon_pocket` etc. → flat
-  positive-tone `.geo`; rounded corners via pre-sampled shapely buffers). It is the **next** task.
-  M6 (circuit-model solve from the C-matrix) can run in parallel since a C-matrix already exists.
-- **Tests**: full suite **251 passed, 1 skipped** in conda `metal-env` (the skip = gated live
-  Palace test; run with `QDSL_RUN_PALACE=1`). See `CLAUDE.md` for how to run.
-- **End-to-end**: `build_geo(two_pads.meta.yaml --run-palace)` → real C-matrix
-  `[[24.73,-1.98],[-1.98,24.72]]` fF; `chip_layout` still needs disjoint authoring for a full-chip
-  live solve (→ M5a).
+- **Done**: **M1 `[x]`** (both branches end-to-end), **M3 `[x]`** (live Palace C-matrix +
+  `chip.results.yaml`; conductors-as-voids), and **M5a `[x]`** (emit_geo cell-library bridge —
+  delivers R+ rounded-corner cells).
+- **M5a (DONE)**: `dsl/geo_emit.py` `emit_geo` (shapely-only) lowers a resolved v3 `DesignIR` → flat
+  positive-tone `.geo` (poly + buffered rounded paths + OCC-`BooleanDifference` chip-wide ground);
+  `elaborate_cells` Elaborator + `cells:` sidecar (`geo` now optional) wired into `geo_build`; metal
+  ground now **carved** (`gnd_layer{N}_sfs`, geo-path-only/additive) so full-chip ground designs mesh.
+  See `session/2606080338.md`.
+- **Current milestone**: **M6 — circuit-model solve (R1+R3)** is next (C-matrix already exists).
+- **Tests**: full suite **263 passed, 1 skipped** in conda `metal-env` (251 → 263: +12 in new
+  `test_geo_emit.py` incl. golden parity; 2 tiny_chip geo-path assertions updated for the carved ground).
+- **End-to-end**: `build_geo(two_pads --run-palace)` → real C-matrix `[[24.73,-1.98],[-1.98,24.72]]`
+  fF (unchanged); `build_geo(cells_2q.meta.yaml)` → GDS + msh + Palace config with 4 carved qubit-pad
+  terminals + carved chip ground (full-chip **live** solve not yet run, gated `QDSL_RUN_PALACE`).
 
 ## Plan re-org (2026-06-08)
 Re-anchored `plan.md` to the **5 original requirements** (R1 group→circuit, R2 Palace→C-matrix ✅,
@@ -39,9 +44,11 @@ R3 circuit solve, R4 read QDA ✅, R5 GDSFactory) + verbal "电容矩阵就够":
 - `bfb2628` docs: add QDA reference materials (`refer/2511.10479v1*`).
 
 ## Open / next steps
-- **M5a (NEXT)**: build `dsl/geo_emit.py` `emit_geo(design_ir)` + `cells:` sidecar block + Elaborator;
-  synthesize one chip-wide ground (decision #1); pins → plain `port::` marker (decision #2);
-  pre-sample buffers → polygons (decision #3); extend `carve_conductors` to carve the ground;
-  golden byte-identical-names parity test.
-- **M6 (parallel-eligible)**: C-matrix → LOM/circuit quantization → qubit params → results tier T2.
+- **Merge** worktree `feat/m5a-emit-geo` → `feat/native-geo-dsl` once reviewed.
+- **M6 (NEXT)**: read `chip.results.yaml` maxwell C-matrix → LOM/circuit quantization → qubit params
+  (E_C/f01/α/couplings) → results tier T2. A C-matrix already exists (M3), so M6 is unblocked.
+- **M5a follow-ups** (non-blocking): run a full-chip **live** Palace solve on an emit_geo ground
+  design (gated `QDSL_RUN_PALACE`); connection-pad transmon cells (non-empty `connection_pads`) emit
+  fine but may need a connector-pad subtract gap for a clean disjoint live solve; the carved-ground
+  substrate z-nudge leaves a small ε-vacuum-gap (capacitance artifact) — refine if precision matters.
 - `CLAUDE.md` no longer pins "M1–M5" — milestones are re-scoped per phase (see `plan.md`).

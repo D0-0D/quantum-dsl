@@ -87,6 +87,13 @@ def apply_symmetry_cuts(symmetry_specs,
     - 切完后切面留在 ground / vacuum 表面, 由 `_gmsh_physical` 阶段
       通过 "面中心在对称平面 z=0/y=0/x=0 上" 筛出, 命名 `symmetry_{plane}`;
     - 顺序约束 (plan §3.3-C): symmetry 必须在 stage D cut 之前做。
+
+    LATENT GAP (M4-deferred): the conductors-as-voids tables ``conductor_solids`` /
+    ``ground_solids`` (Approach A, geo path) are NOT in the cut targets / remap here.
+    Today that is safe — symmetry is M4-deferred and never runs on the geo path, and
+    even if it did, carve runs AFTER symmetry so a metal terminal/ground straddling a
+    symmetry plane would simply be carved un-clipped. Before enabling symmetry on the
+    geo path, add these tables to the targets + remap (mirror ``polys``/``paths``).
     """
     if gmsh is None:
         raise ImportError("gmsh required for apply_symmetry_cuts")
@@ -257,7 +264,8 @@ def carve_conductors(tracker: GeomTracker) -> None:
     """
     if gmsh is None:
         raise ImportError("gmsh required for carve_conductors")
-    if tracker.vacuum_box is None or not tracker.conductor_solids:
+    if tracker.vacuum_box is None or (
+            not tracker.conductor_solids and not tracker.ground_solids):
         return
 
     cut_tools: list[tuple[int, int]] = []
@@ -277,6 +285,24 @@ def carve_conductors(tracker: GeomTracker) -> None:
             tracker.conductor_bbox[(layer, component, primitive)] = (
                 mins[0], mins[1], mins[2], maxs[0], maxs[1], maxs[2])
 
+    # Approach A (M5a): carve the synthesized metal ground sheet too.  Same cut
+    # as a terminal, but its cavity wall is later named ``gnd_layer{N}_sfs``
+    # (Ground boundary), not a Terminal.  bbox keyed by layer (one chip-wide
+    # ground per layer) so resolve_conductor_faces can re-key the walls.
+    for layer, tags in tracker.ground_solids.items():
+        if not tags:
+            continue
+        mins = [float("inf")] * 3
+        maxs = [float("-inf")] * 3
+        for t in tags:
+            bb = gmsh.model.getBoundingBox(3, t)
+            for i in range(3):
+                mins[i] = min(mins[i], bb[i])
+                maxs[i] = max(maxs[i], bb[i + 3])
+            cut_tools.append((3, t))
+        tracker.ground_bbox[layer] = (
+            mins[0], mins[1], mins[2], maxs[0], maxs[1], maxs[2])
+
     if not cut_tools:
         return
 
@@ -295,6 +321,7 @@ def carve_conductors(tracker: GeomTracker) -> None:
             stacklevel=2)
     tracker.vacuum_box = vac_tags[0] if vac_tags else None
     tracker.conductor_solids.clear()  # consumed by the cut
+    tracker.ground_solids.clear()     # consumed by the cut
     gmsh.model.occ.synchronize()
 
 
@@ -310,7 +337,7 @@ def resolve_conductor_faces(tracker: GeomTracker,
     """
     if gmsh is None:
         raise ImportError("gmsh required for resolve_conductor_faces")
-    if not tracker.conductor_bbox:
+    if not tracker.conductor_bbox and not tracker.ground_bbox:
         return
 
     domain: list[tuple[int, int]] = []
@@ -330,17 +357,31 @@ def resolve_conductor_faces(tracker: GeomTracker,
             continue
         face = abs(int(tag))
         c = gmsh.model.occ.getCenterOfMass(2, face)
+        # Terminal bboxes are checked FIRST: they are small and specific, and a
+        # chip-wide ground bbox (M5a) spatially CONTAINS every terminal (the
+        # ground's xy bbox ignores its holes), so terminals must win the centroid
+        # test before the ground claims their cavity walls.
         hit = None
         for (layer, component, primitive), bb in tracker.conductor_bbox.items():
             if _centroid_in_bbox(bb, c):
                 hit = (layer, component, primitive)
                 break
-        if hit is None:
-            outer.append(face)
-        else:
+        if hit is not None:
             layer, component, primitive = hit
             tracker.conductor_faces.setdefault(layer, {}).setdefault(
                 (component, primitive), []).append(face)
+            continue
+        # then the metal ground frame (its cavity walls live outside every
+        # terminal bbox because the metals sit inside the ground's holes).
+        gnd_layer = None
+        for layer, bb in tracker.ground_bbox.items():
+            if _centroid_in_bbox(bb, c):
+                gnd_layer = layer
+                break
+        if gnd_layer is not None:
+            tracker.ground_faces.setdefault(gnd_layer, []).append(face)
+        else:
+            outer.append(face)
     tracker.vacuum_outer_faces = outer
 
 

@@ -28,6 +28,7 @@ __all__ = [
     "GEO_SURFACE_ROLES",
     "GEO_MARKER_ROLES",
     "GEO_META_ROOT_KEYS",
+    "CELL_KEYS",
     "GDS_SIM_KEYS",
     "GDS_LAYER_MAP_ENTRY_KEYS",
     "SOLVER_KEYS",
@@ -88,8 +89,19 @@ GEO_ROLES = GEO_SURFACE_ROLES | GEO_MARKER_ROLES
 
 # Top-level keys of a standalone *.meta.yaml sidecar paired with a .geo file.
 # ``geo`` points at the companion .geo (relative to the sidecar); ``simulation``
-# reuses the existing simulation.gmsh vocabulary.
-GEO_META_ROOT_KEYS = {"schema", "geo", "vars", "simulation"}
+# reuses the existing simulation.gmsh vocabulary.  ``cells`` (M5a) is an OPTIONAL
+# block that lowers v3 component-template instances → a generated
+# ``<stem>.elaborated.geo`` (the emit_geo bridge); when present, ``geo`` is
+# optional (the geometry is generated, not authored).
+GEO_META_ROOT_KEYS = {"schema", "geo", "vars", "simulation", "cells"}
+
+# A single ``cells:`` instance — one placed v3 component-template cell.
+# ``cell_type`` = template id (e.g. transmon_pocket); ``component`` = the globally
+# unique component name (becomes the ``::<component>::`` field of every Physical
+# name, so it MUST be unique across cells — load_geo's duplicate guard enforces
+# it).  ``x/y/rot/layer`` place the cell (→ template pos_x/pos_y/orientation/layer
+# options); ``params`` overrides any template option.
+CELL_KEYS = {"cell_type", "component", "x", "y", "rot", "layer", "params"}
 
 # simulation.gmsh.gds block: GDS layer map + gdstk library settings.
 GDS_SIM_KEYS = {

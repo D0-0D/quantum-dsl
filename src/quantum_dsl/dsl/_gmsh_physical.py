@@ -240,6 +240,17 @@ def assign_physical_groups(tracker: GeomTracker,
                 layer=layer)
             registry.add(vol_name, dim=3, tags=tags)
 
+    # 1b) carved metal ground (Approach A, geo path / M5a): the sheet was cut OUT
+    # of the vacuum, so it has NO dim-3 volume — only its cavity walls survive as
+    # an EXTERIOR Ground boundary, named gnd_layer{N}_sfs (matches the legacy slab
+    # path's surface name; palace 的 _ground_groups 按 gnd_*_sfs 匹配 Ground 边界)。
+    # Legacy / slab path keeps tracker.ground_faces empty → no-op here.
+    for layer, tags in tracker.ground_faces.items():
+        if not tags:
+            continue
+        sfs_name = PHYSICAL_GROUP_NAMING["ground_surface"].format(layer=layer)
+        registry.add(sfs_name, dim=2, tags=tags)
+
     # 2) component polys / paths (3D volume + 外表面)
     for layer_dict in (tracker.polys, tracker.paths):
         for layer, named in layer_dict.items():

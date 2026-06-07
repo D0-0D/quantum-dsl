@@ -86,6 +86,16 @@ class GeomTracker:
     # carve+fragment 之后解析出的空腔壁 face tags (Terminal 出表面 _sfs)。
     conductor_faces: dict[int, dict[tuple[str, str], list[int]]] = field(
         default_factory=dict)
+    # --- Approach A (ground, M5a): 金属地 sheet 也按导体-空腔处理 -----------
+    # 金属 ground::N::* 面 extrude 成实体, 暂存这里 (按 layer), 然后和 terminal
+    # 一起被 occ.cut OUT of vacuum_box (consumed)。这样地的腔壁在 fragment 后是
+    # **外部** 边界面, 满足 Palace 的 Ground 边界不变量 (slab 表面是内部面 → MFEM
+    # 真求解时拒绝)。介质衬底 (substrate::) 仍走 layer_ground (它要作为体网格)。
+    ground_solids: dict[int, list[int]] = field(default_factory=dict)
+    # layer → 该层金属地实体的 3D bbox (SI 米); cut 后用来把腔壁 face 归位。
+    ground_bbox: dict[int, tuple] = field(default_factory=dict)
+    # carve+fragment 之后解析出的金属地腔壁 face tags → gnd_layer{N}_sfs。
+    ground_faces: dict[int, list[int]] = field(default_factory=dict)
     # carve 路径下真空域的真实外边界 face (= 域 combined boundary − 空腔壁);
     # 非空即启用 carve 版 vacuum_outer (legacy 路径恒空, 走旧逻辑)。
     vacuum_outer_faces: list[int] = field(default_factory=list)

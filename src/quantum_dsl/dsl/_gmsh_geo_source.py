@@ -61,6 +61,18 @@ __all__ = [
 # in the mesh branch is byte-identical to the project SI boundary).
 SI_PER_INTERNAL = 1e-6
 
+# Tiny (1 µm in SI) downward nudge applied to an AUTO-created dielectric substrate
+# top ONLY when a metal ground sheet is carved (M5a, Approach A).  A carved ground
+# is a frame-/annulus-shaped void whose bottom face would otherwise be *coplanar*
+# with the substrate top at z=0; OCC's fragment of that complex coincident
+# interface is numerically unstable at the µm→m dilated scale (~1e-4 m) and fails
+# erratically ("Boolean fragments failed").  Dropping the substrate top by this ε
+# decouples the planes and stabilises the fragment.  ε ≪ feature scale (1 µm vs
+# 100s of µm), and it is NOT applied when there is no carved ground (so the
+# two_pads live-solve reference C-matrix is untouched).  Magnitude matches the
+# existing ``_gmsh_layers.FRAGMENT_TOL_SI`` coplanar-avoidance tolerance.
+CARVED_GROUND_SUBSTRATE_GAP_SI = 1e-6
+
 
 # ---------------------------------------------------------------------------
 # GeoSurface — one authored Physical group (SHARED PYTHON API CONTRACT)
@@ -484,7 +496,16 @@ def populate_tracker_from_geo(geo_surfaces: list[GeoSurface],
                 # _sfs face INTERIOR (2 elements) → MFEM rejects it at solve time.
                 tracker.conductor_solids.setdefault(layer, {}).setdefault(
                     (surf.component, surf.primitive), []).append(volume)
-            else:  # ground / substrate both land in layer_ground
+            elif surf.role == "ground":
+                # Approach A (M5a): a metal ground sheet is a PEC equipotential
+                # too — carve it OUT of the vacuum like a terminal so its cavity
+                # wall is an EXTERIOR Ground boundary.  Meshing it as a coplanar
+                # slab makes the wall INTERIOR (2 elements) → MFEM rejects it,
+                # and even mesh GENERATION fails ("overlapping facets") once the
+                # sheet shares the z=0 plane with the substrate.  Stash per layer;
+                # carve_conductors consumes it.
+                tracker.ground_solids.setdefault(layer, []).append(volume)
+            else:  # substrate (dielectric) — stays a meshed body
                 tracker.layer_ground.setdefault(layer, []).append(volume)
 
     gmsh.model.occ.synchronize()
@@ -515,6 +536,16 @@ def ensure_dielectric_substrates(geo_surfaces: list[GeoSurface],
             continue
         missing[layer] = spec
     if missing:
+        # When a metal ground sheet is carved (Approach A), drop the auto
+        # substrate top by a tiny ε so it is not coplanar with the carved void
+        # bottom at z=0 — see CARVED_GROUND_SUBSTRATE_GAP_SI.  No carved ground
+        # (e.g. two_pads) → render verbatim, leaving its C-matrix untouched.
+        if tracker.ground_solids:
+            gap = CARVED_GROUND_SUBSTRATE_GAP_SI
+            missing = {
+                layer: {**spec, "z": float(spec.get("z", 0.0)) - gap}
+                for layer, spec in missing.items()
+            }
         render_layer_grounds(bbox_si, missing, tracker)
         gmsh.model.occ.synchronize()
 

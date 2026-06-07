@@ -90,9 +90,6 @@ def build_geo(geo_path: Optional[Union[str, Path]] = None,
     )
 
     meta = parse_geo_meta_sidecar(meta_path)
-    geo = Path(geo_path).resolve() if geo_path is not None else meta["geo"]
-    if not Path(geo).is_file():
-        raise DesignDslError(f"geo file not found: {geo}")
 
     sim_gmsh = (meta.get("simulation") or {}).get("gmsh") or {}
     if not sim_gmsh:
@@ -104,6 +101,32 @@ def build_geo(geo_path: Optional[Union[str, Path]] = None,
 
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
+
+    # ---- resolve the geometry source (M5a) ------------------------------
+    # Precedence: explicit geo_path arg > generated from a ``cells:`` block
+    # (emit_geo bridge → out_dir/<stem>.elaborated.geo) > the sidecar's ``geo``.
+    # The elaborated path is substituted here so BOTH the GDS and mesh forks
+    # below consume it unchanged (nothing under load_geo knows the difference).
+    if geo_path is not None:
+        geo = Path(geo_path).resolve()
+    elif meta.get("cells"):
+        from .geo_emit import elaborate_cells
+        # Strip the full ``.meta.yaml`` / ``.meta.yml`` suffix (NOT just the first
+        # dot — a sidecar like ``chip.layout.meta.yaml`` must give stem
+        # ``chip.layout``, else two such sidecars collide on ``chip.elaborated.geo``).
+        name = Path(meta_path).name
+        if name.endswith(".meta.yaml"):
+            stem = name[: -len(".meta.yaml")]
+        elif name.endswith(".meta.yml"):
+            stem = name[: -len(".meta.yml")]
+        else:
+            stem = Path(name).stem
+        geo = out_dir / f"{stem}.elaborated.geo"
+        elaborate_cells(meta["cells"], geo, emit_ports=False)
+    else:
+        geo = meta.get("geo")
+    if geo is None or not Path(geo).is_file():
+        raise DesignDslError(f"geo file not found: {geo}")
 
     result: dict[str, Any] = {
         "gds": None,
