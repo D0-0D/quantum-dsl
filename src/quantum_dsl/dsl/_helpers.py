@@ -16,6 +16,7 @@ from qiskit_metal.toolbox_metal.parsing import parse_value
 
 from . import _units  # noqa: F401 — sets the µm default parsing unit on import
 from .errors import DesignDslError
+from .expression import evaluate_expression
 
 
 class UniqueKeyYamlLoader(yaml.SafeLoader):
@@ -87,6 +88,17 @@ def parse_number(value: Any,
     if isinstance(parsed, (int, float, np.number)) and not isinstance(
             parsed, bool):
         return float(parsed)
+    # qiskit-metal's parse_value leaves spaced unit arithmetic such as
+    # "1.2mm - 0.34mm" as a string. Fall back to the DSL's own expression
+    # evaluator, which handles arithmetic over unit literals.
+    if isinstance(value, str):
+        try:
+            evaluated = evaluate_expression(value, dict(variables or {}))
+        except DesignDslError:
+            evaluated = None
+        if isinstance(evaluated, (int, float, np.number)) and not isinstance(
+                evaluated, bool):
+            return float(evaluated)
     raise DesignDslError(
         f"{owner} must be a numeric value with optional units, got {value!r}")
 
