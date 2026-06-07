@@ -1,0 +1,52 @@
+# =====================================================================
+# cells_2q.meta.yaml — M5a emit_geo cell-library demo (NO authored .geo).
+#
+# A ``cells:`` block lowers v3 component-template instances → a generated
+# ``<stem>.elaborated.geo`` (the emit_geo bridge), which BOTH the GDS and the
+# Gmsh→Palace forks then consume unchanged.  Run:
+#
+#   $env:PYTHONPATH = "src"; python -m quantum_dsl.dsl.geo_build \
+#       examples/dsl/geo/cells_2q.meta.yaml --out-dir build/cells_2q
+#
+# This writes build/cells_2q/cells_2q.elaborated.geo + chip.gds + chip.msh +
+# chip.json (4 carved qubit-pad terminals + one carved chip-wide ground).
+# Units: µm.  Top-level keys ⊆ GEO_META_ROOT_KEYS = {schema, vars, simulation, cells}.
+# =====================================================================
+
+schema: qiskit-metal/design-dsl/3
+
+# Two transmon_pocket qubits, placed ±700 µm apart (via the template's pos_x).
+# ``connection_pads: {}`` keeps the cells clean (just pads + pocket + JJ) so the
+# pads sit disjoint inside the ground's pocket holes.
+cells:
+  - cell_type: transmon_pocket
+    component: Q1
+    x: "-700um"
+    params:
+      connection_pads: {}
+  - cell_type: transmon_pocket
+    component: Q2
+    x: "700um"
+    params:
+      connection_pads: {}
+
+simulation:
+  gmsh:
+    layer_stack:
+      1: {kind: metal, thickness: 2, z: 0, material: pec}
+      3: {kind: dielectric, thickness: -380, z: 0, material: silicon, eps_r: 11.45}
+
+    airbox: {top: 400, bottom: 500, side_buffer: 200}
+
+    mesh: {max_size: 200, min_size: 40}
+
+    gds:
+      lib_name: cells_2q
+      top_cell: cells_2q
+      unit: 1.0e-6
+      precision: 1.0e-9
+      by_role:
+        metal:  {layer: 1, datatype: 0}
+        ground: {layer: 1, datatype: 0}
+
+    solver: {type: Electrostatic, order: 2, l0: 1.0}

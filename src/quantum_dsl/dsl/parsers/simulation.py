@@ -19,6 +19,7 @@ from ..expression import walk_substitute as _walk_substitute
 from ..ir import ComponentIR
 from ..schema import (
     AIRBOX_KEYS,
+    CELL_KEYS,
     CIRCUIT_MODEL_KEYS,
     CIRCUIT_QUBIT_KEYS,
     GDS_LAYER_MAP_ENTRY_KEYS,
@@ -56,6 +57,7 @@ __all__ = [
     "_parse_scalar_with_optional_unit",
     "_parse_unit_value",
     "_parse_circuit_model",
+    "_parse_geo_cells",
     "parse_geo_meta_sidecar",
     "_SIMPLE_UNIT_SUFFIX_RE",
     "_ALLOWED_IMPEDANCE_UNITS",
@@ -895,17 +897,24 @@ def parse_geo_meta_sidecar(path: str | Path) -> dict[str, Any]:
     if not isinstance(variables, Mapping):
         raise DesignDslError(f"{sidecar.name}: vars must be a mapping")
 
-    if "geo" not in raw:
+    # M5a: a 'cells:' block lowers v3 template instances → a generated
+    # <stem>.elaborated.geo (emit_geo bridge).  When present, 'geo' is OPTIONAL
+    # (the geometry is generated, not authored).  Exactly one source is required.
+    cells = _parse_geo_cells(raw.get("cells"), f"{sidecar.name}")
+    geo_path: Path | None = None
+    if "geo" in raw:
+        geo_ref = raw["geo"]
+        if not isinstance(geo_ref, str) or not geo_ref:
+            raise DesignDslError(
+                f"{sidecar.name}: 'geo' must be a non-empty path string")
+        geo_path = (sidecar.parent / geo_ref).resolve()
+        if not geo_path.is_file():
+            raise DesignDslError(
+                f"{sidecar.name}: companion geo file not found: {geo_path}")
+    elif not cells:
         raise DesignDslError(
-            f"{sidecar.name}: 'geo' key (path to companion .geo) is required")
-    geo_ref = raw["geo"]
-    if not isinstance(geo_ref, str) or not geo_ref:
-        raise DesignDslError(
-            f"{sidecar.name}: 'geo' must be a non-empty path string")
-    geo_path = (sidecar.parent / geo_ref).resolve()
-    if not geo_path.is_file():
-        raise DesignDslError(
-            f"{sidecar.name}: companion geo file not found: {geo_path}")
+            f"{sidecar.name}: a 'geo' key (companion .geo) or a 'cells:' block "
+            f"(emit_geo cell instances) is required")
 
     simulation_block = raw.get("simulation") or {}
     if not isinstance(simulation_block, Mapping):
@@ -925,7 +934,52 @@ def parse_geo_meta_sidecar(path: str | Path) -> dict[str, Any]:
 
     return {
         "geo": geo_path,
+        "cells": cells,
         "simulation": simulation_out,
         "vars": dict(variables),
         "circuit_model": circuit_model_out,
     }
+
+
+def _parse_geo_cells(node: Any, where: str) -> list[dict[str, Any]]:
+    """Validate + normalize the optional ``cells:`` block of a geo meta sidecar.
+
+    Each entry lowers one placed v3 component-template cell (the emit_geo
+    bridge).  Returns a list of plain dicts (consumed by
+    ``geo_emit.elaborate_cells``); ``[]`` when absent.  Validation here is
+    structural only — ``cell_type`` resolution and option semantics are deferred
+    to ``build_ir`` at elaboration time.
+    """
+    if node is None:
+        return []
+    if not isinstance(node, list):
+        raise DesignDslError(f"{where}.cells must be a list of cell mappings")
+    cells: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for i, entry in enumerate(node):
+        if not isinstance(entry, Mapping):
+            raise DesignDslError(f"{where}.cells[{i}] must be a mapping")
+        extra = set(entry) - CELL_KEYS
+        if extra:
+            raise DesignDslError(
+                f"{where}.cells[{i}]: unknown key(s) {sorted(extra)} "
+                f"(allowed: {sorted(CELL_KEYS)})")
+        cell_type = entry.get("cell_type")
+        component = entry.get("component")
+        if not isinstance(cell_type, str) or not cell_type:
+            raise DesignDslError(
+                f"{where}.cells[{i}]: 'cell_type' (template id) is required")
+        if not isinstance(component, str) or not component:
+            raise DesignDslError(
+                f"{where}.cells[{i}]: 'component' (unique name) is required")
+        if component in seen:
+            raise DesignDslError(
+                f"{where}.cells: duplicate component name {component!r} "
+                f"(every cell's 'component' must be globally unique)")
+        seen.add(component)
+        params = entry.get("params")
+        if params is not None and not isinstance(params, Mapping):
+            raise DesignDslError(
+                f"{where}.cells[{i}].params must be a mapping")
+        cells.append(dict(entry))
+    return cells

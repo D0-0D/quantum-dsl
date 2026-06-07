@@ -25,8 +25,8 @@ IDs; the **Active path** section is the order for now.
 | R2 | Run Palace on the `.geo` mesh → capacitance matrix | `[x]` | **M3** (live C-matrix on `two_pads`) |
 | R3 | Run circuit-model solver with the C-matrix, save it | `[x]` | **M6** (inverse-cap LOM → tier-2 `hamiltonian` in `chip.results.yaml`) |
 | R4 | Read the QDA review — how/why we compute capacitance | `[x]` | GHz qubit, λ≈cm ≫ footprint≈100µm → lumped model valid → C-matrix → qubit Hamiltonian via circuit quantization + charge-crosstalk (QDA §Layout-sim/Electrostatic + §Hamiltonian derivation) |
-| R5 | Add GDSFactory for visualization | `[ ]` | **M7** |
-| R+ | Cells = polygons **with rounded corners** | `[ ]` | **M5a** (emit_geo, pre-sampled shapely buffers) |
+| R5 | Add GDSFactory for visualization | `[ ]` | **M7** ← NEXT |
+| R+ | Cells = polygons **with rounded corners** | `[x]` | **M5a** (emit_geo: pre-sampled shapely buffers → rounded-corner polygons) |
 
 ---
 
@@ -99,7 +99,7 @@ Goal: one `.geo` + sidecar → `chip.gds` **and** `chip.msh` (msh2.2) + Palace E
 
 ## Active path (correct order)
 
-### M5a — emit_geo cell library (rounded-corner cells)  `[ ]`  ← NEXT
+### M5a — emit_geo cell library (rounded-corner cells)  `[x]`  (DONE — merged)
 Lower the v3 component templates (`transmon_pocket`, then `resonator`/`coupler`) → a flat,
 positive-tone `.geo` so the existing GDS + mesh + Palace-electrostatic pipeline consumes
 parametric, **rounded-corner** cells unchanged (delivers R+). Reuses the entire v3 front-end
@@ -120,18 +120,30 @@ parametric, **rounded-corner** cells unchanged (delivers R+). Reuses the entire 
 - **(#3 curves — ADOPTED)** **pre-sample** shapely buffers → polygon `Line` segments in Python
   (rounded corners come from the buffer); guarantees GDS == mesh parity, sidesteps loader arc sampling.
 
-- [ ] `dsl/geo_emit.py` `emit_geo(design_ir, out_path, *, arc_tol_um)` → `.geo` text (imports **no** gmsh/gdstk).
-- [ ] Positive primitives → OCC `Plane Surface` + call-site `Physical Surface("role::layer::comp::prim")`
-      (`junction.*`→`jj`, else `metal`); paths/junctions buffered to closed polygons at `width/2`.
-- [ ] Synthesized chip-ground + aggregated subtract-as-holes (decision #1).
-- [ ] Pins → plain `port::` dim-1 marker (decision #2).
-- [ ] `cells:` sidecar block (cell_type + globally-unique component + x/y/rot/layer + params) + an
-      **Elaborator** (`build_ir` per instance → `emit_geo` → concat one `<stem>.elaborated.geo`;
-      assert unique `<component>` so `load_geo`'s duplicate-name guard never trips); substitute the
-      elaborated path at `geo_build.py:72` so BOTH forks consume it.
-- [ ] Extend `carve_conductors` to also carve the synthesized **ground** sheet (M3 scope note → full-chip live solve).
-- [ ] **Golden parity test**: elaborated `.geo` physical names + final `assign_physical_groups` names
-      byte-identical to a hand-authored equivalent; GDS layers match; full suite stays green (≥251).
+- [x] `dsl/geo_emit.py` `emit_geo(design_ir, out_path, *, arc_tol_um, ground_margin_um, chip_bbox,
+      emit_ports, cap/join_style)` → `.geo` text (imports **only shapely** — no gmsh/gdstk).
+- [x] Positive primitives → OCC `Plane Surface` + call-site `Physical Surface("role::layer::comp::prim")`
+      (`junction.*`→`jj`, else `metal`); paths/junctions buffered to closed polygons (round joins =
+      rounded corners; flat caps for the lumped JJ).
+- [x] Synthesized chip-ground (one sheet per layer, bbox extent) + aggregated `subtract:true` holes via a
+      single OCC `BooleanDifference` (decision #1). **Discovery:** a multi-loop `Plane Surface` extrudes
+      its holes FILLED → emit the ground via `BooleanDifference` so the holed face extrudes to a true
+      holed prism.
+- [x] Pins → plain `port::` dim-1 marker (decision #2; off in mesh fixtures to keep free edges out).
+- [x] `cells:` sidecar block (`cell_type` + globally-unique `component` + `x/y/rot/layer` + `params`) +
+      an **Elaborator** `elaborate_cells` (`build_ir` per instance → `emit_geo` → concat one
+      `<stem>.elaborated.geo`; asserts unique `<component>`); substituted in `geo_build` so BOTH forks
+      consume it (`geo` becomes optional when `cells:` is present).
+- [x] Extended `carve_conductors` to also carve the synthesized **ground** sheet (`ground_solids`/
+      `ground_faces` → `gnd_layer{N}_sfs`; legacy YAML slab path untouched). **Discovery:** a carved
+      ground coplanar with the substrate top at z=0 destabilises OCC `fragment` → drop the auto substrate
+      top by ε (`CARVED_GROUND_SUBSTRATE_GAP_SI`, 1µm) only when a carved ground is present; `two_pads`
+      (no ground) untouched → its verified C-matrix preserved.
+- [x] **Golden parity test** + `test_geo_emit.py` (11 tests): authored ids + GDS layers + final
+      `assign_physical_groups` names byte-identical to a hand-authored `.geo`; pure-shapely import;
+      Elaborator placement/unique-guard; sidecar parse (geo-optional); `build_geo` cells end-to-end
+      (GDS + msh + carved terminals + carved ground). Example `examples/dsl/geo/cells_2q.meta.yaml`.
+      Worktree suite **262 passed**; **302 passed, 1 skipped** after merge with M6.
 
 ### M6 — Circuit-model solve (R1 + R3)  `[x]`
 Consume the C-matrix → qubit Hamiltonian parameters → save (closes "physical group → circuit model").
@@ -157,7 +169,7 @@ Consume the C-matrix → qubit Hamiltonian parameters → save (closes "physical
       regime f01≤0 leaked a bare ValueError → now a clear DesignDslError) + nits. Full suite
       **290 passed, 1 skipped**; live solve (QDSL_RUN_PALACE=1) verified.
 
-### M7 — GDSFactory visualization (R5)  `[ ]`
+### M7 — GDSFactory visualization (R5)  `[ ]`  ← NEXT
 - [ ] Optional lazy `gdsfactory` dep; read `chip.gds` → preview/plot (matplotlib / KLayout).
 - [ ] Keep **gdstk** as the emitter; gdsfactory is **visualization-only**, additive, optional
       (`import quantum_dsl` must not pull it in).
@@ -216,3 +228,13 @@ Single metal layer + dielectric substrate is the scope; defer until a multi-laye
   reduces to `e²/2C_ii` for one island). NEW pure `circuit_model.py` (no numpy/scqubits) + `circuit_model`
   sidecar block + SI-prefix unit parser + tier-2 `hamiltonian` write-back + `geo_build` wiring. 37 new
   tests (golden values closed-form-verified + gated `Hcpb` cross-check); **288 passed, 1 skipped**, no regressions.
+- [`session/2606080338.md`](session/2606080338.md) — 2026-06-08 · **M5a COMPLETE** (R+): emit_geo
+  cell-library bridge in a worktree. NEW `dsl/geo_emit.py` (`emit_geo` + `elaborate_cells`, pure-shapely)
+  lowers v3 templates → flat positive-tone `.geo`; rounded corners from pre-sampled shapely buffers;
+  `cells:` sidecar (geo-optional) + Elaborator; carved metal **ground** (`carve_conductors` extended,
+  `gnd_layer{N}_sfs`). Two OCC discoveries (multi-loop Plane-Surface fills holes → `BooleanDifference`;
+  carved-ground/substrate z=0 coplanarity destabilises `fragment` → ε z-nudge). 11 new tests incl. golden
+  byte-identical parity; worktree **262 passed**.
+- _(integration, 2026-06-08)_ **Merged M5a + M6** into `feat/native-geo-dsl` (conflicts: `schema.py`/
+  `simulation.py`/journaling, union-resolved; `geo_build.py`/`test_geo_pipeline.py` auto-merged). Full
+  suite **302 passed, 1 skipped**, no regressions. → M7 next.

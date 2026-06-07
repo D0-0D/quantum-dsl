@@ -135,13 +135,15 @@ def test_build_mesh_from_geo_physical_attributes(tmp_path):
     assert all(isinstance(v, int) for v in pa.values())
 
     # expected key groups (byte-identical to the YAML path naming).
-    # Approach A: the metal pad is carved OUT (a void), so only its surface group
-    # 'P_pad_sfs' is registered — there is NO 'P_pad' 3D volume group. The ground
-    # sheet stays a meshed slab (gnd_layer1 volume + gnd_layer1_sfs).
+    # Approach A: BOTH the metal pad AND the metal ground sheet are carved OUT
+    # (voids), so only their *surface* groups are registered — there is NO 'P_pad'
+    # or 'gnd_layer1' 3D volume group (M5a carves the metal ground like a terminal
+    # so its wall is an EXTERIOR Ground boundary, unblocking the full-chip solve).
     names = set(pa)
-    assert {"gnd_layer1", "gnd_layer1_sfs", "substrate_layer3",
+    assert {"gnd_layer1_sfs", "substrate_layer3",
             "vacuum", "vacuum_outer", "P_pad_sfs"} <= names
-    assert "P_pad" not in names  # carved conductor has no 3D volume group
+    assert "P_pad" not in names       # carved conductor has no 3D volume group
+    assert "gnd_layer1" not in names  # carved ground has no 3D volume group
 
     # physical_groups and physical_attributes cover the same name set.
     assert set(res.physical_groups) == names
@@ -167,9 +169,12 @@ def test_geo_group_names_match_geo_name_to_group(tmp_path):
     # volume-name stem 'P_pad', but the REGISTERED group is the surface 'P_pad_sfs'.
     assert geo_name_to_group("metal", 1, "P", "pad") == "P_pad"
     assert "P_pad_sfs" in names
-    # ground::1::chip::gnd -> 'gnd_layer1'.
+    # ground::1::chip::gnd is carved (M5a Approach A): geo_name_to_group maps the
+    # volume-name stem 'gnd_layer1', but the REGISTERED group is the *surface*
+    # 'gnd_layer1_sfs' (no 3D ground volume — same as the carved pad terminals).
     assert geo_name_to_group("ground", 1, "chip", "gnd") == "gnd_layer1"
-    assert geo_name_to_group("ground", 1, "chip", "gnd") in names
+    assert "gnd_layer1_sfs" in names
+    assert "gnd_layer1" not in names
     # dielectric substrate auto-derived for layer 3 -> 'substrate_layer3'.
     assert geo_name_to_group("substrate", 3, "chip", "sub") == "substrate_layer3"
     assert "substrate_layer3" in names

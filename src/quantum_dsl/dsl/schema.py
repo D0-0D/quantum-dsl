@@ -28,6 +28,7 @@ __all__ = [
     "GEO_SURFACE_ROLES",
     "GEO_MARKER_ROLES",
     "GEO_META_ROOT_KEYS",
+    "CELL_KEYS",
     "GDS_SIM_KEYS",
     "GDS_LAYER_MAP_ENTRY_KEYS",
     "SOLVER_KEYS",
@@ -94,14 +95,25 @@ GEO_ROLES = GEO_SURFACE_ROLES | GEO_MARKER_ROLES
 # optional junction inputs (islands + L_J/E_J) for the capacitance→Hamiltonian
 # solve.  ``circuit_model`` is deliberately NOT named ``circuit``/``hamiltonian``
 # (those root keys belong to the legacy full DSL with a different shape — the
-# geo sidecar never feeds the legacy builder, so the two never meet).
-GEO_META_ROOT_KEYS = {"schema", "geo", "vars", "simulation", "circuit_model"}
+# geo sidecar never feeds the legacy builder, so the two never meet).  ``cells``
+# (M5a) is an OPTIONAL block that lowers v3 component-template instances → a
+# generated ``<stem>.elaborated.geo`` (the emit_geo bridge); when present, ``geo``
+# is optional (the geometry is generated, not authored).
+GEO_META_ROOT_KEYS = {"schema", "geo", "vars", "simulation", "circuit_model", "cells"}
 
 # *.meta.yaml ``circuit_model`` block (M6 junction inputs → circuit_model.py).
 CIRCUIT_MODEL_KEYS = {"qubits"}
 # A single qubit entry: a name, exactly one island ref (``island`` scalar or
 # ``islands`` list), and exactly one of L_J / E_J.
 CIRCUIT_QUBIT_KEYS = {"name", "island", "islands", "L_J", "E_J"}
+
+# A single ``cells:`` instance — one placed v3 component-template cell.
+# ``cell_type`` = template id (e.g. transmon_pocket); ``component`` = the globally
+# unique component name (becomes the ``::<component>::`` field of every Physical
+# name, so it MUST be unique across cells — load_geo's duplicate guard enforces
+# it).  ``x/y/rot/layer`` place the cell (→ template pos_x/pos_y/orientation/layer
+# options); ``params`` overrides any template option.
+CELL_KEYS = {"cell_type", "component", "x", "y", "rot", "layer", "params"}
 
 # simulation.gmsh.gds block: GDS layer map + gdstk library settings.
 GDS_SIM_KEYS = {
