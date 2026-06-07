@@ -24,8 +24,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional, Union
 
-from qiskit_metal.renderers.renderer_gmsh.gmsh_utils import _require_gmsh
-
 from .builder import (
     ComponentIR,
     DesignIR,
@@ -62,6 +60,19 @@ try:
     import gmsh
 except ImportError:  # pragma: no cover
     gmsh = None
+
+
+def _require_gmsh() -> None:
+    """Raise a clear error if the optional ``gmsh`` dependency is missing.
+
+    qiskit-metal 不再公开 ``gmsh_utils._require_gmsh``, 这里就地实现同样的 guard,
+    依赖本模块顶层的 ``import gmsh`` try/except 结果。
+    """
+    if gmsh is None:  # pragma: no cover
+        raise ImportError(
+            "Gmsh 网格功能需要可选依赖 `gmsh`。请安装后重试 "
+            "(例如 `pip install gmsh` 或 `conda install -c conda-forge gmsh`)。"
+        )
 
 
 __all__ = [
@@ -438,13 +449,15 @@ def build_mesh(source: Union[str, Path, DesignIR],
         physical_attributes: dict[str, int] = {}
 
         if generate:
-            # Stage D': 端口面解析 (cut 之后, fragment 之前) — fragment 也会
-            # 把 ports 当作 input 让 remap 正常走 (M4 r1 观察 #2, M5 修)。
-            # 必须在 fragment 之前 resolve, 因为后者会重置 face tag。
-            if tracker.port_box_specs:
-                resolve_port_surfaces(tracker)
             # Stage E: fragment (共面缝合, dimtag 重映射)
             fragment_everything(tracker)
+            # Stage D': 端口面解析 — 放在 fragment *之后*。早期版本在 fragment
+            # 之前 resolve 再依赖 remap 跟踪 face tag, 但部分 OCC 版本会在
+            # fragment 时把作为 input 的 port face 消耗掉 (remap 返回空 → tag
+            # 丢失)。直接在最终几何上重新解析端口面更稳健, 且天然拿到 fragment
+            # 之后的真实 face tag, 无需 remap。
+            if tracker.port_box_specs:
+                resolve_port_surfaces(tracker)
             # Stage F: physical groups (+ integer attributes for Palace)
             physical_groups, physical_attributes = assign_physical_groups(
                 tracker, resolved_options.layer_stack,
@@ -617,10 +630,16 @@ def build_mesh_from_geo(geo_path: Union[str, Path],
         physical_attributes: dict[str, int] = {}
 
         if generate:
-            if tracker.port_box_specs:
-                resolve_port_surfaces(tracker)
             # Stage E: fragment (共面缝合, dimtag 重映射)
             fragment_everything(tracker)
+            # Stage D': 端口面解析放在 fragment *之后* — 与 yaml 路径一致。
+            # resolve_port_surfaces 只读最终几何 (getBoundary/getCenterOfMass),
+            # 不依赖 fragment 前状态; 而部分 OCC 版本会在 fragment 时把作为
+            # input 的 port face 消耗掉, 故 fragment 后再解析更稳健。
+            # 注: geo M1 暂不产出 port (port_box_specs 恒空), 此处为前瞻一致性,
+            # port 正式落地见 M5。
+            if tracker.port_box_specs:
+                resolve_port_surfaces(tracker)
             # IMPORTANT: drop the AUTHORED physical groups so assign_physical_
             # groups (re-registering from the populated tracker) owns ALL output
             # names — byte-identical to the YAML path (Palace stays source-
