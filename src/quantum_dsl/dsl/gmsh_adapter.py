@@ -61,6 +61,7 @@ __all__ = [
     "GmshOptions",
     "GmshMeshResult",
     "build_mesh",
+    "build_geo",
     "DEFAULT_LAYER_STACK_MM",
     "DEFAULT_AIRBOX_MM",
 ]
@@ -424,6 +425,28 @@ def build_mesh(source: Union[str, Path, DesignIR],
         mesh_path: Optional[Path] = None
         physical_groups: dict[str, tuple[int, list[int]]] = {}
 
+        # If user requested a geometry script output (.geo / .geo_unrolled),
+        # write it now from the current OCC model. This allows using Gmsh GUI
+        # / CLI to inspect or further process the geometry without generating
+        # a mesh.
+        if output_path is not None:
+            fmt = resolved_options.output_format
+            if fmt in ("geo_unrolled", "geo"):
+                mesh_path = write_mesh(Path(output_path), output_format=fmt,
+                                       output_scaling=resolved_options.output_scaling)
+                # If caller didn't request full generate, return early with
+                # the geometry file written.
+                if not generate:
+                    result = GmshMeshResult(
+                        mesh_path=mesh_path,
+                        physical_groups=physical_groups,
+                        bounding_box_m=bbox_si,
+                        options=resolved_options,
+                        ir=ir,
+                    )
+                    _gmsh_finalize_optional(show_gui)
+                    return result
+
         if generate:
             # Stage D': 端口面解析 (cut 之后, fragment 之前) — fragment 也会
             # 把 ports 当作 input 让 remap 正常走 (M4 r1 观察 #2, M5 修)。
@@ -465,3 +488,22 @@ def build_mesh(source: Union[str, Path, DesignIR],
         # stale mesh options across repeated build_mesh() calls in notebooks.
         if _did_initialize and gmsh is not None and gmsh.isInitialized():
             gmsh.finalize()
+
+
+def build_geo(source: Union[str, Path, DesignIR],
+              *,
+              output_path: Optional[Union[str, Path]] = None,
+              options: Optional[dict[str, Any]] = None,
+              show_gui: bool = False,
+              generate: bool = False) -> GmshMeshResult:
+    """Convenience wrapper: export the DSL geometry as a Gmsh `.geo`/`.geo_unrolled` script.
+
+    This sets `options['output']['format'] = 'geo_unrolled'` and forwards to
+    `build_mesh`. By default `generate=False` to stop before mesh generation.
+    """
+    merged_options = dict(options or {})
+    out_block = dict(merged_options.get("output") or {})
+    out_block["format"] = "geo_unrolled"
+    merged_options["output"] = out_block
+    return build_mesh(source, output_path=output_path, options=merged_options,
+                      show_gui=show_gui, generate=generate)

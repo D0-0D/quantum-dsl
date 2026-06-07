@@ -174,7 +174,7 @@ def generate_mesh(dim: int = 3) -> None:
     gmsh.model.mesh.generate(dim)
 
 
-_KNOWN_FORMATS = {"msh4", "msh2", "vtk", "stl", "step", "iges", "brep", "pos"}
+_KNOWN_FORMATS = {"msh4", "msh2", "vtk", "stl", "step", "iges", "brep", "pos", "geo_unrolled", "geo"}
 
 
 def write_mesh(output_path: Path, output_format: str = "msh4",
@@ -189,6 +189,14 @@ def write_mesh(output_path: Path, output_format: str = "msh4",
         raise ValueError(
             f"Unknown output format {output_format!r}; "
             f"known: {sorted(_KNOWN_FORMATS)}")
+    # geo / geo_unrolled are written directly as geometry scripts; no mesh
+    # options should be set for them.
+    if output_format in ("geo_unrolled", "geo"):
+        output_path = Path(output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        gmsh.write(str(output_path))
+        return output_path
+
     gmsh.option.setNumber("Mesh.ScalingFactor", float(output_scaling))
     if output_format == "msh4":
         gmsh.option.setNumber("Mesh.MshFileVersion", 4.1)
