@@ -51,7 +51,8 @@ R3 circuit solve ✅, R4 read QDA ✅, R5 GDSFactory) + verbal "电容矩阵就�
 - `1e91315` **M3**: live Palace capacitance write-back + conductors-as-voids mesh.
 
 ## Open / next steps
-- **PR open**: `feat/native-geo-dsl` → `main` (M5a + M6 + M7; current phase complete).
+- **PR open**: [#14](https://github.com/D0-0D/quantum-dsl/pull/14) `feat/native-geo-dsl` → `main`
+  (the whole native-geo pivot M1/M3/M5a/M6/M7; current phase complete).
 - **viz**: install the `viz` extra (`gdsfactory`) to exercise that backend live — it is absent in
   metal-env, so its 2 tests are gated/skipped (the matplotlib fallback IS verified).
 - **M5a follow-ups**: full-chip live Palace solve on an emit_geo ground design (gated); connection-pad
