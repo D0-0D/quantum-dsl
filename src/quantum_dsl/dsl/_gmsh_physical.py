@@ -251,6 +251,15 @@ def assign_physical_groups(tracker: GeomTracker,
                 registry.add(vol_name, dim=3, tags=tags)
                 registry.add(sfs_name, dim=2, tags=_surface_tags_of(tags))
 
+    # 2b) carved conductor terminals (Approach A): 空腔壁 → {C}_{P}_sfs (dim=2)。
+    # 导体已被 cut 出真空, 无 dim=3 体; palace 只按 '_sfs' 后缀匹配 Terminal, 故
+    # 名字与 slab 路径字节一致 (component_volume 体组消失, palace 从不消费它)。
+    for layer, named in tracker.conductor_faces.items():
+        for (component, primitive), tags in named.items():
+            sfs_name = PHYSICAL_GROUP_NAMING["component_surface"].format(
+                component=component, primitive=primitive)
+            registry.add(sfs_name, dim=2, tags=tags)
+
     # 3) JJ surfaces (2D, 不 extrude)
     for layer, named in tracker.juncs.items():
         for (component, primitive), tags in named.items():
@@ -263,8 +272,13 @@ def assign_physical_groups(tracker: GeomTracker,
         vac_name = PHYSICAL_GROUP_NAMING["vacuum_volume"]
         outer_name = PHYSICAL_GROUP_NAMING["vacuum_outer"]
         registry.add(vac_name, dim=3, tags=[tracker.vacuum_box])
-        registry.add(outer_name, dim=2,
-                     tags=_surface_tags_of([tracker.vacuum_box]))
+        # carve 路径 (Approach A): vacuum_outer = 域 combined 边界 − 空腔壁
+        # (resolve_conductor_faces 已算好, 排除了与 substrate 的内部界面 + 端子腔壁,
+        # 否则 _surface_tags_of(vacuum) 会把腔壁/内部界面错并进 Ground)。
+        # legacy / 无 carve: 退回真空体边界。
+        outer_tags = (tracker.vacuum_outer_faces
+                      or _surface_tags_of([tracker.vacuum_box]))
+        registry.add(outer_name, dim=2, tags=outer_tags)
 
     # 5) 端口面 (M4): tracker.ports 由 `resolve_port_surfaces` 在 cut
     # 之后填好。端口元数据 (`is_lumped` 等) 在 stage B' 时由

@@ -476,7 +476,14 @@ def populate_tracker_from_geo(geo_surfaces: list[GeoSurface],
                     f"{surf.primitive} (surface {ent}).")
             volume = volume_tags[0]
             if surf.role == "metal":
-                tracker.add_poly(surf.component, surf.primitive, layer, volume)
+                # Approach A: a metal terminal is a PEC equipotential — it is NOT
+                # meshed as a conductor. Stash the extruded solid; carve_conductors
+                # later cuts it OUT of the vacuum box so the cavity wall becomes an
+                # EXTERIOR Terminal boundary (Palace's invariant: a Terminal face
+                # must have ≤1 adjacent element). Meshing it as a slab makes the
+                # _sfs face INTERIOR (2 elements) → MFEM rejects it at solve time.
+                tracker.conductor_solids.setdefault(layer, {}).setdefault(
+                    (surf.component, surf.primitive), []).append(volume)
             else:  # ground / substrate both land in layer_ground
                 tracker.layer_ground.setdefault(layer, []).append(volume)
 

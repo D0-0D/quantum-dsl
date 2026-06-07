@@ -17,6 +17,7 @@ clean up. ``load_geo`` does NOT finalize — the test owns and finalizes that on
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -36,6 +37,7 @@ from quantum_dsl.dsl._gmsh_physical import geo_name_to_group  # noqa: E402
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 TINY_GEO = FIXTURES / "tiny_chip.geo"
 TINY_META = FIXTURES / "tiny_chip.meta.yaml"
+TWO_PADS_META = FIXTURES / "two_pads.meta.yaml"
 
 
 @pytest.fixture(autouse=True)
@@ -133,9 +135,13 @@ def test_build_mesh_from_geo_physical_attributes(tmp_path):
     assert all(isinstance(v, int) for v in pa.values())
 
     # expected key groups (byte-identical to the YAML path naming).
+    # Approach A: the metal pad is carved OUT (a void), so only its surface group
+    # 'P_pad_sfs' is registered — there is NO 'P_pad' 3D volume group. The ground
+    # sheet stays a meshed slab (gnd_layer1 volume + gnd_layer1_sfs).
     names = set(pa)
     assert {"gnd_layer1", "gnd_layer1_sfs", "substrate_layer3",
-            "vacuum", "vacuum_outer", "P_pad", "P_pad_sfs"} <= names
+            "vacuum", "vacuum_outer", "P_pad_sfs"} <= names
+    assert "P_pad" not in names  # carved conductor has no 3D volume group
 
     # physical_groups and physical_attributes cover the same name set.
     assert set(res.physical_groups) == names
@@ -157,12 +163,66 @@ def test_geo_group_names_match_geo_name_to_group(tmp_path):
         output_path=tmp_path / "chip.msh", generate=True)
     names = set(res.physical_groups)
 
-    # metal::1::P::pad -> volume 'P_pad' (geo_name_to_group is the bridge).
+    # metal::1::P::pad is carved (Approach A): geo_name_to_group still maps the
+    # volume-name stem 'P_pad', but the REGISTERED group is the surface 'P_pad_sfs'.
     assert geo_name_to_group("metal", 1, "P", "pad") == "P_pad"
-    assert geo_name_to_group("metal", 1, "P", "pad") in names
+    assert "P_pad_sfs" in names
     # ground::1::chip::gnd -> 'gnd_layer1'.
     assert geo_name_to_group("ground", 1, "chip", "gnd") == "gnd_layer1"
     assert geo_name_to_group("ground", 1, "chip", "gnd") in names
     # dielectric substrate auto-derived for layer 3 -> 'substrate_layer3'.
     assert geo_name_to_group("substrate", 3, "chip", "sub") == "substrate_layer3"
     assert "substrate_layer3" in names
+
+
+# -----------------------------------------------------------------------------
+# two_pads: conductors-as-voids carve -> only *_sfs terminals, no 3D conductor vol
+# -----------------------------------------------------------------------------
+
+def test_two_pads_carve_groups(tmp_path):
+    """Approach A on the clean 2-conductor reference: two carved terminals
+    (A_pad_sfs, B_pad_sfs) + substrate + vacuum + vacuum_outer; NO pad volumes."""
+    meta = parse_geo_meta_sidecar(TWO_PADS_META)
+    res = build_mesh_from_geo(
+        meta["geo"], meta["simulation"]["gmsh"],
+        output_path=tmp_path / "chip.msh", generate=True)
+    names = set(res.physical_groups)
+    assert {"A_pad_sfs", "B_pad_sfs", "substrate_layer3",
+            "vacuum", "vacuum_outer"} <= names
+    # carved conductors have no 3D volume group, and there is no ground sheet.
+    assert "A_pad" not in names and "B_pad" not in names
+    assert not any(n.startswith("gnd_") for n in names)
+
+
+# -----------------------------------------------------------------------------
+# LIVE Palace solve (gated): two_pads -> known-sign 2x2 capacitance matrix.
+# Slow + needs Palace (native or WSL spack). Enable with QDSL_RUN_PALACE=1.
+# -----------------------------------------------------------------------------
+
+@pytest.mark.skipif(
+    not os.environ.get("QDSL_RUN_PALACE"),
+    reason="live Palace solve; set QDSL_RUN_PALACE=1 (needs Palace/WSL spack)")
+def test_two_pads_live_capacitance_matrix(tmp_path):
+    import yaml
+    from quantum_dsl.dsl.geo_build import build_geo
+
+    res = build_geo(meta_path=str(TWO_PADS_META), out_dir=str(tmp_path),
+                    run_palace=True, dry_run=False)
+    assert res["results"] is not None, "no chip.results.yaml produced"
+    doc = yaml.safe_load(Path(res["results"]).read_text(encoding="utf-8"))
+
+    cap = doc["capacitance"]
+    assert cap["available"] is True and cap["units"] == "fF"
+    # row/col binding = the two carved terminals, in sorted order.
+    assert [t["group"] for t in cap["terminals"]] == ["A_pad_sfs", "B_pad_sfs"]
+
+    m = cap["maxwell"]            # Maxwell matrix: +diagonal, -offdiagonal, symmetric
+    assert len(m) == 2 and len(m[0]) == 2
+    assert m[0][0] > 0 and m[1][1] > 0
+    assert m[0][1] < 0 and m[1][0] < 0
+    assert abs(m[0][1] - m[1][0]) < 1e-6
+    cm = cap["mutual"]           # mutual matrix: all-positive
+    assert all(cm[i][j] > 0 for i in range(2) for j in range(2))
+    # consistency: Cm[0][0] == C[0][0] + C[0][1];  Cm[0][1] == -C[0][1]
+    assert abs(cm[0][0] - (m[0][0] + m[0][1])) < 1e-6
+    assert abs(cm[0][1] - (-m[0][1])) < 1e-6

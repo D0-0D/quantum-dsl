@@ -237,6 +237,113 @@ def fragment_everything(tracker: GeomTracker) -> None:
     gmsh.model.occ.synchronize()
 
 
+def _centroid_in_bbox(bb: tuple, c: tuple, tol: float = 1e-9) -> bool:
+    """face 质心 ``c=(x,y,z)`` 是否落在 3D bbox ``bb=(x0,y0,z0,x1,y1,z1)`` 内 (含 tol)。"""
+    x0, y0, z0, x1, y1, z1 = bb
+    return (x0 - tol <= c[0] <= x1 + tol and
+            y0 - tol <= c[1] <= y1 + tol and
+            z0 - tol <= c[2] <= z1 + tol)
+
+
+def carve_conductors(tracker: GeomTracker) -> None:
+    """Approach A: 把金属 terminal 实体 **从 vacuum_box 挖空** (occ.cut)。
+
+    必须在 ``render_vacuum_box`` (vacuum_box 已建) 之后、``fragment_everything``
+    之前调用。挖空后真空里出现导体形状的空腔, 其腔壁在 fragment 后成为 **外部**
+    边界面 (≤1 相邻单元), 满足 Palace 的 Terminal 边界不变量。挖空前先记录每个
+    terminal 的 3D bbox, 供 ``resolve_conductor_faces`` 按质心把腔壁归位。
+
+    无金属 terminal (e.g. 纯 ground 设计) 或无 vacuum_box → no-op。
+    """
+    if gmsh is None:
+        raise ImportError("gmsh required for carve_conductors")
+    if tracker.vacuum_box is None or not tracker.conductor_solids:
+        return
+
+    cut_tools: list[tuple[int, int]] = []
+    for layer, named in tracker.conductor_solids.items():
+        for (component, primitive), tags in named.items():
+            if not tags:
+                continue
+            # union bbox over this terminal's solid(s) (M1: 通常 1 个)
+            mins = [float("inf")] * 3
+            maxs = [float("-inf")] * 3
+            for t in tags:
+                bb = gmsh.model.getBoundingBox(3, t)
+                for i in range(3):
+                    mins[i] = min(mins[i], bb[i])
+                    maxs[i] = max(maxs[i], bb[i + 3])
+                cut_tools.append((3, t))
+            tracker.conductor_bbox[(layer, component, primitive)] = (
+                mins[0], mins[1], mins[2], maxs[0], maxs[1], maxs[2])
+
+    if not cut_tools:
+        return
+
+    new_vac, _ = gmsh.model.occ.cut(
+        [(3, tracker.vacuum_box)], cut_tools,
+        removeObject=True, removeTool=True)
+    vac_tags = [t for (d, t) in new_vac if d == 3]
+    if len(vac_tags) != 1:
+        # Carving disjoint cavities out of one box keeps it connected (1 volume).
+        # A split (multiple volumes) would break the single-'vacuum' assumption in
+        # build_palace_config — surface it loudly rather than silently mis-register.
+        import warnings
+        warnings.warn(
+            f"carve_conductors: vacuum split into {len(vac_tags)} volumes "
+            f"{vac_tags}; build_palace_config assumes one 'vacuum' group.",
+            stacklevel=2)
+    tracker.vacuum_box = vac_tags[0] if vac_tags else None
+    tracker.conductor_solids.clear()  # consumed by the cut
+    gmsh.model.occ.synchronize()
+
+
+def resolve_conductor_faces(tracker: GeomTracker,
+                            layer_stack_si: dict[int, dict]) -> None:
+    """carve + fragment 之后, 把空腔壁 face 归位到各 terminal (Terminal 出表面)。
+
+    思路同 ``resolve_port_surfaces`` (fragment 后按几何解析): 取 (vacuum +
+    dielectric substrate) 域的 **combined** 边界 (丢掉内部 substrate/vacuum 界面,
+    保留外部面 + 空腔壁), 用挖空前记录的 ``conductor_bbox`` 把每个 face 按质心
+    归到 ``(component, primitive)``; 落在任一 terminal bbox 内 → ``conductor_faces``,
+    其余 → ``vacuum_outer_faces`` (carve 版真空外边界)。
+    """
+    if gmsh is None:
+        raise ImportError("gmsh required for resolve_conductor_faces")
+    if not tracker.conductor_bbox:
+        return
+
+    domain: list[tuple[int, int]] = []
+    if tracker.vacuum_box is not None:
+        domain.append((3, tracker.vacuum_box))
+    for layer, spec in layer_stack_si.items():
+        if spec.get("kind") == "dielectric":
+            domain.extend((3, t) for t in tracker.layer_ground.get(layer, []))
+    if not domain:
+        return
+
+    boundary = gmsh.model.getBoundary(
+        domain, combined=True, oriented=False, recursive=False)
+    outer: list[int] = []
+    for dim, tag in boundary:
+        if dim != 2:
+            continue
+        face = abs(int(tag))
+        c = gmsh.model.occ.getCenterOfMass(2, face)
+        hit = None
+        for (layer, component, primitive), bb in tracker.conductor_bbox.items():
+            if _centroid_in_bbox(bb, c):
+                hit = (layer, component, primitive)
+                break
+        if hit is None:
+            outer.append(face)
+        else:
+            layer, component, primitive = hit
+            tracker.conductor_faces.setdefault(layer, {}).setdefault(
+                (component, primitive), []).append(face)
+    tracker.vacuum_outer_faces = outer
+
+
 def apply_cuts(tracker: GeomTracker,
                layer_stack_si: dict[int, dict] | None = None) -> None:
     """把 `tracker.subtracts + endcap_subtracts` 从对应 layer ground 里 cut 出去。
