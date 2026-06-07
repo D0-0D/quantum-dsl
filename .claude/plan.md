@@ -70,5 +70,6 @@ Goal: one `.geo` + sidecar → `chip.gds` **and** `chip.msh` (msh2.2) + Palace E
   over local WIP fixes: local `_require_gmsh` (qiskit-metal 0.5.1 dropped the export — confirmed
   load-bearing), `parse_number` expression fallback, **port-resolve moved after `fragment`** (both
   pipelines; geo guard dormant til M5), `.gitignore` local gmsh SDK. Notebook discarded (format churn).
-  Configured WSL env (conda **`quantum_dsl`** + spack **Palace 0.16**, `PALACE_BIN` persisted) and fixed
-  cross-platform `_to_wsl_path`. ✅ **236 passed**; `geo_build --run-palace --dry-run` passes.
+  Configured WSL env (conda **`metal-env`**, renamed from `quantum_dsl` to match Windows + spack
+  **Palace 0.16**, `PALACE_BIN` persisted) and fixed cross-platform `_to_wsl_path`. ✅ **236 passed**;
+  `geo_build --run-palace --dry-run` passes.
