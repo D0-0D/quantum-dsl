@@ -1,6 +1,12 @@
-# AGENTS.md
+# CLAUDE.md
 
 Guidance for AI agents working in this repository.
+
+> **⚠️ This is an ACTIVE, IN-PROGRESS project — not a finished codebase.** Work is tracked across
+> milestones M1–M5. **Before doing anything, read `.claude/status.md` (the current-state snapshot)
+> and `.claude/plan.md` (the milestone checklist).** Do not assume the project is complete or guess
+> at its state — these two files are the source of truth for where things stand. See
+> **[Project journaling](#project-journaling--keep-these-up-to-date)** below; keeping them current is mandatory.
 
 ## Project
 
@@ -58,20 +64,27 @@ $env:PYTHONPATH = "src"; python -m quantum_dsl.dsl.geo_build examples/dsl/geo/ch
 
 ## Project journaling — KEEP THESE UP TO DATE
 
-This repo tracks progress in `.claude/`. As an agent working here you MUST maintain them:
+This repo tracks progress in `.claude/`. **Read these at the START of every session** (this is an
+in-progress project — never assume its state, look it up). As an agent working here you MUST maintain them:
 
-1. **`.claude/plan.md`** — the milestone progress tracker (checklist **M1–M5**, legend
+1. **`.claude/status.md`** — the current-state snapshot ("where are we right now"): active branch,
+   current milestone, test status, end-to-end status, recent notable commits, immediate next steps.
+   - At the **start** of a session, read it **first** for the headline state — it's faster to digest
+     than the full checklist.
+   - Refresh it whenever the headline state changes (a milestone flips, a branch merges, the
+     test count changes, or a notable commit lands).
+2. **`.claude/plan.md`** — the milestone progress tracker (checklist **M1–M5**, legend
    `[x]` done / `[~]` in progress / `[ ]` not started).
-   - At the **start** of a session, read it to see current state.
+   - At the **start** of a session, read it to see detailed current state.
    - As work lands, update the relevant checklist items (flip `[ ]`→`[~]`→`[x]`, edit the bullet text
      to reflect what was actually built/verified).
    - The **bottom** of `plan.md` has a **`## Session logs`** index — add one line per session log.
-2. **`.claude/session/<yyMMddhhmm>.md`** — a per-session log (timestamp via
+3. **`.claude/session/<yyMMddhhmm>.md`** — a per-session log (timestamp via
    `Get-Date -Format 'yyMMddHHmm'`). Record: goal, locked decisions, work done, verification results
    (commands + pass/fail), and any open issues / next steps. Append a "Resolution" section when an
    open issue is closed.
    - Create a **new** session-log file for a new working session; **append** within the same session.
    - After creating/updating a session log, add/refresh its line in the `plan.md` Session-logs index.
 
-Keep both concise and factual. The full design reference for the geometry pivot lives at
+Keep all three concise and factual. The full design reference for the geometry pivot lives at
 `C:\Users\Administrator\.claude\plans\gmsh-dsl-expressive-perlis.md`.
