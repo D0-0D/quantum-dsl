@@ -20,7 +20,7 @@ __all__ = [
 
 @dataclass
 class PrimitiveIR:
-    """A resolved geometry primitive in Metal user units."""
+    """A resolved geometry primitive in Metal user units (µm; see _units)."""
 
     component: str
     name: str

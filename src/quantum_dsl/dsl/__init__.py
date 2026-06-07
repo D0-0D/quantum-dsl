@@ -3,6 +3,10 @@
 
 from __future__ import annotations
 
+# Import first: applies the µm default-unit override before any parse_value
+# call (see quantum_dsl.dsl._units).
+from . import _units  # noqa: F401
+
 from .builder import (
     BUILTIN_DESIGNS,
     CURRENT_SCHEMA,

@@ -123,9 +123,9 @@ geometry:
         - {name: end, points: [["${qx} - ${bus_attach}", -6um], ["${qx} - ${bus_attach}", 6um]],
            width: "${circuit.bus.width}", gap: "${circuit.bus.gap}"}
 
-# 仿真前端 (Gmsh) 元数据。所有长度字面量解析进 IR 后保持 mm float, 与
+# 仿真前端 (Gmsh) 元数据。所有长度字面量解析进 IR 后保持 µm float, 与
 # PrimitiveIR.geometry 单位一致; adapter 入口 (build_mesh) 会一次性
-# × 1e-3 转 SI。不写 simulation: 段时 DesignIR.simulation == {}, 与旧
+# × 1e-6 转 SI。不写 simulation: 段时 DesignIR.simulation == {}, 与旧
 # YAML 100% 向后兼容; 这里给出 chain_2q 的最小可用值, 仅供 gmsh adapter
 # 烟囱测试参考。
 #

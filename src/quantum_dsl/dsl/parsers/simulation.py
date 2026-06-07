@@ -56,7 +56,7 @@ def _parse_scalar_with_optional_unit(value: Any, variables: Mapping[str, Any],
 
     Dedicated to impedance / eps_r / tan_delta / scaling / value fields that
     use non-length units.  Length fields should use ``_parse_number``
-    (``parse_value``, default mm).  ``parse_value`` would raise a pint dimension
+    (``parse_value``, default µm).  ``parse_value`` would raise a pint dimension
     error for ``"50ohm"`` and fall back to the raw string, so here we strip the
     allowed unit suffix manually before calling ``float()``.  ``allowed_units``
     containing ``""`` means bare numbers are accepted.
@@ -91,9 +91,9 @@ def _parse_simulation(spec: Any, ctx: Mapping[str, Any],
                       components: list[ComponentIR]) -> dict[str, Any]:
     """Resolve the optional ``simulation`` block into plain Python values.
 
-    All length literals (``"12um"`` etc.) are parsed here into mm floats,
+    All length literals (``"12um"`` etc.) are parsed here into µm floats,
     consistent with ``PrimitiveIR.geometry`` / ``PinIR.width``; the adapter
-    entry point multiplies by 1e-3 to convert to SI.  The returned dict
+    entry point multiplies by 1e-6 to convert to SI.  The returned dict
     contains only resolved values — no ``${...}`` strings remain.
     """
     if spec is None:

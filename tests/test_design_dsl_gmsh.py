@@ -14,8 +14,8 @@ import pytest
 gmsh = pytest.importorskip("gmsh")
 
 from quantum_dsl.dsl.gmsh_adapter import (  # noqa: E402
-    DEFAULT_AIRBOX_MM,
-    DEFAULT_LAYER_STACK_MM,
+    DEFAULT_AIRBOX_UM,
+    DEFAULT_LAYER_STACK_UM,
     GmshMeshResult,
     GmshOptions,
     build_mesh,
@@ -87,7 +87,7 @@ def test_chain_2q_native_builds_geometry():
 
 
 def test_simulation_options_si_units():
-    """layer_stack / airbox 在 GmshOptions 里是 SI (米); IR 中还是 mm float。"""
+    """layer_stack / airbox 在 GmshOptions 里是 SI (米); IR 中还是 µm float。"""
     result = build_mesh(EXAMPLE, generate=False)
     options = result.options
     # chain_2q_native 的 layer 1 厚度 2um = 2e-6 m
@@ -134,13 +134,13 @@ geometry:
 
 def test_default_constants_match_layer_stack_handler_values():
     """这条测试是契约性的: 改默认值必须显式更新 plan §0 数值对齐说明。"""
-    assert DEFAULT_LAYER_STACK_MM == {
-        1: {"kind": "metal", "thickness": 0.002, "z": 0.0, "material": "pec"},
-        3: {"kind": "dielectric", "thickness": -0.75, "z": 0.0,
+    assert DEFAULT_LAYER_STACK_UM == {
+        1: {"kind": "metal", "thickness": 2.0, "z": 0.0, "material": "pec"},
+        3: {"kind": "dielectric", "thickness": -750.0, "z": 0.0,
             "material": "silicon", "eps_r": 11.45},
     }
-    assert DEFAULT_AIRBOX_MM == {
-        "top": 0.89, "bottom": 1.65, "side_buffer": 0.2,
+    assert DEFAULT_AIRBOX_UM == {
+        "top": 890.0, "bottom": 1650.0, "side_buffer": 200.0,
     }
 
 
@@ -170,9 +170,9 @@ def test_options_kwarg_all_dielectric_rejected():
             EXAMPLE,
             options={"layer_stack": {
                 # Override layer 1 (metal in YAML) → dielectric
-                1: {"kind": "dielectric", "thickness": 0.002, "z": 0.0},
+                1: {"kind": "dielectric", "thickness": 2.0, "z": 0.0},
                 # Override layer 3 (already dielectric, keep as dielectric)
-                3: {"kind": "dielectric", "thickness": -0.75, "z": 0.0,
+                3: {"kind": "dielectric", "thickness": -750.0, "z": 0.0,
                     "material": "silicon", "eps_r": 11.45},
             }},
         )
@@ -206,7 +206,7 @@ geometry:
         build_mesh(
             no_sim_yaml,
             options={"layer_stack": {99: {"kind": "metal",
-                                          "thickness": 0.002, "z": 0.0}}},
+                                          "thickness": 2.0, "z": 0.0}}},
         )
 
 
@@ -220,24 +220,24 @@ def test_options_kwarg_unknown_port_pin_rejected():
 
 
 def test_options_kwarg_si_mesh_length_rejected():
-    """M5 (M3 r1 建议 3): mesh kwarg 长度按 mm; 误传 SI 米值 (5e-6) 必须被拒。
+    """M5 (M3 r1 建议 3): mesh kwarg 长度按 µm; 误传 SI 米值 (5e-6) 必须被拒。
 
-    `5e-6 mm` = 5 nm < 10 nm 下界 → 触发单位防呆 (walkthrough §5.2)。
+    `5e-6 µm` = 5e-6 µm < 1e-2 µm (10 nm) 下界 → 触发单位防呆 (walkthrough §5.2)。
     """
     with pytest.raises(ValueError, match="outside the sane range"):
         build_mesh(
             EXAMPLE,
-            options={"mesh": {"max_size": 5e-6}},   # 5 nm 当 mm, 误用
+            options={"mesh": {"max_size": 5e-6}},   # SI 米 当 µm, 误用
             generate=False,
         )
 
 
 def test_options_kwarg_oversized_mesh_length_rejected():
-    """mesh kwarg 长度 > 100 mm 也视为单位误用 (10 cm 不是合理 mesh size)。"""
+    """mesh kwarg 长度 > 1e5 µm 也视为单位误用 (10 cm 不是合理 mesh size)。"""
     with pytest.raises(ValueError, match="outside the sane range"):
         build_mesh(
             EXAMPLE,
-            options={"mesh": {"min_size": 200.0}},   # 200 mm = 20 cm
+            options={"mesh": {"min_size": 2e5}},   # 2e5 µm = 20 cm
             generate=False,
         )
 
@@ -259,7 +259,7 @@ def test_options_kwarg_partial_override_does_not_require_layer_stack():
     应顺利通过 schema 而不报 "layer_stack is required"。
     """
     result = build_mesh(EXAMPLE,
-                        options={"mesh": {"max_size": 0.05}},  # 50um
+                        options={"mesh": {"max_size": 50.0}},  # 50um
                         generate=False)
     assert result.options.mesh.get("max_size") == pytest.approx(5e-5)
 
@@ -270,12 +270,12 @@ def test_options_kwarg_partial_override_does_not_require_layer_stack():
 
 # 极粗 mesh 参数, 把 mesh.generate 时间压到秒级 — 这个 design 物理尺度
 # 是 ~mm, mesh size 与之同尺度可以保证只生成 O(100) 单元而不是 O(10^6)。
-# 单位 = mm (kwarg 约定; adapter 入口 ×1e-3 转 SI)。
+# 单位 = µm (kwarg 约定; adapter 入口 ×1e-6 转 SI)。
 _COARSE_MESH = {
-    "max_size": 2.0,        # 2 mm
-    "min_size": 0.5,        # 500 um
-    "max_size_jj": 0.5,
-    "conductor_refine": {"min_dist": 1.0, "max_dist": 3.0},
+    "max_size": 2000.0,     # 2 mm
+    "min_size": 500.0,      # 500 um
+    "max_size_jj": 500.0,
+    "conductor_refine": {"min_dist": 1000.0, "max_dist": 3000.0},
 }
 
 

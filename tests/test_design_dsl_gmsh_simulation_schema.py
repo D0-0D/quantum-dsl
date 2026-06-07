@@ -79,16 +79,16 @@ simulation:
     assert set(sim.keys()) == {"gmsh"}
     gmsh = sim["gmsh"]
 
-    # 长度字面量在 IR 里是 mm float, 和 PrimitiveIR.geometry 单位一致。
-    assert gmsh["layer_stack"][1]["thickness"] == pytest.approx(0.002)
-    assert gmsh["layer_stack"][3]["thickness"] == pytest.approx(-0.75)
+    # 长度字面量在 IR 里是 µm float, 和 PrimitiveIR.geometry 单位一致。
+    assert gmsh["layer_stack"][1]["thickness"] == pytest.approx(2.0)
+    assert gmsh["layer_stack"][3]["thickness"] == pytest.approx(-750.0)
     assert gmsh["layer_stack"][1]["material"] == "pec"
     assert gmsh["layer_stack"][3]["eps_r"] == pytest.approx(11.45)
 
     # ${...} 被 vars 解析。
-    assert gmsh["airbox"]["top"] == pytest.approx(0.89)
-    assert gmsh["airbox"]["bottom"] == pytest.approx(1.65)
-    assert gmsh["airbox"]["side_buffer"] == pytest.approx(0.2)
+    assert gmsh["airbox"]["top"] == pytest.approx(890.0)
+    assert gmsh["airbox"]["bottom"] == pytest.approx(1650.0)
+    assert gmsh["airbox"]["side_buffer"] == pytest.approx(200.0)
 
     # 端口被拆成 component + pin。
     assert gmsh["ports"] == [{
@@ -100,8 +100,8 @@ simulation:
     }]
 
     assert gmsh["symmetry"] == [{"plane": "y0", "condition": "pec"}]
-    assert gmsh["mesh"]["max_size"] == pytest.approx(0.07)
-    assert gmsh["mesh"]["conductor_refine"]["min_dist"] == pytest.approx(0.01)
+    assert gmsh["mesh"]["max_size"] == pytest.approx(70.0)
+    assert gmsh["mesh"]["conductor_refine"]["min_dist"] == pytest.approx(10.0)
     assert gmsh["output"] == {"format": "msh4", "scaling": 1.0}
 
 

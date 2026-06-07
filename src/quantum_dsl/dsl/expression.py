@@ -12,6 +12,7 @@ from typing import Any, Mapping
 
 from qiskit_metal.toolbox_metal.parsing import parse_value
 
+from . import _units  # noqa: F401 — sets the µm default parsing unit on import
 from .errors import DesignDslError
 
 
