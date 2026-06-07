@@ -291,6 +291,11 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument(
         "--dry-run", action="store_true",
         help="pass --dry-run to Palace (validate/partition only).")
+    parser.add_argument(
+        "--png", nargs="?", const="chip.png", default=None,
+        help="render the produced chip.gds to a PNG preview (M7; gdsfactory if "
+             "installed, else matplotlib). Optional PATH relative to --out-dir "
+             "(default: chip.png).")
     args = parser.parse_args(argv)
 
     try:
@@ -312,6 +317,17 @@ def main(argv: Optional[list[str]] = None) -> int:
         print(f"Results     : {result['results']}")
     print(f"physical_groups ({len(result['physical_groups'])}): "
           f"{result['physical_groups']}")
+
+    # ---- optional GDS preview (M7) — visualization only, additive ----------
+    if args.png is not None and result.get("gds"):
+        try:
+            from .gds_viz import preview_gds
+            prev = preview_gds(result["gds"], out_png=Path(args.out_dir) / args.png)
+            print(f"Preview     : {prev.png_path} (backend={prev.backend}, "
+                  f"layers={prev.layers})")
+        except DesignDslError as exc:
+            print(f"warning: --png preview failed: {exc}", file=sys.stderr)
+
     return 0
 
 

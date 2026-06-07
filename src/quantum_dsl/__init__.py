@@ -88,6 +88,10 @@ __all__ = [
     "solve_circuit_model",
     "CircuitModelResult",
     "JunctionInput",
+    "preview_gds",
+    "GdsPreview",
+    "to_gdsfactory_component",
+    "read_gds_layers",
 ]
 
 # Lazy re-export of the optional gmsh/gdstk-backed entry points.  Delegating to
@@ -107,6 +111,10 @@ _LAZY_NAMES = frozenset({
     "solve_circuit_model",
     "CircuitModelResult",
     "JunctionInput",
+    "preview_gds",
+    "GdsPreview",
+    "to_gdsfactory_component",
+    "read_gds_layers",
 })
 
 

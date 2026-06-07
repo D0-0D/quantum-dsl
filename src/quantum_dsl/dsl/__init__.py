@@ -74,6 +74,10 @@ __all__ = [
     "solve_circuit_model",
     "CircuitModelResult",
     "JunctionInput",
+    "preview_gds",
+    "GdsPreview",
+    "to_gdsfactory_component",
+    "read_gds_layers",
 ]
 
 
@@ -94,6 +98,10 @@ _LAZY_EXPORTS = {
     "solve_circuit_model": ("circuit_model", "solve_circuit_model"),
     "CircuitModelResult": ("circuit_model", "CircuitModelResult"),
     "JunctionInput": ("circuit_model", "JunctionInput"),
+    "preview_gds": ("gds_viz", "preview_gds"),
+    "GdsPreview": ("gds_viz", "GdsPreview"),
+    "to_gdsfactory_component": ("gds_viz", "to_gdsfactory_component"),
+    "read_gds_layers": ("gds_viz", "read_gds_layers"),
 }
 
 

@@ -25,7 +25,7 @@ IDs; the **Active path** section is the order for now.
 | R2 | Run Palace on the `.geo` mesh → capacitance matrix | `[x]` | **M3** (live C-matrix on `two_pads`) |
 | R3 | Run circuit-model solver with the C-matrix, save it | `[x]` | **M6** (inverse-cap LOM → tier-2 `hamiltonian` in `chip.results.yaml`) |
 | R4 | Read the QDA review — how/why we compute capacitance | `[x]` | GHz qubit, λ≈cm ≫ footprint≈100µm → lumped model valid → C-matrix → qubit Hamiltonian via circuit quantization + charge-crosstalk (QDA §Layout-sim/Electrostatic + §Hamiltonian derivation) |
-| R5 | Add GDSFactory for visualization | `[ ]` | **M7** ← NEXT |
+| R5 | Add GDSFactory for visualization | `[x]` | **M7** (`gds_viz`: gdsfactory bridge + matplotlib fallback) |
 | R+ | Cells = polygons **with rounded corners** | `[x]` | **M5a** (emit_geo: pre-sampled shapely buffers → rounded-corner polygons) |
 
 ---
@@ -169,10 +169,21 @@ Consume the C-matrix → qubit Hamiltonian parameters → save (closes "physical
       regime f01≤0 leaked a bare ValueError → now a clear DesignDslError) + nits. Full suite
       **290 passed, 1 skipped**; live solve (QDSL_RUN_PALACE=1) verified.
 
-### M7 — GDSFactory visualization (R5)  `[ ]`  ← NEXT
-- [ ] Optional lazy `gdsfactory` dep; read `chip.gds` → preview/plot (matplotlib / KLayout).
-- [ ] Keep **gdstk** as the emitter; gdsfactory is **visualization-only**, additive, optional
-      (`import quantum_dsl` must not pull it in).
+### M7 — GDSFactory visualization (R5)  `[x]`
+NEW `dsl/gds_viz.py` (visualization-only, additive). `preview_gds(gds_path, *, out_png, backend,
+dpi, layer_colors)` → `GdsPreview` (layers / polygon_counts / bbox_um / top_cell; renders a PNG
+when `out_png` is given). `read_gds_layers` introspection; `to_gdsfactory_component`
+(= `gf.import_gds`) is the R5 bridge into the gdsfactory ecosystem.
+- [x] Backends: **matplotlib** (gdstk read + headless Agg canvas — the always-available default)
+      + **gdsfactory** (optional `viz` extra; `backend="auto"` picks it when importable). All heavy
+      deps imported **lazily** → `import quantum_dsl` stays clean (purity test).
+- [x] **gdstk stays the emitter**; gds_viz only READS a finished `chip.gds`. `pyproject`
+      `viz = ["gdsfactory"]`; lazy exports in both `__init__.py`; `geo_build` CLI `--png [PATH]`
+      renders the produced `chip.gds`.
+- [x] `tests/test_gds_viz.py` (14): matplotlib render + real-`chip.gds` integration + lazy exports
+      + purity + error paths (**12 passed**); gdsfactory backend **2 gated** (skip — `gdsfactory`
+      absent in metal-env, so that path is implemented-but-unverified-here). CLI `--png` verified
+      end-to-end (`two_pads` → real 1397×657 PNG). Full suite **314 passed, 3 skipped**, no regressions.
 
 ---
 
@@ -235,6 +246,10 @@ Single metal layer + dielectric substrate is the scope; defer until a multi-laye
   `gnd_layer{N}_sfs`). Two OCC discoveries (multi-loop Plane-Surface fills holes → `BooleanDifference`;
   carved-ground/substrate z=0 coplanarity destabilises `fragment` → ε z-nudge). 11 new tests incl. golden
   byte-identical parity; worktree **262 passed**.
-- _(integration, 2026-06-08)_ **Merged M5a + M6** into `feat/native-geo-dsl` (conflicts: `schema.py`/
-  `simulation.py`/journaling, union-resolved; `geo_build.py`/`test_geo_pipeline.py` auto-merged). Full
-  suite **302 passed, 1 skipped**, no regressions. → M7 next.
+- [`session/2606080420.md`](session/2606080420.md) — 2026-06-08 · **Integrated M5a + M6 + M7** (phase
+  close-out). Waited on the two worktree agents (poll-to-commit; their long think-pauses defeated
+  idle-based detection). Merged `5e13311` (M5a) into `6ad6845` (M6) → `f376b0e` (union-resolved
+  `schema.py`/`simulation.py`/journaling; `geo_build.py`/`test_geo_pipeline.py` auto-merged) →
+  302 passed. Then **M7** NEW `dsl/gds_viz.py` (R5): `preview_gds` matplotlib (verified) + gdsfactory
+  (gated) backends, `viz` extra, lazy exports, CLI `--png`. Full suite **314 passed, 3 skipped**.
+  PR `feat/native-geo-dsl` → `main`.
