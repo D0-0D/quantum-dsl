@@ -39,7 +39,7 @@ import os
 import shutil
 import subprocess
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Any, Iterable, Mapping, Sequence
 
 from .errors import DesignDslError
@@ -312,11 +312,21 @@ _WSL_PALACE = (
 
 
 def _to_wsl_path(win_path: str | os.PathLike[str]) -> str:
-    """把 Windows 绝对路径转成 WSL ``/mnt/<drive>/...`` 路径。"""
-    p = Path(win_path).resolve()
-    drive = p.drive.rstrip(":").lower()
-    rest = p.as_posix()[len(p.drive):]
-    return f"/mnt/{drive}{rest}"
+    """把 Windows 绝对路径转成 WSL ``/mnt/<drive>/...`` 路径。
+
+    跨平台实现 (用 ``PureWindowsPath`` 解析盘符, 不依赖宿主 OS 的 pathlib
+    flavour, 故在 Linux/WSL 内跑测试也成立)。已经是 POSIX 绝对路径 (``/...``,
+    即在 WSL 内 native 运行的情形) 则原样返回, 不做 ``/mnt`` 映射。
+    """
+    s = os.fspath(win_path)
+    if s.startswith("/"):  # already a POSIX/WSL path — nothing to map
+        return s
+    pure = PureWindowsPath(s)
+    posix = pure.as_posix()
+    drive = pure.drive.rstrip(":").lower()
+    if not drive:  # no drive letter — best-effort separator normalisation
+        return posix
+    return f"/mnt/{drive}{posix[len(pure.drive):]}"
 
 
 def run_palace(config_path: str | os.PathLike[str], *,

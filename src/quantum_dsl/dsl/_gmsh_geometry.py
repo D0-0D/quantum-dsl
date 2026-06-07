@@ -23,7 +23,6 @@ import numpy as np
 
 from qiskit_metal.renderers.renderer_gmsh.gmsh_utils import (
     Vec3DArray,
-    _require_gmsh,
     line_width_offset_pts,
     render_path_curves,
 )
@@ -36,6 +35,19 @@ try:
     import gmsh
 except ImportError:  # pragma: no cover — exercised on lite installs
     gmsh = None
+
+
+def _require_gmsh() -> None:
+    """Guard: 缺少可选依赖 ``gmsh`` 时给出清晰报错。
+
+    qiskit-metal 不再公开 ``gmsh_utils._require_gmsh``, 这里就地实现, 依赖本模块
+    顶层的 ``import gmsh`` try/except 结果。
+    """
+    if gmsh is None:  # pragma: no cover — exercised on lite installs
+        raise ImportError(
+            "Gmsh 网格功能需要可选依赖 `gmsh`。请安装后重试 "
+            "(例如 `pip install gmsh` 或 `conda install -c conda-forge gmsh`)。"
+        )
 
 
 # ---------------------------------------------------------------------------
