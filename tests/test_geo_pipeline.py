@@ -226,3 +226,21 @@ def test_two_pads_live_capacitance_matrix(tmp_path):
     # consistency: Cm[0][0] == C[0][0] + C[0][1];  Cm[0][1] == -C[0][1]
     assert abs(cm[0][0] - (m[0][0] + m[0][1])) < 1e-6
     assert abs(cm[0][1] - (-m[0][1])) < 1e-6
+
+    # M6: the sidecar's circuit_model block -> tier-2 derived Hamiltonian section
+    # written into the SAME results artifact by build_geo (two grounded transmons).
+    assert doc["tier"] == 2                      # descending: 2 = +Hamiltonian
+    ham = doc["hamiltonian"]
+    assert ham["method"] == "lumped_oscillator_inverse_cap"
+    assert [q["name"] for q in ham["qubits"]] == ["A", "B"]
+    for q in ham["qubits"]:
+        assert q["E_C_GHz"] > 0 and q["E_J_GHz"] > 0
+        assert q["f01_GHz"] > 0
+        assert q["anharmonicity_MHz"] < 0        # alpha = -E_C
+        assert q["EJ_over_EC"] > 0
+    assert len(ham["couplings"]) == 1
+    g = ham["couplings"][0]
+    assert {g["qubit_a"], g["qubit_b"]} == {"A", "B"}
+    assert g["C_g_fF"] > 0 and g["g_MHz"] > 0
+    # provenance records the authored junction inputs
+    assert "circuit_model_inputs" in doc["provenance"]

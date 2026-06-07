@@ -31,7 +31,8 @@ name → attribute 绑定 (THE binding contract 的下游消费端):
     run_palace(config_path, *, dry_run=True, num_procs=1) -> None
     _to_wsl_path(win_path) -> str
     parse_capacitance_matrix(postpro_dir, terminals=()) -> CapacitanceResult
-    write_results_sidecar(result, out_path, *, provenance=None, tier=3) -> Path
+    write_results_sidecar(result, out_path, *, provenance=None,
+                          circuit_model=None, tier=None) -> Path
 """
 
 from __future__ import annotations
@@ -591,28 +592,73 @@ def parse_capacitance_matrix(
 # results write-back — OUTPUT-ONLY Layer-3 artifact (chip.results.yaml)
 # ---------------------------------------------------------------------------
 
+def _circuit_model_doc(circuit_model: Any) -> dict[str, Any]:
+    """把 ``CircuitModelResult`` 转成 YAML-safe dict (M6 ``hamiltonian`` 段)。
+
+    Duck-typed (不 import circuit_model, 避免 circuit_model→palace_adapter 的循环
+    导入)。tuple → list 以便 ``yaml.safe_dump`` (它不能表示 Python tuple)。
+    """
+    return {
+        "method": circuit_model.method,
+        "validity": circuit_model.validity,
+        "units": dict(circuit_model.units),
+        "qubits": [
+            {
+                "name": q.name,
+                "islands": list(q.islands),
+                "C_sigma_fF": q.C_sigma_fF,
+                "E_C_GHz": q.E_C_GHz,
+                "E_J_GHz": q.E_J_GHz,
+                "f01_GHz": q.f01_GHz,
+                "anharmonicity_MHz": q.anharmonicity_MHz,
+                "EJ_over_EC": q.EJ_over_EC,
+            }
+            for q in circuit_model.qubits
+        ],
+        "couplings": [
+            {
+                "qubit_a": c.qubit_a,
+                "qubit_b": c.qubit_b,
+                "C_g_fF": c.C_g_fF,
+                "g_MHz": c.g_MHz,
+            }
+            for c in circuit_model.couplings
+        ],
+    }
+
+
 def write_results_sidecar(
     result: CapacitanceResult,
     out_path: str | os.PathLike[str],
     *,
     provenance: Mapping[str, Any] | None = None,
-    tier: int = 3,
+    circuit_model: Any | None = None,
+    tier: int | None = None,
 ) -> Path:
-    """把 ``CapacitanceResult`` 写成 OUTPUT-ONLY 的结果产物 (默认 ``chip.results.yaml``)。
+    """把 ``CapacitanceResult`` (+ 可选 M6 电路模型) 写成 OUTPUT-ONLY 的结果产物。
 
     schema tag ``qiskit-metal/design-results/1`` —— 与 Layer-1 的 ``design-dsl``
     家族不同, **永不** 被 ``parse_geo_meta_sidecar`` 读回; 与 chip.gds/chip.msh/
     chip.json 并排放在 out_dir, ``rm -r out_dir`` 即可重置全部派生态。矩阵行/列由
     ``capacitance.terminals[i]`` (index↔group↔attribute) 自描述。
 
+    完整度 ``tier`` 是 **descending** 阶梯 (数值越小 = 派生越深): ``3`` = 仅电容矩阵
+    (M3); ``2`` = 再加集总振子 Hamiltonian (M6, ``circuit_model`` 非空时)。``tier``
+    缺省由 ``circuit_model`` 是否存在自动推断 —— 杜绝调用方传错 tier。
+
     Args:
-        result:     已解析的电容结果 (含 terminals 绑定与矩阵)。
-        out_path:   产物路径 (建议 ``<out_dir>/chip.results.yaml``)。
-        provenance: 可选溯源 dict (solver / 输入 SHA-256 / 时间戳 / label→index 等)。
-        tier:       已算到的完整度级别 (M3 电容矩阵 = 3)。
+        result:        已解析的电容结果 (含 terminals 绑定与矩阵)。
+        out_path:      产物路径 (建议 ``<out_dir>/chip.results.yaml``)。
+        provenance:    可选溯源 dict (solver / 输入 SHA-256 / 时间戳 / label→index)。
+        circuit_model: 可选 ``CircuitModelResult`` (M6); 非空则写 ``hamiltonian`` 段
+                       且 tier→2。
+        tier:          可选显式覆盖; 缺省 = 2 (有 circuit_model) / 3 (无)。
     """
     out = Path(out_path)
     out.parent.mkdir(parents=True, exist_ok=True)
+
+    if tier is None:
+        tier = 2 if circuit_model is not None else 3
 
     terminals_doc = [
         {
@@ -647,8 +693,12 @@ def write_results_sidecar(
     doc: dict[str, Any] = {
         "schema": "qiskit-metal/design-results/1",
         "tier": tier,
+        "tier_meaning": "lower = more derived: 3 = capacitance matrix, "
+                        "2 = + lumped-oscillator Hamiltonian",
         "capacitance": capacitance,
     }
+    if circuit_model is not None:
+        doc["hamiltonian"] = _circuit_model_doc(circuit_model)
     if provenance:
         doc["provenance"] = dict(provenance)
 

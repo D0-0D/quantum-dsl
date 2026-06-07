@@ -21,9 +21,9 @@ IDs; the **Active path** section is the order for now.
 
 | # | Requirement | Status | Where |
 |---|---|---|---|
-| R1 | Connect Gmsh physical group → circuit model | `[~]` | binding half done (M1 `::` contract + M3 `terminal_bindings`); circuit-model half = **M6** |
+| R1 | Connect Gmsh physical group → circuit model | `[x]` | binding (M1 `::` + M3 `terminal_bindings`) + circuit-model half (**M6**: island group → qubit Hamiltonian) |
 | R2 | Run Palace on the `.geo` mesh → capacitance matrix | `[x]` | **M3** (live C-matrix on `two_pads`) |
-| R3 | Run circuit-model solver with the C-matrix, save it | `[ ]` | **M6** |
+| R3 | Run circuit-model solver with the C-matrix, save it | `[x]` | **M6** (inverse-cap LOM → tier-2 `hamiltonian` in `chip.results.yaml`) |
 | R4 | Read the QDA review — how/why we compute capacitance | `[x]` | GHz qubit, λ≈cm ≫ footprint≈100µm → lumped model valid → C-matrix → qubit Hamiltonian via circuit quantization + charge-crosstalk (QDA §Layout-sim/Electrostatic + §Hamiltonian derivation) |
 | R5 | Add GDSFactory for visualization | `[ ]` | **M7** |
 | R+ | Cells = polygons **with rounded corners** | `[ ]` | **M5a** (emit_geo, pre-sampled shapely buffers) |
@@ -133,16 +133,29 @@ parametric, **rounded-corner** cells unchanged (delivers R+). Reuses the entire 
 - [ ] **Golden parity test**: elaborated `.geo` physical names + final `assign_physical_groups` names
       byte-identical to a hand-authored equivalent; GDS layers match; full suite stays green (≥251).
 
-### M6 — Circuit-model solve (R1 + R3)  `[ ]`
+### M6 — Circuit-model solve (R1 + R3)  `[x]`
 Consume the C-matrix → qubit Hamiltonian parameters → save (closes "physical group → circuit model").
-- [ ] Read `chip.results.yaml` maxwell C-matrix → lumped/LOM circuit quantization
-      (E_C = e²/2C_Σ; E_J/L_J from junction inputs; f01 = √(8·E_C·E_J) − E_C; α = −E_C;
-      qubit-qubit / qubit-resonator couplings from off-diagonals).
-- [ ] Optional Layer-1 sub-block for junction inputs (E_J/L_J, island→qubit grouping); derived
-      Hamiltonian → results artifact **tier T2** (per M3's ladder). Candidate engines: `scqubits`,
-      qiskit-metal LOM/`CapExtraction`.
-- [ ] Verify on `two_pads` now (C-matrix already exists), then on an emit_geo transmon once M5a lands.
-- _Independent of M5a — a C-matrix already exists (M3), so M6 can start in parallel / first if preferred._
+- [x] `dsl/circuit_model.py` (pure: math + dataclasses, NO gmsh/gdstk/numpy/scipy) reads the
+      Maxwell C-matrix → **lumped-oscillator INVERSE-capacitance** quantization. Per qubit:
+      `E_C=(e²/2)[C⁻¹]_ii`, `C_Σ=1/[C⁻¹]_ii`, `E_J=(ħ/2e)²/L_J`, `f01=√(8·E_C·E_J)−E_C`, `α=−E_C`;
+      pairwise `g` from `[C⁻¹]_ij`. Reduces EXACTLY to `e²/2C_ii` for a single isolated island and
+      to `½(C_g/√(C_iC_j))√(f_if_j)` for N=2, but stays rigorous for N≥3 (naive Maxwell-diagonal
+      C_Σ double-counts coupling caps — caught by the physics-review workflow). Constants exact-SI-2019,
+      `ħ` derived. `EJ_over_EC` + `validity` note emitted (regime-aware).
+- [x] **Optional Layer-1 sub-block** = NEW top-level `circuit_model:` sidecar key (NOT `circuit`/
+      `hamiltonian` — those are legacy full-DSL keys; no collision). `circuit_model.qubits:
+      [{name, island|islands, L_J|E_J}]`, parsed by `_parse_circuit_model`; new SI-prefix unit parser
+      `_parse_unit_value` (`10nH`→Henry, `16GHz`→Joule via ×h; explicit unit required). Derived
+      Hamiltonian → results artifact **tier T2** (descending ladder; `write_results_sidecar` emits a
+      `hamiltonian:` section + derives `tier=2 if circuit_model else 3` + a `tier_meaning` note).
+      Wired in `geo_build` after the C-matrix parse. Closed-form (no scqubits/qiskit-metal dep);
+      OPTIONAL gated cross-check vs qiskit-metal `Hcpb` exact CPB diagonalisation.
+- [x] Verified on `two_pads` (37 pure tests, golden values closed-form-verified; gated live solve
+      now also asserts the tier-2 Hamiltonian). On an emit_geo transmon → once M5a lands.
+- [x] islands future-proofed as a tuple; solver gated to single-island (multi-island raises a clear
+      "not supported yet"). Adversarial impl-review (4-agent workflow) → fixed 1 bug (non-transmon
+      regime f01≤0 leaked a bare ValueError → now a clear DesignDslError) + nits. Full suite
+      **290 passed, 1 skipped**; live solve (QDSL_RUN_PALACE=1) verified.
 
 ### M7 — GDSFactory visualization (R5)  `[ ]`
 - [ ] Optional lazy `gdsfactory` dep; read `chip.gds` → preview/plot (matplotlib / KLayout).
@@ -197,3 +210,9 @@ Single metal layer + dielectric substrate is the scope; defer until a multi-laye
   original (phased) requirements**: M5a (emit_geo, NEXT) → M6 (circuit-model solve) →
   M7 (GDSFactory); **M2 / M4 / M5b deferred — out of this phase, not ruled out**. Locked 3 emit_geo seam decisions
   (#1 chip-wide bbox ground / #2 plain port marker, edge-contract deferred / #3 pre-sample buffers).
+- [`session/2606080308.md`](session/2606080308.md) — 2026-06-08 · **M6 COMPLETE** (R1+R3): circuit-model
+  solve. 8-agent recon+critique workflow first — physics lens caught a blocker (naive Maxwell-diagonal
+  C_Σ double-counts coupling) → adopted **lumped-oscillator inverse-capacitance** method (rigorous,
+  reduces to `e²/2C_ii` for one island). NEW pure `circuit_model.py` (no numpy/scqubits) + `circuit_model`
+  sidecar block + SI-prefix unit parser + tier-2 `hamiltonian` write-back + `geo_build` wiring. 37 new
+  tests (golden values closed-form-verified + gated `Hcpb` cross-check); **288 passed, 1 skipped**, no regressions.

@@ -47,3 +47,12 @@ simulation:
       type: Electrostatic
       order: 2
       l0: 1.0
+
+# circuit_model (M6): each pad = a grounded single-island transmon with a 10 nH
+# Josephson junction; the Maxwell C-matrix off-diagonal gives the A↔B coupling.
+# Only consumed on a NON-dry-run Palace solve (build_geo writes the derived
+# Hamiltonian into chip.results.yaml at tier 2).
+circuit_model:
+  qubits:
+    - {name: A, island: A_pad_sfs, L_J: 10nH}
+    - {name: B, island: B_pad_sfs, L_J: 10nH}

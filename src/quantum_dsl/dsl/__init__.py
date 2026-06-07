@@ -71,6 +71,9 @@ __all__ = [
     "build_palace_config",
     "validate_config",
     "parse_geo_meta_sidecar",
+    "solve_circuit_model",
+    "CircuitModelResult",
+    "JunctionInput",
 ]
 
 
@@ -88,6 +91,9 @@ _LAZY_EXPORTS = {
     "build_palace_config": ("palace_adapter", "build_palace_config"),
     "validate_config": ("palace_adapter", "validate_config"),
     "parse_geo_meta_sidecar": ("parsers.simulation", "parse_geo_meta_sidecar"),
+    "solve_circuit_model": ("circuit_model", "solve_circuit_model"),
+    "CircuitModelResult": ("circuit_model", "CircuitModelResult"),
+    "JunctionInput": ("circuit_model", "JunctionInput"),
 }
 
 

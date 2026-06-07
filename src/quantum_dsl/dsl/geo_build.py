@@ -203,8 +203,43 @@ def build_geo(geo_path: Optional[Union[str, Path]] = None,
                         "config_sha256": _sha256_file(palace_json),
                     },
                 }
+
+                # ---- CIRCUIT MODEL (M6): C-matrix → transmon Hamiltonian ----
+                # Optional: only when the sidecar authored a `circuit_model`
+                # block.  Derives E_C/E_J/f01/anharmonicity per qubit + pairwise
+                # couplings, written to the SAME results artifact at tier 2.
+                circuit_model = None
+                cm_block = meta.get("circuit_model")
+                if cm_block and cm_block.get("qubits"):
+                    from .circuit_model import (
+                        JunctionInput,
+                        solve_circuit_model,
+                    )
+                    junctions = [
+                        JunctionInput(
+                            name=q["name"],
+                            islands=tuple(q["islands"]),
+                            L_J=q.get("L_J"),
+                            E_J=q.get("E_J"),
+                        )
+                        for q in cm_block["qubits"]
+                    ]
+                    circuit_model = solve_circuit_model(cap, junctions)
+                    provenance["circuit_model_inputs"] = {
+                        "qubits": [
+                            {
+                                "name": q["name"],
+                                "islands": list(q["islands"]),
+                                **({"L_J_H": q["L_J"]} if q.get("L_J") is not None
+                                   else {"E_J_J": q["E_J"]}),
+                            }
+                            for q in cm_block["qubits"]
+                        ],
+                    }
+
                 result["results"] = write_results_sidecar(
-                    cap, out_dir / "chip.results.yaml", provenance=provenance)
+                    cap, out_dir / "chip.results.yaml",
+                    provenance=provenance, circuit_model=circuit_model)
 
     return result
 

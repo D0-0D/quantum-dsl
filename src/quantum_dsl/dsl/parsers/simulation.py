@@ -19,6 +19,8 @@ from ..expression import walk_substitute as _walk_substitute
 from ..ir import ComponentIR
 from ..schema import (
     AIRBOX_KEYS,
+    CIRCUIT_MODEL_KEYS,
+    CIRCUIT_QUBIT_KEYS,
     GDS_LAYER_MAP_ENTRY_KEYS,
     GDS_SIM_KEYS,
     GEO_META_ROOT_KEYS,
@@ -52,9 +54,13 @@ __all__ = [
     "_parse_gds_settings",
     "_parse_solver_settings",
     "_parse_scalar_with_optional_unit",
+    "_parse_unit_value",
+    "_parse_circuit_model",
     "parse_geo_meta_sidecar",
     "_SIMPLE_UNIT_SUFFIX_RE",
     "_ALLOWED_IMPEDANCE_UNITS",
+    "_HENRY_UNITS",
+    "_EJ_FREQ_UNITS",
 ]
 
 _SIMPLE_UNIT_SUFFIX_RE = re.compile(
@@ -97,6 +103,100 @@ def _parse_scalar_with_optional_unit(value: Any, variables: Mapping[str, Any],
                 f"{owner} numeric portion is invalid: {value!r}") from exc
     raise DesignDslError(
         f"{owner} must be a number or '<number><unit>', got {value!r}")
+
+
+# ---------------------------------------------------------------------------
+# SI-prefix-scaling unit parser — for physical quantities whose magnitude DOES
+# depend on the prefix (inductance H, frequency Hz).  Unlike
+# ``_parse_scalar_with_optional_unit`` (which validates then DISCARDS the unit,
+# correct only for dimensionless/ohm fields), this MULTIPLIES by the prefix
+# factor: ``"10nH" -> 1e-8`` (henry), not ``10.0``.  Never route L_J/E_J through
+# ``parse_number`` (length, µm-default) or ``_parse_scalar_with_optional_unit``
+# (no scaling) — both silently mis-handle SI prefixes.
+# ---------------------------------------------------------------------------
+
+# Inductance: unit string -> multiplier to Henry (SI).  ASCII only (the suffix
+# regex matches [A-Za-z]+, so use "uH" not "µH").
+_HENRY_UNITS = {
+    "H": 1.0, "mH": 1e-3, "uH": 1e-6, "nH": 1e-9, "pH": 1e-12, "fH": 1e-15,
+}
+# E_J as a frequency E_J/h: unit string -> multiplier to Hz (then ×h -> Joule).
+_EJ_FREQ_UNITS = {"Hz": 1.0, "kHz": 1e3, "MHz": 1e6, "GHz": 1e9, "THz": 1e12}
+# E_J as a bare energy: unit string -> multiplier to Joule.
+_EJ_ENERGY_UNITS = {"J": 1.0}
+
+
+def _parse_unit_value(value: Any, units: Mapping[str, float], *,
+                      owner: str) -> float:
+    """Parse ``"<number><unit>"`` with an explicit SI-prefixed unit → SI float.
+
+    ``units`` maps each accepted unit string to its multiplier into the SI base
+    unit (e.g. ``{"nH": 1e-9, "H": 1.0}``).  An explicit unit is **required**: a
+    bare number (or unitless string) is rejected, because for a quantity whose
+    magnitude depends on the prefix ``10`` is dangerously ambiguous (10 H vs
+    10 nH differ by 1e9), so authoring must spell the unit (``"10nH"``).  SI
+    floats are still accepted via the dataclass API, not here.  ``${var}`` is
+    resolved upstream by ``_walk_substitute``.
+    """
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        raise DesignDslError(
+            f"{owner} needs an explicit unit (one of {sorted(units)}); got bare "
+            f"number {value!r} — write it with a unit, e.g. '10nH'.")
+    if not isinstance(value, str):
+        raise DesignDslError(
+            f"{owner} must be a '<number><unit>' string, got {value!r}")
+    match = _SIMPLE_UNIT_SUFFIX_RE.match(value.strip())
+    if match is None:
+        raise DesignDslError(
+            f"{owner} must be '<number><unit>', got {value!r}")
+    number_part, unit_part = match.group(1), (match.group(2) or "")
+    if unit_part == "":
+        raise DesignDslError(
+            f"{owner} needs an explicit unit (one of {sorted(units)}); got bare "
+            f"string {value!r}.")
+    if unit_part not in units:
+        raise DesignDslError(
+            f"{owner} has unsupported unit {unit_part!r}; expected one of "
+            f"{sorted(units)}")
+    try:
+        return float(number_part) * units[unit_part]
+    except ValueError as exc:
+        raise DesignDslError(
+            f"{owner} numeric portion is invalid: {value!r}") from exc
+
+
+def _parse_ej_joule(value: Any, *, owner: str) -> float:
+    """Parse an ``E_J`` field → **Joule** (explicit unit required).
+
+    Accepts a frequency form (``"14GHz"`` etc., interpreted as E_J/h and
+    multiplied by Planck's h to get Joule) or an explicit energy (``"...J"``).
+    Frequency is the form physicists usually quote, so it is the primary path.
+    A bare number is rejected for the same reason as ``_parse_unit_value`` (the
+    SI-float path is the dataclass API).
+    """
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        raise DesignDslError(
+            f"{owner} needs an explicit unit (a frequency "
+            f"{sorted(_EJ_FREQ_UNITS)} for E_J/h, or an energy "
+            f"{sorted(_EJ_ENERGY_UNITS)}); got bare number {value!r}.")
+    if not isinstance(value, str):
+        raise DesignDslError(
+            f"{owner} must be a '<number><unit>' string, got {value!r}")
+    match = _SIMPLE_UNIT_SUFFIX_RE.match(value.strip())
+    if match is None:
+        raise DesignDslError(f"{owner} must be '<number><unit>', got {value!r}")
+    number_part, unit_part = match.group(1), (match.group(2) or "")
+    if unit_part in _EJ_ENERGY_UNITS:
+        return float(number_part) * _EJ_ENERGY_UNITS[unit_part]
+    if unit_part in _EJ_FREQ_UNITS:
+        # E_J given as the frequency E_J/h -> energy = h * f.  h hardcoded as the
+        # exact SI-2019 value (mirrors circuit_model.H_PLANCK; kept local so the
+        # pure parser needs no import of circuit_model).
+        h_planck = 6.62607015e-34
+        return float(number_part) * _EJ_FREQ_UNITS[unit_part] * h_planck
+    raise DesignDslError(
+        f"{owner} needs an explicit unit (a frequency {sorted(_EJ_FREQ_UNITS)} "
+        f"(E_J/h) or an energy {sorted(_EJ_ENERGY_UNITS)}); got {value!r}")
 
 
 def _parse_simulation(spec: Any, ctx: Mapping[str, Any],
@@ -614,6 +714,144 @@ def _parse_solver_settings(node: Any,
 
 
 # ---------------------------------------------------------------------------
+# circuit_model block — M6 junction inputs (islands + L_J/E_J) for the
+# capacitance→Hamiltonian solve.  Output is consumed by
+# ``circuit_model.solve_circuit_model`` via ``circuit_model.JunctionInput``.
+# ---------------------------------------------------------------------------
+
+def _sanitize_group(name: str) -> str:
+    """Mirror ``_gmsh_physical._sanitize`` (kept local so this pure parser does
+    not import the gmsh-backed module): non-``[A-Za-z0-9_]`` → ``_``; empty →
+    ``unnamed``; leading digit → ``g_`` prefix."""
+    out = re.sub(r"[^A-Za-z0-9_]", "_", name)
+    if not out:
+        return "unnamed"
+    if out[0].isdigit():
+        out = "g_" + out
+    return out
+
+
+def _normalize_island_ref(ref: str, *, owner: str) -> str:
+    """Normalise a qubit island reference to a conductor terminal **group name**.
+
+    Accepts either the sanitised group name verbatim (``"A_pad_sfs"`` — exactly
+    the ``capacitance.terminals[].group`` label authored in chip.results.yaml),
+    or the structured ``role::layer::component::primitive`` token
+    (``"metal::1::A::pad"``) as sugar, which is converted to the surface group
+    name ``_sanitize("{component}_{primitive}_sfs")``.  Final existence is
+    validated at solve time against the real terminal set (which lists the
+    available groups on mismatch), so this conversion is best-effort sugar.
+    """
+    if not isinstance(ref, str) or not ref:
+        raise DesignDslError(f"{owner} island ref must be a non-empty string")
+    if "::" not in ref:
+        return ref
+    parts = ref.split("::")
+    if len(parts) != 4 or not all(parts):
+        raise DesignDslError(
+            f"{owner} structured island ref {ref!r} must be "
+            f"'role::layer::component::primitive'")
+    role, _layer, component, primitive = parts
+    # Only metal conductors become capacitance Terminals (qubit islands); other
+    # roles use a different surface-group template (e.g. ground -> gnd_layerN_sfs),
+    # so a {component}_{primitive}_sfs normalisation would be wrong for them.
+    if role != "metal":
+        raise DesignDslError(
+            f"{owner} structured island ref {ref!r} must have role 'metal' "
+            f"(qubit islands are metal conductor surfaces), got role {role!r}")
+    return _sanitize_group(f"{component}_{primitive}_sfs")
+
+
+def _parse_qubit_entry(entry: Any, index: int) -> dict[str, Any]:
+    owner = f"circuit_model.qubits[{index}]"
+    if not isinstance(entry, Mapping):
+        raise DesignDslError(f"{owner} must be a mapping")
+    _reject_unknown_keys(entry, CIRCUIT_QUBIT_KEYS, owner)
+
+    name = entry.get("name")
+    if not isinstance(name, str) or not name:
+        raise DesignDslError(f"{owner}.name must be a non-empty string")
+
+    # island (scalar) XOR islands (list) — normalise to a tuple of group names.
+    if ("island" in entry) == ("islands" in entry):
+        raise DesignDslError(
+            f"{owner} must set exactly one of 'island' / 'islands'")
+    if "island" in entry:
+        raw_islands: Any = [entry["island"]]
+    else:
+        raw_islands = entry["islands"]
+        if not isinstance(raw_islands, list) or not raw_islands:
+            raise DesignDslError(f"{owner}.islands must be a non-empty list")
+    islands = tuple(
+        _normalize_island_ref(isl, owner=owner) for isl in raw_islands)
+
+    # L_J (henry) XOR E_J (joule).
+    if ("L_J" in entry) == ("E_J" in entry):
+        raise DesignDslError(
+            f"{owner} must set exactly one of 'L_J' / 'E_J'")
+    resolved: dict[str, Any] = {"name": name, "islands": islands,
+                                "L_J": None, "E_J": None}
+    if "L_J" in entry:
+        l_j = _parse_unit_value(entry["L_J"], _HENRY_UNITS,
+                                owner=f"{owner}.L_J")
+        if l_j <= 0:
+            raise DesignDslError(f"{owner}.L_J must be > 0, got {l_j}")
+        resolved["L_J"] = l_j
+    else:
+        e_j = _parse_ej_joule(entry["E_J"], owner=f"{owner}.E_J")
+        if e_j <= 0:
+            raise DesignDslError(f"{owner}.E_J must be > 0, got {e_j}")
+        resolved["E_J"] = e_j
+    return resolved
+
+
+def _parse_circuit_model(node: Any,
+                         variables: Mapping[str, Any]) -> dict[str, Any]:
+    """Parse the top-level ``circuit_model`` sidecar block (M6 junction inputs).
+
+    Shape::
+
+        circuit_model:
+          qubits:
+            - {name: A, island: A_pad_sfs, L_J: 10nH}
+            - {name: B, islands: [B_pad_sfs], E_J: 14GHz}
+
+    ``island``/``islands`` reference a conductor terminal group name (or the
+    ``role::layer::component::primitive`` token); ``L_J`` (henry) and ``E_J``
+    (frequency E_J/h or energy) are mutually exclusive.  Returns
+    ``{"qubits": [{name, islands: tuple, L_J: float|None, E_J: float|None}]}``
+    with L_J in Henry and E_J in Joule.  Names + normalised islands must be
+    unique within the block.
+    """
+    if not isinstance(node, Mapping):
+        raise DesignDslError("circuit_model must be a mapping")
+    node = _walk_substitute(dict(node), dict(variables))
+    _reject_unknown_keys(node, CIRCUIT_MODEL_KEYS, "circuit_model")
+
+    qubits_raw = node.get("qubits")
+    if not isinstance(qubits_raw, list) or not qubits_raw:
+        raise DesignDslError("circuit_model.qubits must be a non-empty list")
+
+    out_qubits: list[dict[str, Any]] = []
+    seen_names: set[str] = set()
+    seen_islands: set[str] = set()
+    for index, entry in enumerate(qubits_raw):
+        q = _parse_qubit_entry(entry, index)
+        if q["name"] in seen_names:
+            raise DesignDslError(
+                f"circuit_model.qubits[{index}].name {q['name']!r} reused")
+        seen_names.add(q["name"])
+        for island in q["islands"]:
+            if island in seen_islands:
+                raise DesignDslError(
+                    f"circuit_model.qubits[{index}] island {island!r} already "
+                    f"bound to another qubit")
+            seen_islands.add(island)
+        out_qubits.append(q)
+    return {"qubits": out_qubits}
+
+
+# ---------------------------------------------------------------------------
 # standalone *.meta.yaml sidecar loader (Layer-1 physics metadata)
 # ---------------------------------------------------------------------------
 
@@ -623,16 +861,20 @@ def parse_geo_meta_sidecar(path: str | Path) -> dict[str, Any]:
     The sidecar is **purely physics metadata** (materials / eps_r / mesh / GDS
     layer map / solver); the geometry lives in the companion ``.geo`` named by
     the ``geo`` key.  Top-level keys are validated vs ``GEO_META_ROOT_KEYS``
-    (``{schema, geo, vars, simulation}``); ``${var}`` expressions resolve against
-    ``vars``; the ``simulation.gmsh`` block is parsed in **geo mode** (ports bind
-    by group name; gds/solver blocks parsed; no component-layer coverage check).
+    (``{schema, geo, vars, simulation, circuit_model}``); ``${var}`` expressions
+    resolve against ``vars``; the ``simulation.gmsh`` block is parsed in **geo
+    mode** (ports bind by group name; gds/solver blocks parsed; no
+    component-layer coverage check); the optional ``circuit_model`` block (M6
+    junction inputs) is parsed by ``_parse_circuit_model``.
 
-    Returns ``{"geo": <abs Path>, "simulation": {...}, "vars": {...}}`` — ``geo``
-    resolved to an absolute path RELATIVE TO THE SIDECAR.
+    Returns ``{"geo": <abs Path>, "simulation": {...}, "vars": {...},
+    "circuit_model": {...}|None}`` — ``geo`` resolved to an absolute path
+    RELATIVE TO THE SIDECAR; ``circuit_model`` is ``None`` when the block is absent.
 
     Raises:
         DesignDslError: file missing / not a mapping / unknown top-level key /
-            missing ``geo`` / referenced ``.geo`` not found.
+            missing ``geo`` / referenced ``.geo`` not found / invalid
+            ``circuit_model`` block.
     """
     sidecar = Path(path)
     if not sidecar.is_file():
@@ -677,8 +919,13 @@ def parse_geo_meta_sidecar(path: str | Path) -> dict[str, Any]:
         simulation_out["gmsh"] = _parse_gmsh_simulation(
             simulation_block["gmsh"], variables, [], geo_mode=True)
 
+    circuit_model_out: dict[str, Any] | None = None
+    if "circuit_model" in raw:
+        circuit_model_out = _parse_circuit_model(raw["circuit_model"], variables)
+
     return {
         "geo": geo_path,
         "simulation": simulation_out,
         "vars": dict(variables),
+        "circuit_model": circuit_model_out,
     }

@@ -32,6 +32,8 @@ __all__ = [
     "GDS_LAYER_MAP_ENTRY_KEYS",
     "SOLVER_KEYS",
     "SOLVER_TYPES",
+    "CIRCUIT_MODEL_KEYS",
+    "CIRCUIT_QUBIT_KEYS",
     "DESIGN_KEYS",
     "TRANSFORM_KEYS",
     "COMPONENT_KEYS",
@@ -88,8 +90,18 @@ GEO_ROLES = GEO_SURFACE_ROLES | GEO_MARKER_ROLES
 
 # Top-level keys of a standalone *.meta.yaml sidecar paired with a .geo file.
 # ``geo`` points at the companion .geo (relative to the sidecar); ``simulation``
-# reuses the existing simulation.gmsh vocabulary.
-GEO_META_ROOT_KEYS = {"schema", "geo", "vars", "simulation"}
+# reuses the existing simulation.gmsh vocabulary; ``circuit_model`` (M6) carries
+# optional junction inputs (islands + L_J/E_J) for the capacitance→Hamiltonian
+# solve.  ``circuit_model`` is deliberately NOT named ``circuit``/``hamiltonian``
+# (those root keys belong to the legacy full DSL with a different shape — the
+# geo sidecar never feeds the legacy builder, so the two never meet).
+GEO_META_ROOT_KEYS = {"schema", "geo", "vars", "simulation", "circuit_model"}
+
+# *.meta.yaml ``circuit_model`` block (M6 junction inputs → circuit_model.py).
+CIRCUIT_MODEL_KEYS = {"qubits"}
+# A single qubit entry: a name, exactly one island ref (``island`` scalar or
+# ``islands`` list), and exactly one of L_J / E_J.
+CIRCUIT_QUBIT_KEYS = {"name", "island", "islands", "L_J", "E_J"}
 
 # simulation.gmsh.gds block: GDS layer map + gdstk library settings.
 GDS_SIM_KEYS = {

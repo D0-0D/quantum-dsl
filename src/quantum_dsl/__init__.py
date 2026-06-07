@@ -85,11 +85,16 @@ __all__ = [
     "build_palace_config",
     "validate_config",
     "parse_geo_meta_sidecar",
+    "solve_circuit_model",
+    "CircuitModelResult",
+    "JunctionInput",
 ]
 
 # Lazy re-export of the optional gmsh/gdstk-backed entry points.  Delegating to
 # ``quantum_dsl.dsl.__getattr__`` keeps ``import quantum_dsl`` free of any eager
 # gmsh / gdstk import (those backends are only pulled in on first access).
+# (``circuit_model`` is pure Python, but routed through the same lazy path for a
+# uniform public surface.)
 _LAZY_NAMES = frozenset({
     "build_mesh",
     "build_mesh_from_geo",
@@ -99,6 +104,9 @@ _LAZY_NAMES = frozenset({
     "build_palace_config",
     "validate_config",
     "parse_geo_meta_sidecar",
+    "solve_circuit_model",
+    "CircuitModelResult",
+    "JunctionInput",
 })
 
 
