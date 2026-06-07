@@ -72,3 +72,6 @@ Goal: one `.geo` + sidecar → `chip.gds` **and** `chip.msh` (msh2.2) + Palace E
   pipelines; geo guard dormant til M5), `.gitignore` local gmsh SDK. Notebook discarded (format churn).
   Configured WSL env (conda **`quantum_dsl`** + spack **Palace 0.16**, `PALACE_BIN` persisted) and fixed
   cross-platform `_to_wsl_path`. ✅ **236 passed**; `geo_build --run-palace --dry-run` passes.
+- [`session/2606072321.md`](session/2606072321.md) — 2026-06-07 · Converted
+  `refer/2511.10479v1.pdf` plus `refer/arXiv-2511.10479v1.tar.gz` into AI-readable reference files:
+  source-derived Markdown with TeX math + figure links, plus PDF-layout fallback text/Markdown.
