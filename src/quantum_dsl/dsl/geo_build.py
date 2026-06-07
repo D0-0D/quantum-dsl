@@ -22,7 +22,9 @@ CLI:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional, Union
 
@@ -31,6 +33,23 @@ from .parsers.simulation import parse_geo_meta_sidecar
 
 
 __all__ = ["build_geo", "main"]
+
+
+def _sha256_file(path: Optional[Union[str, Path]]) -> Optional[str]:
+    """文件内容 SHA-256 (十六进制); 路径为 None 或不存在则返回 None。
+
+    用于结果产物的溯源/失效检测: 消费端重算输入哈希与产物记录比对, 不符即 stale。
+    """
+    if path is None:
+        return None
+    p = Path(path)
+    if not p.is_file():
+        return None
+    h = hashlib.sha256()
+    with p.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
 
 
 def build_geo(geo_path: Optional[Union[str, Path]] = None,
@@ -51,7 +70,9 @@ def build_geo(geo_path: Optional[Union[str, Path]] = None,
 
     Returns:
         ``{"gds": Path|None, "msh": Path|None, "palace_json": Path,
-           "physical_groups": [sorted names]}``。
+           "physical_groups": [sorted names], "results": Path|None}``。
+        ``results`` 仅在 ``run_palace and not dry_run`` 且 Palace 真写出了电容
+        CSV 时, 指向 ``out_dir/chip.results.yaml`` (OUTPUT-ONLY 结果产物); 否则 None。
 
     Raises:
         DesignDslError: sidecar / geo 缺失或非法, 或下游 adapter 报错。
@@ -89,6 +110,7 @@ def build_geo(geo_path: Optional[Union[str, Path]] = None,
         "msh": None,
         "palace_json": None,
         "physical_groups": [],
+        "results": None,
     }
 
     # SESSION OWNERSHIP (critical): the GDS and mesh branches each call
@@ -150,6 +172,40 @@ def build_geo(geo_path: Optional[Union[str, Path]] = None,
         from .palace_adapter import run_palace as _run_palace
         _run_palace(palace_json, dry_run=dry_run)
 
+        # ---- RESULTS write-back (M3): OUTPUT-ONLY chip.results.yaml --------
+        # Only a real solve (not --dry-run) produces capacitance CSVs.  Derive
+        # the postpro dir from the config's Problem.Output (NOT a hardcoded
+        # literal) and reuse build_palace_config's terminal binding as the
+        # single source of truth for the matrix row/col labels.
+        if not dry_run:
+            from .palace_adapter import (
+                parse_capacitance_matrix,
+                terminal_bindings,
+                write_results_sidecar,
+            )
+            postpro = out_dir / cfg["Problem"].get("Output", "postpro")
+            bindings = terminal_bindings(mesh_result.physical_attributes)
+            cap = parse_capacitance_matrix(postpro, terminals=bindings)
+            if cap.available:
+                provenance = {
+                    "generated_utc": datetime.now(timezone.utc)
+                    .isoformat(timespec="seconds"),
+                    "solver": {"type": "Electrostatic", "order": order, "l0": l0},
+                    "out_dir": str(out_dir),
+                    "label_index_map": {b.group: b.index for b in bindings},
+                    "inputs": {
+                        "geo": Path(geo).name,
+                        "geo_sha256": _sha256_file(geo),
+                        "mesh": (Path(mesh_result.mesh_path).name
+                                 if mesh_result.mesh_path else None),
+                        "mesh_sha256": _sha256_file(mesh_result.mesh_path),
+                        "palace_json": palace_json.name,
+                        "config_sha256": _sha256_file(palace_json),
+                    },
+                }
+                result["results"] = write_results_sidecar(
+                    cap, out_dir / "chip.results.yaml", provenance=provenance)
+
     return result
 
 
@@ -194,6 +250,8 @@ def main(argv: Optional[list[str]] = None) -> int:
     print(f"GDS         : {result['gds']}")
     print(f"MSH         : {result['msh']}")
     print(f"Palace JSON : {result['palace_json']}")
+    if result.get("results"):
+        print(f"Results     : {result['results']}")
     print(f"physical_groups ({len(result['physical_groups'])}): "
           f"{result['physical_groups']}")
     return 0

@@ -87,15 +87,20 @@ def _conductor_surface_tags(tracker: GeomTracker,
         if spec.get("kind") == "metal":
             volumes.extend(tracker.layer_ground.get(layer, []))
 
-    if not volumes:
-        return []
-    boundary = gmsh.model.getBoundary(
-        [(3, t) for t in volumes],
-        combined=False, oriented=False, recursive=False)
     seen: dict[int, None] = {}
-    for dim, tag in boundary:
-        if dim == 2:
-            seen.setdefault(abs(int(tag)), None)
+    if volumes:
+        boundary = gmsh.model.getBoundary(
+            [(3, t) for t in volumes],
+            combined=False, oriented=False, recursive=False)
+        for dim, tag in boundary:
+            if dim == 2:
+                seen.setdefault(abs(int(tag)), None)
+    # Approach A: carved terminals have no 3D volume — their cavity walls are
+    # already dim-2 face tags. Add them directly so pad-edge refinement survives.
+    for named in tracker.conductor_faces.values():
+        for tags in named.values():
+            for t in tags:
+                seen.setdefault(abs(int(t)), None)
     return list(seen.keys())
 
 

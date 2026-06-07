@@ -19,7 +19,10 @@ Rectangle(pad) = { -50, -30, 0, 100, 60 };   // x[-50,50] y[-30,30]
 Physical Surface("metal::1::P::pad") = { pad };
 
 // ---- 2) ground sheet with one rectangular hole ---------------------
+// Cutout (140x60..100) is LARGER than the pad (100x60) so the pad is isolated
+// inside it (disjoint from ground) — required by the conductors-as-voids mesh
+// path (Approach A): overlapping coplanar metal would merge cavities.
 gnd  = news; Rectangle(gnd)  = { -150, -150, 0, 300, 300 };
-hole = news; Rectangle(hole) = { -40,  -20,  0,  80,  40 };
+hole = news; Rectangle(hole) = { -70,  -50,  0, 140, 100 };
 diff() = BooleanDifference{ Surface{ gnd }; Delete; }{ Surface{ hole }; Delete; };
 Physical Surface("ground::1::chip::gnd") = { diff(0) };

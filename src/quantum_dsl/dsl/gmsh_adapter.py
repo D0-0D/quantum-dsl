@@ -43,9 +43,11 @@ from ._gmsh_geometry import (
 from ._gmsh_layers import (
     apply_cuts,
     apply_symmetry_cuts,
+    carve_conductors,
     fragment_everything,
     render_layer_grounds,
     render_vacuum_box,
+    resolve_conductor_faces,
 )
 from ._gmsh_mesh import define_size_fields, generate_mesh, write_mesh
 from ._gmsh_physical import assign_physical_groups
@@ -625,6 +627,11 @@ def build_mesh_from_geo(geo_path: Union[str, Path],
         # Stage D: cut subtract primitives — geo positive-tone => no-op -------
         apply_cuts(tracker)
 
+        # Stage D'' (Approach A): carve metal terminals OUT of the vacuum box so
+        # their surfaces become EXTERIOR Terminal boundaries (a live Palace solve
+        # rejects a Terminal on an interior face). No-op if no metal terminals.
+        carve_conductors(tracker)
+
         mesh_path: Optional[Path] = None
         physical_groups: dict[str, tuple[int, list[int]]] = {}
         physical_attributes: dict[str, int] = {}
@@ -632,6 +639,10 @@ def build_mesh_from_geo(geo_path: Union[str, Path],
         if generate:
             # Stage E: fragment (共面缝合, dimtag 重映射)
             fragment_everything(tracker)
+            # Stage E' (Approach A): re-key the carved cavity walls to each
+            # terminal's (component, primitive) by centroid, post-fragment (like
+            # resolve_port_surfaces). Fills tracker.conductor_faces + vacuum_outer_faces.
+            resolve_conductor_faces(tracker, resolved_options.layer_stack)
             # Stage D': 端口面解析放在 fragment *之后* — 与 yaml 路径一致。
             # resolve_port_surfaces 只读最终几何 (getBoundary/getCenterOfMass),
             # 不依赖 fragment 前状态; 而部分 OCC 版本会在 fragment 时把作为

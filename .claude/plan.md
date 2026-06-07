@@ -44,10 +44,39 @@ Goal: one `.geo` + sidecar → `chip.gds` **and** `chip.msh` (msh2.2) + Palace E
 - [ ] Curved-boundary GDS fidelity (arc/fillet sampling at `arc_tol_um`, sagitta-based segment count).
 - [ ] Expand `qlib.geo` macros (fillets, multi-loop ground cutouts) + parametric `For`-loop chain example.
 
-## M3 — Capacitance results + verification loop  `[ ]`
-- [ ] `parse_capacitance_matrix()` reading `terminal-Cm.csv` / `terminal-C.csv` / `domain-E.csv`.
-- [ ] Two-conductor reference design with known-sign C-matrix assertions (symmetric, +diag, −offdiag).
-- [ ] End-to-end harness: `.geo` → mesh → JSON → Palace → C-matrix (gated on Palace availability).
+## M3 — Capacitance results + verification loop  `[x]`
+- [x] **Results write-back design locked** (3-lens workflow): OUTPUT-ONLY artifact
+      `out_dir/chip.results.yaml` (schema `qiskit-metal/design-results/1`); NOT in
+      `*.meta.yaml`, `GEO_META_ROOT_KEYS` untouched. Completeness `tier:` ladder
+      T0–T4; full Hamiltonian needs NO new authored layer (inputs→Layer-1 sub-blocks,
+      outputs→results artifact). See `session/2606072351.md`.
+- [x] `parse_capacitance_matrix(postpro_dir, terminals=())` — real parser for BOTH
+      `terminal-C.csv` (Maxwell, +diag/−offdiag) and `terminal-Cm.csv` (mutual,
+      all-positive), F→fF, header-keyed, asserts square + row order + #terminals.
+      `domain-E.csv` (energy) not yet parsed.
+- [x] `TerminalBinding` + `terminal_bindings()` = matrix row/col **single source of
+      truth**; `build_palace_config` refactored to share it. `write_results_sidecar`
+      emits the artifact + provenance (sha256 of geo/mesh/config, solver, label→index).
+      `geo_build` wires it after a non-dry-run solve. **Full suite 250 passed.**
+- [x] Parser verified against **real Palace 0.16 CSV output** (verbatim PoC fixtures);
+      `tests/fixtures/two_pads.{geo,meta.yaml}` clean 2-conductor reference added.
+- [x] **Conductors-as-voids (Approach A)** — live solve UNBLOCKED. `carve_conductors`
+      (occ.cut metal terminals OUT of the vacuum) + `resolve_conductor_faces` (post-fragment
+      bbox re-key → `conductor_faces`), so every Terminal face is EXTERIOR (Palace's
+      invariant). `assign_physical_groups` re-emits `{C}_{P}_sfs` byte-identical;
+      `vacuum_outer` = domain combined-boundary − cavity walls. **Geo-path-only** (legacy
+      slab path + GDS untouched). 6 files; `tiny_chip` cutout enlarged → disjoint pad.
+- [x] **Two-conductor reference + known-sign C-matrix**: `tests/fixtures/two_pads.*` →
+      live Palace solve → `chip.results.yaml` maxwell `[[24.73,-1.98],[-1.98,24.72]]` fF
+      (+diag/−offdiag/symmetric), mutual all-positive. Gated test
+      `test_two_pads_live_capacitance_matrix` (QDSL_RUN_PALACE=1) **passes**; full suite
+      **251 passed, 1 skipped**.
+- [x] **End-to-end harness**: `build_geo(--run-palace, non-dry-run)` parses postpro CSVs +
+      writes the results artifact automatically. (`domain-E.csv` energy parse still TODO.)
+- _Scope note (→ M2/M4):_ only metal **terminals** are carved so far; ground-plane designs
+      need the metal GROUND sheet carved too, `chip_layout` needs disjoint authoring for a
+      full-chip live solve, and the legacy YAML path is still on the slab representation.
+      `domain-E.csv` (field energy) not yet parsed.
 
 ## M4 — Richer solvers + metadata  `[ ]`
 - [ ] `SOLVER_TYPES` += `Eigenmode`, `Driven`; per-type `build_*_config` reusing the name→attr binding.
@@ -76,3 +105,9 @@ Goal: one `.geo` + sidecar → `chip.gds` **and** `chip.msh` (msh2.2) + Palace E
 - [`session/2606072321.md`](session/2606072321.md) — 2026-06-07 · Converted
   `refer/2511.10479v1.pdf` plus `refer/arXiv-2511.10479v1.tar.gz` into AI-readable reference files:
   source-derived Markdown with TeX math + figure links, plus PDF-layout fallback text/Markdown.
+- [`session/2606072351.md`](session/2606072351.md) — 2026-06-07 · **M3 COMPLETE**: results write-back
+  (OUTPUT-only `chip.results.yaml`, tier ladder, no new Hamiltonian layer) — dual-matrix parser
+  (`terminal-C/Cm.csv`, F→fF) + `terminal_bindings` SSOT + `write_results_sidecar` + `geo_build` wiring.
+  Found live-solve blocker (conductor-as-slab) → scoped 3 approaches → implemented **Approach A
+  (conductors-as-voids `occ.cut`)** geo-path-only (6 files). Live Palace solve on `two_pads` →
+  real C-matrix `[[24.73,-1.98],…]` fF. **251 passed, 1 skipped** (gated live test passes w/ QDSL_RUN_PALACE=1).
