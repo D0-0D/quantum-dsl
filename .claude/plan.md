@@ -66,3 +66,8 @@ Goal: one `.geo` + sidecar → `chip.gds` **and** `chip.msh` (msh2.2) + Palace E
 - [`session/2606072216.md`](session/2606072216.md) — 2026-06-07 · Plan + **M1 complete**: foundation +
   5-agent workflow; mesh-size clamp & JJ-lumped fixes; **236/236 tests pass**; `build_geo` produces
   GDS + mesh + Palace JSON and **Palace `--dry-run` passes** (WSL).
+- [`session/2606072302.md`](session/2606072302.md) — 2026-06-07 · Pulled `feat/native-geo-dsl`, carried
+  over local WIP fixes: local `_require_gmsh` (qiskit-metal dropped the export), `parse_number`
+  expression fallback, **port-resolve moved after `fragment`** (both pipelines; geo guard dormant til M5),
+  `.gitignore` local gmsh SDK. Notebook discarded (format churn). ⚠️ suite not yet run — WSL `metal-env`
+  setup pending.
