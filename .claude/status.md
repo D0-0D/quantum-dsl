@@ -45,6 +45,15 @@ R3 circuit solve ✅, R4 read QDA ✅, R5 GDSFactory) + verbal "电容矩阵就�
 - M5a impl (emit_geo bridge, carved ground): see `session/2606080338.md`.
 
 ## Recent notable commits
+- _(branch `fix/review-critical-robustness` — 2606081710)_ **xhigh re-review of #14 → 3 critical
+  fixes** (silent-wrong-result hardening, each + regression test; all 3 adversarially verified
+  "sound"): `carve_conductors` now **raises** on a split vacuum (was warn-and-continue → incomplete
+  Palace domain); `circuit_model._invert_matrix` singular guard is now **scale-relative** (farad-scale
+  ill-conditioned matrices raise, not invert to garbage); Palace C-matrix CSV parser **rejects
+  nan/inf**. Full suite **319 passed, 3 skipped** (was 314/3, +5 new tests, 0 regressions). Deferred
+  findings filed as **#18** (carved-ground mesh refinement → biased C) + **#19** (robustness checklist);
+  the singular-guard item in **#15** is now resolved. See `session/2606081710.md`. _(branch not yet
+  merged/pushed.)_
 - _(branch `chore/viz-deps-and-cleanup` — 2606080906)_ **docs/examples cleanup + viz deps**:
   `examples/dsl/` is now geo-only (deleted `.note`/`notebooks`/`scripts`/`outputs`/`yaml` +
   `docs/codex_notes/dsl_v3_*`); the 2 test-referenced `.metal.yaml` moved to `tests/fixtures/`;
@@ -61,11 +70,21 @@ R3 circuit solve ✅, R4 read QDA ✅, R5 GDSFactory) + verbal "电容矩阵就�
 - `1e91315` **M3**: live Palace capacitance write-back + conductors-as-voids mesh.
 
 ## Open / next steps
+- **#14 re-review follow-ups**: 3 critical fixes landed on `fix/review-critical-robustness`
+  (push + PR pending). Deferred: **#18** (carved-ground mesh refinement → biased C; needs a
+  live-Palace re-validation since it moves the C numbers), **#19** (robustness/silent-failure
+  checklist), and the remaining items in **#15**.
 - **viz**: install the `viz` extra (`gdsfactory`) to exercise that backend live — it is absent in
   metal-env, so its 2 tests are gated/skipped (the matplotlib fallback IS verified).
 - **M5a follow-ups**: full-chip live Palace solve on an emit_geo ground design (gated); connection-pad
   transmons may overlap the ground (clean-disjoint cells are the tested path); ε-vacuum-gap artifact
   under carved metal.
-- **M6 follow-ups**: multi-island (floating/differential) qubits (schema accepts, solver defers);
-  run on an emit_geo transmon now that M5a has landed.
+- **M6 follow-ups**: multi-island (floating/differential) qubits (schema accepts, solver defers) —
+  now tracked in **#20**, together with the floating-bus grounding bug (non-qubit terminals are
+  hard-grounded, killing bus-mediated coupling → needs Schur-complement) and the meta→tier-2 wiring
+  bug (`geo_build` reads `islands` but `two_pads.meta.yaml` has `island:`; `L_J: 10nH` never
+  unit-parsed). Surfaced while fixing `chip_layout.geo` (see `session/2606081754.md`).
+- **chip_layout.geo** (example): now a proper 2-transmon + coupling-bus layout (pads isolated in
+  vacuum pockets; lower pad capacitively coupled to the bus via a neck+paddle). tier-1 verified;
+  tier-2 blocked on **#20**. Changes uncommitted on `fix/review-critical-robustness`.
 - `CLAUDE.md` no longer pins "M1–M5" — milestones are re-scoped per phase (see `plan.md`).

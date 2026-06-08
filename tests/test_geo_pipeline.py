@@ -249,3 +249,37 @@ def test_two_pads_live_capacitance_matrix(tmp_path):
     assert g["C_g_fF"] > 0 and g["g_MHz"] > 0
     # provenance records the authored junction inputs
     assert "circuit_model_inputs" in doc["provenance"]
+
+
+# -----------------------------------------------------------------------------
+# carve_conductors — fail loud (not warn) when the carve splits the vacuum
+# -----------------------------------------------------------------------------
+
+def test_carve_conductors_raises_when_vacuum_splits():
+    """A carve that severs the vacuum box into != 1 connected volume must raise.
+
+    Regression for the review finding: the old code only ``warnings.warn``-ed and
+    kept ``vac_tags[0]``, so the dropped vacuum volume(s) got no material
+    attribute and Palace silently solved on an INCOMPLETE dielectric domain ->
+    plausible-but-wrong capacitance matrix. It must now raise a DesignDslError.
+    """
+    from quantum_dsl.dsl._gmsh_geometry import GeomTracker
+    from quantum_dsl.dsl._gmsh_layers import carve_conductors
+    from quantum_dsl.dsl.errors import DesignDslError
+
+    gmsh.initialize()
+    gmsh.option.setNumber("General.Terminal", 0)
+    gmsh.model.add("carve_split")
+    vac = gmsh.model.occ.addBox(0, 0, 0, 10, 10, 10)
+    # A slab spanning the full x-y cross-section, bisecting the box in z: carving
+    # it out severs the vacuum into two disconnected halves (z<4.5 and z>5.5).
+    slab = gmsh.model.occ.addBox(-1, -1, 4.5, 12, 12, 1.0)
+    gmsh.model.occ.synchronize()
+
+    tr = GeomTracker()
+    tr.vacuum_box = vac
+    tr.conductor_solids = {1: {("Q", "wall"): [slab]}}
+
+    with pytest.raises(DesignDslError, match="split into"):
+        carve_conductors(tr)
+    # autouse _clean_gmsh_session finalizes the session afterwards.

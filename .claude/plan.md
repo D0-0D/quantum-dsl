@@ -269,3 +269,16 @@ Single metal layer + dielectric substrate is the scope; defer until a multi-laye
   `03-汇报流程与演示.md`（与 01 逐段对应 + GUI 操作）+ `demo_gui.sh`（WSLg 演示助手）+ `img/` 6 张图。
   9-agent workflow 逐模块走查取证；主控抽查行号全中。重跑验证：全套 **314 passed, 3 skipped**、
   chip_layout/cells_2q 端到端、**live two_pads** C 矩阵 + tier-2 哈密顿量、Gmsh GUI + GDSFactory 窗口（WSLg/xcb）均确认可运行。
+- [`session/2606081710.md`](session/2606081710.md) — 2026-06-08 · **xhigh re-review of #14 → fix
+  critical, issue the rest** (branch `fix/review-critical-robustness`). 3 surgical correctness fixes
+  (carve→raise on split vacuum; scale-relative singular guard; Palace-CSV nan/inf reject), each +
+  regression test, all 3 adversarially "sound". Full suite **319 passed, 3 skipped** (was 314/3).
+  Deferred findings → **#18** (carved-ground mesh refinement) + **#19** (robustness checklist);
+  **#15** singular-guard item resolved. Branch not yet merged.
+- [`session/2606081754.md`](session/2606081754.md) — 2026-06-08 · **chip_layout.geo 外观修复**: 焊盘原本
+  嵌进 ground (短路 / 在 GDS 里被 union 吞掉) → 加 `GROUND_POCKET` 把每对焊盘挖成真空孤岛; 再加 `COUPLER`
+  (neck+paddle, `BooleanUnion` 成单导体) 让下焊盘电容耦合到 bus (非 galvanic, qubit 悬浮)。坑: neck 必须用
+  `Rectangle` 而非 CPW `Plane Surface`，否则 union 退化成 fragment。tier-1 验证: GDS 6 多边形 + 6 个独立网格
+  导体 + 单一连通真空; geo 套件 **73 passed, 3 skipped**。Palace 按用户要求不跑。剩余物理 → **#20**
+  (tier-2 不支持浮动多岛 transmon + 浮动 bus 被错误接地而非 Schur 消元; 外加 meta→tier-2 接线 bug)。
+  例改动 (chip_layout.geo + qlib.geo) 未提交。

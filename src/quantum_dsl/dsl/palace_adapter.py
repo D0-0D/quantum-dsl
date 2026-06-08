@@ -38,6 +38,7 @@ name → attribute 绑定 (THE binding contract 的下游消费端):
 from __future__ import annotations
 
 import json
+import math
 import os
 import shutil
 import subprocess
@@ -524,6 +525,14 @@ def _parse_palace_cap_csv(text: str) -> list[list[float]]:
             raise DesignDslError(
                 f"Palace capacitance CSV row {row_no} has a non-numeric "
                 f"value: {line!r}") from exc
+        # float() happily accepts 'nan'/'inf'/overflow; a non-finite entry would
+        # propagate silently into the inverse-cap / transmon math and into
+        # chip.results.yaml. Reject it here (a diverged/partial Palace solve).
+        if not all(math.isfinite(v) for v in values):
+            raise DesignDslError(
+                f"Palace capacitance CSV row {row_no} has a non-finite value "
+                f"(nan/inf): {line!r} — the Palace solve likely diverged or is "
+                f"incomplete.")
         if row_index != row_no:
             raise DesignDslError(
                 f"Palace capacitance CSV rows out of order: expected index "
