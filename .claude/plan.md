@@ -264,3 +264,8 @@ Single metal layer + dielectric substrate is the scope; defer until a multi-laye
   (`gdsfactory<9.3` to keep `numpy~=1.24`; `pydantic<2.11` for kfactory 1.2.2 import; pyaedt caps
   `<2.12`). gdsfactory R5 bridge now verified (2 gated tests pass; `--png` → `backend=gdsfactory`);
   added cross-platform `requirements.txt` + capped `pyproject` `viz` extra. Suite still 314/3.
+- [`session/2606081015.md`](session/2606081015.md) — 2026-06-08 · **汇报材料**（无代码改动）。新增 `docs/report/`：
+  `01-工作汇报.md`（覆盖整个 plan.md + 核对过的 `文件:行号` 引用）/ `02-代码实现详解.md`（含预期问答）/
+  `03-汇报流程与演示.md`（与 01 逐段对应 + GUI 操作）+ `demo_gui.sh`（WSLg 演示助手）+ `img/` 6 张图。
+  9-agent workflow 逐模块走查取证；主控抽查行号全中。重跑验证：全套 **314 passed, 3 skipped**、
+  chip_layout/cells_2q 端到端、**live two_pads** C 矩阵 + tier-2 哈密顿量、Gmsh GUI + GDSFactory 窗口（WSLg/xcb）均确认可运行。
