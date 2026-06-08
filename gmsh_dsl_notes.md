@@ -16,7 +16,7 @@ Gmsh provides a built-in scripting language (`.geo` files) for defining geometri
 - Conditionals: `If ... ElseIf ... Else ... EndIf`
 - Loops: `For t In {1:5} ... EndFor`
 
-**Macros**
+**Macros** -> similar to functions but without parameters, used for code reuse:
 ```geo
 Macro MacroName
   // commands
@@ -44,6 +44,24 @@ Call MacroName;
 - `Translate {dx, dy, dz} { entity_list };`
 - `Rotate {{axis_x, axis_y, axis_z}, {point_x, point_y, point_z}, angle} { entity_list };`
 - `Extrude {dx, dy, dz} { entity_list };` — creates geometry and optionally layered meshes
+```geo
+// 设置网格尺寸
+lc = 0.1;
+
+// 1. 定义一个圆盘（表面）
+Point(1) = {0, 0, 0, lc};
+Point(2) = {1, 0, 0, lc};
+Point(3) = {0, 1, 0, lc};
+Circle(1) = {2, 1, 3};
+Circle(2) = {3, 1, 2};
+Line(3) = {2, 3};
+Curve Loop(1) = {1, 3, 2};
+Plane Surface(1) = {1};
+
+// 2. 沿 Z 轴拉伸该表面，生成体积
+//    语法：Extrude {dx, dy, dz} { 表面列表 }
+Extrude {0, 0, 2} { Surface{1}; }
+```
 
 ## Physical Groups
 Group elementary entities for solver output:
@@ -59,22 +77,29 @@ Group elementary entities for solver output:
 Field[1] = Distance;
 Field[1].PointsList = {1, 2};
 Field[2] = Threshold;
-Field[2].InField = 1;
+Field[2].InField = 1; //to read from Field[1] i.e. distance to points 1 and 2
 Field[2].SizeMin = 0.01;
 Field[2].SizeMax = 0.1;
+Field[2].DistMin = 0.05;
+Field[2].DistMax = 0.2; //defined a segmented linear function in essence
 Background Field = 2;
 ```
 
-Field types: `Distance`, `Threshold`, `MathEval`, `Box`, `Min`, `Max`, `PostView`, `Attractor`
+Field types:
+`Distance`, `MathEval`, `Box`,
+`Min`, `Max`
+`Threshold`, `Attractor`
+`PostView`
 
 **Structured Meshes**
-- `Transfinite Curve{curve_list} = num_nodes [Using Progression ratio];`
+- `Transfinite Curve{curve_list} = num_nodes [Using Progression ratio];` //control node distribution along curves
 - `Transfinite Surface{surface} = {corner_points};`
+//control node distribution on surfaces, requires corner points to be defined
 - `Recombine Surface{surface};` — generate quads instead of triangles
 
 ## Mesh Options
 - `Mesh.Algorithm = 5|6|8;` (Delaunay, Frontal-Delaunay, Frontal-Delaunay for quads)
-- `Mesh.ElementOrder = 2;` — second-order elements
+- `Mesh.ElementOrder = 2;` — second-order elements (curved edges/faces)
 - `Mesh.RecombinationAlgorithm = 2;` — full-quad recombination
 
 ## File Operations
@@ -94,5 +119,3 @@ Define scalar/vector/tensor datasets, manipulate via options, run plugins (Isosu
 ## Special Variables
 - `newp`, `newc`, `newcl`, `news`, `newsl`, `newv` — auto-assign new entity tags
 - `Today` — current date string
-
-This DSL enables fully parametric geometry definition and automated meshing workflows.
