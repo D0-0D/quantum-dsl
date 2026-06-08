@@ -346,6 +346,22 @@ def test_parse_rejects_out_of_order_rows(tmp_path):
         parse_capacitance_matrix(postpro)
 
 
+@pytest.mark.parametrize("bad", ["nan", "inf", "-inf"])
+def test_parse_rejects_non_finite_values(tmp_path, bad):
+    """A diverged/partial Palace solve can emit nan/inf in a value column; bare
+    float() accepts those silently. Regression: they must be rejected so NaN/inf
+    never propagate into the inverse-cap / transmon math and chip.results.yaml."""
+    postpro = tmp_path / "postpro"
+    postpro.mkdir()
+    (postpro / "terminal-C.csv").write_text(
+        "i, C[i][1] (F), C[i][2] (F)\n"
+        f" 1.0, +1.0e-15, {bad}\n"
+        " 2.0, +0.0, +1.0e-15\n",
+        encoding="utf-8")
+    with pytest.raises(DesignDslError, match="non-finite"):
+        parse_capacitance_matrix(postpro)
+
+
 # -----------------------------------------------------------------------------
 # write_results_sidecar — OUTPUT-ONLY Layer-3 artifact, NOT a meta sidecar
 # -----------------------------------------------------------------------------

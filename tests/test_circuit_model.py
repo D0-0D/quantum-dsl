@@ -244,6 +244,24 @@ def test_empty_qubits_rejected():
         solve_circuit_model(_two_pads(), [])
 
 
+def test_near_singular_capacitance_matrix_rejected():
+    """An ill-conditioned / singular Maxwell submatrix must raise, not invert
+    to garbage. Regression for the review finding: the old absolute pivot floor
+    (|pivot| < 1e-300) never fired at farad scale (~1e-15), so a near-singular
+    matrix produced a nonsense C^-1 / E_C / f01 silently. The guard is now
+    scale-relative."""
+    cap = CapacitanceResult(
+        postpro_dir=Path("."), available=True,
+        terminals=(TerminalBinding(1, "A_pad_sfs", 11),
+                   TerminalBinding(2, "B_pad_sfs", 12)),
+        # rank-deficient: row1 == -row0 -> det = 0 (perfectly correlated islands)
+        maxwell=[[100.0, -100.0], [-100.0, 100.0]])
+    qubits = [JunctionInput("A", ("A_pad_sfs",), L_J=10e-9),
+              JunctionInput("B", ("B_pad_sfs",), L_J=10e-9)]
+    with pytest.raises(DesignDslError, match="singular or ill-conditioned"):
+        solve_circuit_model(cap, qubits)
+
+
 def test_non_transmon_regime_raises_designdslerror_not_valueerror():
     """Deep non-transmon regime (E_J/E_C < 1/8 -> perturbative f01<=0) must raise a
     clear DesignDslError, not leak a bare math-domain ValueError from the coupling."""

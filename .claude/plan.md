@@ -269,3 +269,9 @@ Single metal layer + dielectric substrate is the scope; defer until a multi-laye
   `03-汇报流程与演示.md`（与 01 逐段对应 + GUI 操作）+ `demo_gui.sh`（WSLg 演示助手）+ `img/` 6 张图。
   9-agent workflow 逐模块走查取证；主控抽查行号全中。重跑验证：全套 **314 passed, 3 skipped**、
   chip_layout/cells_2q 端到端、**live two_pads** C 矩阵 + tier-2 哈密顿量、Gmsh GUI + GDSFactory 窗口（WSLg/xcb）均确认可运行。
+- [`session/2606081710.md`](session/2606081710.md) — 2026-06-08 · **xhigh re-review of #14 → fix
+  critical, issue the rest** (branch `fix/review-critical-robustness`). 3 surgical correctness fixes
+  (carve→raise on split vacuum; scale-relative singular guard; Palace-CSV nan/inf reject), each +
+  regression test, all 3 adversarially "sound". Full suite **319 passed, 3 skipped** (was 314/3).
+  Deferred findings → **#18** (carved-ground mesh refinement) + **#19** (robustness checklist);
+  **#15** singular-guard item resolved. Branch not yet merged.

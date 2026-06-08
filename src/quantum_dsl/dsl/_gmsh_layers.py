@@ -6,6 +6,7 @@
 允许 import:
 - `gmsh`, `numpy`, 标准库
 - `_gmsh_geometry.GeomTracker`
+- `.errors.DesignDslError` (纯异常类型, 无依赖)
 
 deny-list (硬性): `qiskit_metal.designs.*`, `qiskit_metal.qlibrary.*`,
 `LayerStackHandler`, `BoundsForPathAndPolyTables`, `QGmshRenderer`, `renderer_base`。
@@ -14,6 +15,7 @@ deny-list (硬性): `qiskit_metal.designs.*`, `qiskit_metal.qlibrary.*`,
 from __future__ import annotations
 
 from ._gmsh_geometry import GeomTracker
+from .errors import DesignDslError
 
 try:
     import gmsh
@@ -312,14 +314,21 @@ def carve_conductors(tracker: GeomTracker) -> None:
     vac_tags = [t for (d, t) in new_vac if d == 3]
     if len(vac_tags) != 1:
         # Carving disjoint cavities out of one box keeps it connected (1 volume).
-        # A split (multiple volumes) would break the single-'vacuum' assumption in
-        # build_palace_config — surface it loudly rather than silently mis-register.
-        import warnings
-        warnings.warn(
-            f"carve_conductors: vacuum split into {len(vac_tags)} volumes "
-            f"{vac_tags}; build_palace_config assumes one 'vacuum' group.",
-            stacklevel=2)
-    tracker.vacuum_box = vac_tags[0] if vac_tags else None
+        # A split (0 or >1 volumes) breaks the single-'vacuum' assumption in
+        # build_palace_config: only vac_tags[0] would receive a material
+        # attribute, so the dropped vacuum volume(s) leave Palace solving on an
+        # INCOMPLETE dielectric domain and emitting a plausible-but-wrong
+        # capacitance matrix with no hard error. Fail loud instead of silently
+        # mis-registering (a swallowed warning is too easy to miss in solver logs).
+        raise DesignDslError(
+            f"carve_conductors: the vacuum box split into {len(vac_tags)} "
+            f"volumes {vac_tags} after carving conductor/ground terminals; "
+            f"build_palace_config assumes exactly one connected 'vacuum' "
+            f"volume. This usually means the terminal layout pinches the "
+            f"vacuum into disconnected regions — widen the airbox or adjust "
+            f"the geometry so the carved cavities stay interior to a single "
+            f"connected vacuum.")
+    tracker.vacuum_box = vac_tags[0]
     tracker.conductor_solids.clear()  # consumed by the cut
     tracker.ground_solids.clear()     # consumed by the cut
     gmsh.model.occ.synchronize()

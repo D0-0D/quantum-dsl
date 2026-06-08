@@ -194,12 +194,21 @@ def _invert_matrix(mat: Sequence[Sequence[float]]) -> list[list[float]]:
     aug = [[float(mat[i][j]) for j in range(n)]
            + [1.0 if i == k else 0.0 for k in range(n)]
            for i in range(n)]
+    # 奇异/病态判据须 *相对* 于矩阵量级: 绝对阈值 (旧值 1e-300) 对法拉级
+    # (~1e-15) 输入毫无意义 —— 近奇异/病态子矩阵会被静默求逆成垃圾 C⁻¹。
+    # 当某 pivot 跌到矩阵特征量级的 ~1e-12 以下 (即条件数 ≳ 1e12, 双精度已无
+    # 有效位) 即判定不可逆。全零矩阵 (scale=0 → tol=0, pivot=0) 同样命中。
+    scale = max((abs(mat[i][j]) for i in range(n) for j in range(n)),
+                default=0.0)
+    sing_tol = 1e-12 * scale
     for col in range(n):
         pivot = max(range(col, n), key=lambda r: abs(aug[r][col]))
-        if abs(aug[pivot][col]) < 1e-300:
+        if abs(aug[pivot][col]) <= sing_tol:
             raise DesignDslError(
-                "capacitance submatrix is singular — cannot invert "
-                "(check that the qubit islands are distinct conductors)")
+                f"capacitance submatrix is singular or ill-conditioned — "
+                f"cannot invert (pivot {abs(aug[pivot][col]):.3e} ≤ tol "
+                f"{sing_tol:.3e}); check that the qubit islands are distinct, "
+                f"well-separated conductors")
         aug[col], aug[pivot] = aug[pivot], aug[col]
         diag = aug[col][col]
         aug[col] = [v / diag for v in aug[col]]
