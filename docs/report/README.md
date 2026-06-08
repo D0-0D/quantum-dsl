@@ -9,16 +9,22 @@
 | [`03-汇报流程与演示.md`](03-汇报流程与演示.md) | **操作用**。与 01 逐段对应：每段展示什么、敲什么命令、怎么操作、指哪看，含 Gmsh GUI / GDSFactory 窗口 | 现场照着做 |
 
 辅助：
-- [`demo_gui.sh`](demo_gui.sh) — 演示助手脚本（自动激活 `metal-env` + WSLg GUI）。`bash docs/report/demo_gui.sh help` 看子命令。
 - [`img/`](img/) — 已生成的演示参考图（各示例的 GDS 预览 + 3D 网格截图）。
 
-## 快速开始
+## 快速开始（原始命令；完整演示流程见 `03`）
 
 ```bash
 cd /home/administrator/quantum_dsl
-bash docs/report/demo_gui.sh check          # 自检环境 + GUI
-bash docs/report/demo_gui.sh build-chip     # 跑手写 .geo 示例
-bash docs/report/demo_gui.sh solve-twopads  # 真实电容求解（~2-3 分钟，开场前先跑）
+source ~/miniconda3/etc/profile.d/conda.sh && conda activate metal-env
+export PYTHONPATH=src QT_QPA_PLATFORM=xcb
+
+# 跑手写 .geo 示例（GDS + 网格 + Palace 配置 + 预览）
+PYTHONPATH=src python -m quantum_dsl.dsl.geo_build \
+    examples/dsl/geo/chip_layout.meta.yaml --out-dir build/report_chip_layout --png
+
+# 真实电容求解（~2-3 分钟，开场前先跑）
+QDSL_RUN_PALACE=1 PYTHONPATH=src python -m quantum_dsl.dsl.geo_build \
+    tests/fixtures/two_pads.meta.yaml --out-dir build/report_two_pads --run-palace
 ```
 
 > 权威进度来源仍是 `.claude/status.md`（快照）与 `.claude/plan.md`（里程碑清单）。本目录是面向汇报的二次整理，
