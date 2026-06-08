@@ -17,9 +17,8 @@ env/
 # Jupyter
 .ipynb_checkpoints/
 
-# Generated meshes / demo outputs (kept-in-tree samples live under examples/dsl/outputs)
+# Generated meshes / build artifacts
 *.msh
-!examples/dsl/outputs/*.msh
 
 # OS / editor
 .DS_Store
@@ -32,4 +31,10 @@ Gmsh/
 # local Gmsh SDK download (binary, not tracked)
 gmsh-*-Linux64/
 gmsh-*.tgz
+
+# Reference materials (large PDFs / tarballs / paper sources — not tracked)
+refer/
+
+# Claude Code transient artifacts
+.claude/scheduled_tasks.lock
 

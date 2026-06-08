@@ -11,8 +11,7 @@
 # 然后把模板 defaults、connection_pads generator、primitives 和 pins
 # 展开成 primitive IR。build_design() 再把这些 IR 写入 Metal QDesign。
 #
-# 运行:
-#   C:\ProgramData\anaconda3\envs\metal-env\python.exe examples\dsl\run_transmon_pocket_demo.py
+# legacy YAML DSL (v3) 测试 fixture — 被 tests/test_design_dsl_transmon_pocket.py 消费。
 #
 schema: qiskit-metal/design-dsl/3
 

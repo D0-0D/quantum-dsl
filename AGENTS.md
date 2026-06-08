@@ -3,7 +3,8 @@
 Guidance for AI agents working in this repository.
 
 > **⚠️ This is an ACTIVE, IN-PROGRESS project — not a finished codebase.** Work is tracked across
-> milestones M1–M5. **Before doing anything, read `.claude/status.md` (the current-state snapshot)
+> a sequence of milestones, **re-scoped per phase** (the active set, plus any deferred/future ones,
+> live in `.claude/plan.md` — don't assume a fixed M1–M5 ladder). **Before doing anything, read `.claude/status.md` (the current-state snapshot)
 > and `.claude/plan.md` (the milestone checklist).** Do not assume the project is complete or guess
 > at its state — these two files are the source of truth for where things stand. See
 > **[Project journaling](#project-journaling--keep-these-up-to-date)** below; keeping them current is mandatory.
@@ -73,8 +74,9 @@ in-progress project — never assume its state, look it up). As an agent working
      than the full checklist.
    - Refresh it whenever the headline state changes (a milestone flips, a branch merges, the
      test count changes, or a notable commit lands).
-2. **`.claude/plan.md`** — the milestone progress tracker (checklist **M1–M5**, legend
-   `[x]` done / `[~]` in progress / `[ ]` not started).
+2. **`.claude/plan.md`** — the milestone progress tracker (re-scoped per phase; top has a
+   current-phase requirements map + an Active-path order, legend
+   `[x]` done / `[~]` in progress / `[ ]` not started / `[defer]` deferred — out of the current phase).
    - At the **start** of a session, read it to see detailed current state.
    - As work lands, update the relevant checklist items (flip `[ ]`→`[~]`→`[x]`, edit the bullet text
      to reflect what was actually built/verified).

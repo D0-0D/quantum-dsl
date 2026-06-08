@@ -18,8 +18,7 @@ from quantum_dsl.design_dsl import (
 from qiskit_metal.designs.design_planar import DesignPlanar
 
 
-EXAMPLE = Path(__file__).resolve().parents[1] / "examples" / "dsl" / "yaml" / (
-    "chain_2q_native.metal.yaml")
+EXAMPLE = Path(__file__).resolve().parent / "fixtures" / "chain_2q_native.metal.yaml"
 
 
 class RendererDefaultDesign(DesignPlanar):

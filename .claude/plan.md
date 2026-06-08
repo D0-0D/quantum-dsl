@@ -253,3 +253,14 @@ Single metal layer + dielectric substrate is the scope; defer until a multi-laye
   302 passed. Then **M7** NEW `dsl/gds_viz.py` (R5): `preview_gds` matplotlib (verified) + gdsfactory
   (gated) backends, `viz` extra, lazy exports, CLI `--png`. Full suite **314 passed, 3 skipped**.
   PR `feat/native-geo-dsl` → `main`.
+- [`session/2606080906.md`](session/2606080906.md) — 2026-06-08 · **Post-PR#14 docs/examples cleanup**
+  (on `main`). `examples/dsl/` → geo-only (removed `.note`/`notebooks`/`scripts`/`outputs`/`yaml` +
+  `docs/codex_notes/dsl_v3_*`); moved 2 test `.metal.yaml` → `tests/fixtures/`; rewrote `README.md` +
+  `examples/dsl/README.md` for the native-geo path; `refer/` untracked + gitignored; removed local
+  gmsh SDK; synced stale `AGENTS.md`. v3 engine + 5 legacy test files kept. Re-ran whole pipeline
+  (chip_layout + cells_2q + **live two_pads Palace solve** → C-matrix + tier-2 Hamiltonian) and full
+  suite **314 passed, 3 skipped**. 3-agent verify workflow caught + fixed 3 stale fixture-header refs.
+  **Follow-up:** installed **gdsfactory 9.2.2** (viz extra) — resolved a 2-layer dep conflict
+  (`gdsfactory<9.3` to keep `numpy~=1.24`; `pydantic<2.11` for kfactory 1.2.2 import; pyaedt caps
+  `<2.12`). gdsfactory R5 bridge now verified (2 gated tests pass; `--png` → `backend=gdsfactory`);
+  added cross-platform `requirements.txt` + capped `pyproject` `viz` extra. Suite still 314/3.
