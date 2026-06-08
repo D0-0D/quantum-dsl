@@ -79,6 +79,12 @@ R3 circuit solve ✅, R4 read QDA ✅, R5 GDSFactory) + verbal "电容矩阵就�
 - **M5a follow-ups**: full-chip live Palace solve on an emit_geo ground design (gated); connection-pad
   transmons may overlap the ground (clean-disjoint cells are the tested path); ε-vacuum-gap artifact
   under carved metal.
-- **M6 follow-ups**: multi-island (floating/differential) qubits (schema accepts, solver defers);
-  run on an emit_geo transmon now that M5a has landed.
+- **M6 follow-ups**: multi-island (floating/differential) qubits (schema accepts, solver defers) —
+  now tracked in **#20**, together with the floating-bus grounding bug (non-qubit terminals are
+  hard-grounded, killing bus-mediated coupling → needs Schur-complement) and the meta→tier-2 wiring
+  bug (`geo_build` reads `islands` but `two_pads.meta.yaml` has `island:`; `L_J: 10nH` never
+  unit-parsed). Surfaced while fixing `chip_layout.geo` (see `session/2606081754.md`).
+- **chip_layout.geo** (example): now a proper 2-transmon + coupling-bus layout (pads isolated in
+  vacuum pockets; lower pad capacitively coupled to the bus via a neck+paddle). tier-1 verified;
+  tier-2 blocked on **#20**. Changes uncommitted on `fix/review-critical-robustness`.
 - `CLAUDE.md` no longer pins "M1–M5" — milestones are re-scoped per phase (see `plan.md`).

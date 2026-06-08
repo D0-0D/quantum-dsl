@@ -100,5 +100,46 @@ Macro GROUND_CUTOUT
   sret = _diff(0);
 Return
 
+// ---------------------------------------------------------------------
+// GROUND_POCKET(sground, pkt_cx,pkt_cy, pkt_w,pkt_h) — 在 ground 面 sground
+// 上蚀刻一个矩形 pocket (中心 pkt_cx,pkt_cy, 宽 pkt_w 高 pkt_h), BooleanDifference。
+// 用途: 把 qubit 焊盘从 ground 隔离 — 焊盘落在 pocket 真空区内, 四周留 gap, 不
+// 与 ground 同层短路 (也就不会在 GDS 里被 union 进 ground 而消失)。
+// 蚀刻结果面 tag 写回 sret (positive-tone ground, pocket 已挖空)。
+// ---------------------------------------------------------------------
+Macro GROUND_POCKET
+  _pk = news; Rectangle(_pk) = { pkt_cx - pkt_w/2, pkt_cy - pkt_h/2, 0, pkt_w, pkt_h };
+  _pdiff() = BooleanDifference{ Surface{ sground }; Delete; }{ Surface{ _pk }; Delete; };
+  sret = _pdiff(0);
+Return
+
+// ---------------------------------------------------------------------
+// COUPLER(_padb, cpx, pb_bot_y) — 给 qubit 下焊盘 _padb 接一个伸向 bus 的
+// 电容耦合结构: 一条 neck (颈) + 一块平行 bus 的 paddle (耦合桨), 三者
+// BooleanUnion 成 **一个** 导体 (与 _padb 同 terminal, 保持 qubit 岛悬浮)。
+//   _padb   — 已存在的下焊盘面 tag (将被 union 消耗)
+//   cpx     — qubit 中心 x (neck/paddle 居中于此)
+//   pb_bot_y— 下焊盘底边 y (neck 由此向下接到 paddle)
+// 复用全局: coup_neck_w, coup_pad_w, coup_pad_h, c_gap, coup_ov, cpw_w, bus_y。
+// paddle 底距 bus 中心导体顶 c_gap → 平行板电容耦合 (galvanic 不接, 不短路)。
+// 结果面 tag 写回 sret。
+// ---------------------------------------------------------------------
+Macro COUPLER
+  // paddle: 平行 bus 的耦合桨, 桨底 = bus_y + cpw_w/2 + c_gap
+  cx = cpx; cy = bus_y + cpw_w/2 + c_gap + coup_pad_h/2; w = coup_pad_w; h = coup_pad_h;
+  Call PAD;
+  _paddle = sret;
+  // neck: 下焊盘底 → paddle 顶, 两端各 overlap coup_ov 进 pad / paddle。
+  // *必须* 用 Rectangle (OCC primitive): pad/paddle 是 Rectangle, 而 CPW 造的
+  // 是 Plane Surface — 两种类型 BooleanUnion 不会 fuse (退化成 fragment, 只裁
+  // 不并), 只有同为 OCC primitive 的重叠面才会真正合并成单面。
+  _ny0 = bus_y + cpw_w/2 + c_gap + coup_pad_h - coup_ov;  // neck 底 (探入 paddle)
+  _ny1 = pb_bot_y + coup_ov;                              // neck 顶 (探入 pad)
+  _neck = news;
+  Rectangle(_neck) = { cpx - coup_neck_w/2, _ny0, 0, coup_neck_w, _ny1 - _ny0 };
+  _cu() = BooleanUnion{ Surface{ _padb }; Delete; }{ Surface{ _neck, _paddle }; Delete; };
+  sret = _cu(0);
+Return
+
 EndIf
 // _QLIB_INCLUDED
