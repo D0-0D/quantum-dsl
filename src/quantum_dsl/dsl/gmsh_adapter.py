@@ -212,8 +212,7 @@ def _check_mesh_length_um(field: str, value: Any) -> None:
             f"simulation.gmsh.mesh.{field}={v} µm is outside the sane range "
             f"[{_MESH_LENGTH_MIN_UM} µm, {_MESH_LENGTH_MAX_UM} µm]. mesh "
             f"kwarg 单位 = µm float (与 IR simulation.gmsh.mesh.* 同语义); "
-            f"若想表示 SI 米数值, 请乘以 1e6 (e.g. 5e-6 米 → 5 µm)。"
-            f"参考 examples/dsl/.note/gmsh_walkthrough.md §5.2.")
+            f"若想表示 SI 米数值, 请乘以 1e6 (e.g. 5e-6 米 → 5 µm)。")
 
 
 def _normalize_options(ir_sim: dict[str, Any],

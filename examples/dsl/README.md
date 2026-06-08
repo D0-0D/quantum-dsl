@@ -1,85 +1,62 @@
-# DSL v3 示例
+# 示例 — 原生 Gmsh `.geo` 路径
 
-Qiskit Metal 的 native YAML DSL（v3）。一个 `.metal.yaml` 描述芯片设计，
-`build_ir()` 解析为中间表示，`build_design()` 导出到 Metal `QDesign`，
-`build_mesh()` 直接出 Gmsh `.msh` 喂给 EM 求解器。
+每个示例是一对 **`*.meta.yaml`（Layer-1 物理元数据）+ `.geo`（Layer-2 几何, µm）**，经
+`quantum_dsl.dsl.geo_build` 分叉成 **GDS**（gdstk）和 **Palace 网格 + config**（Gmsh →
+Electrostatic）。详见仓库根 `README.md`。
 
-## 目录结构
+## 目录
 
 ```
 examples/dsl/
-├── README.md                  本文件
-├── yaml/                      DSL v3 配置 YAML
-│   ├── native_2q_minimal.metal.yaml     最小示例
-│   ├── chain_2q_native.metal.yaml       完整示例（primitive-native）
-│   └── transmon_pocket_2q.metal.yaml    模板示例（type: transmon_pocket）
-├── scripts/                   命令行 demo / smoke test
-│   ├── run_chain_demo.py
-│   ├── run_chain_gmsh_demo.py
-│   ├── run_transmon_pocket_demo.py
-│   └── bidirectional_traversal_proof.py
-├── notebooks/                 Jupyter 演示
-│   ├── primitive_native_demo.ipynb
-│   ├── transmon_pocket_demo.ipynb
-│   ├── bidirectional_traversal_proof.ipynb
-│   └── gmsh_mesh_demo.ipynb
-├── outputs/                   运行产物（.msh 等，已 .gitignore）
-└── .note/                     开发笔记 / 演示材料（不影响运行）
+├── README.md            本文件
+└── geo/
+    ├── chip_layout.geo        手写 .geo：CPW bus + 2 对 qubit 焊盘 + 2 条 JJ + 蚀刻 ground
+    ├── chip_layout.meta.yaml  其物理 sidecar（layer_stack / airbox / mesh / gds / solver）
+    ├── qlib.geo               .geo 宏库（PAD / CPW / JUNCTION / GROUND_CUTOUT），被上面 Include
+    └── cells_2q.meta.yaml     M5a emit_geo：用 cells: 块生成 .geo（无需手写几何）
 ```
 
-## 从哪开始
+> 干净、可复现的 **求解参考** 在 `tests/fixtures/`：`two_pads.*`（2 导体，已验过 live C 矩阵
+> `[[24.73,-1.98],[-1.98,24.73]]` fF）与 `tiny_chip.*`（最小 smoke）。
 
-最快路径：打开一个 notebook 跑一遍。
+## 跑起来
 
-1. **`notebooks/primitive_native_demo.ipynb`** — 手写每个 pad / junction / bus 的 primitive。适合理解 DSL 基本结构。
-2. **`notebooks/transmon_pocket_demo.ipynb`** — 组件模板。写 `type: transmon_pocket` 自动生成几何 + pin。
-3. **`notebooks/gmsh_mesh_demo.ipynb`** — 端到端：YAML → DesignIR → `build_mesh()` → `.msh` → meshio 回读 + Elmer SIF 片段。
+从仓库根、在 conda `metal-env` 里（`src` 非 pip-installed → 设 `PYTHONPATH`）：
 
-只想读 YAML 不跑代码？从 **`yaml/native_2q_minimal.metal.yaml`** 开始，最短最清晰。
+```bash
+# 1) 手写 .geo（M1）→ GDS + 网格 + Palace config + PNG 预览
+PYTHONPATH=src python -m quantum_dsl.dsl.geo_build \
+    examples/dsl/geo/chip_layout.meta.yaml --out-dir build/chip_layout --png
 
-## 运行命令行 demo
+# 2) emit_geo cell 桥（M5a）→ 先生成 cells_2q.elaborated.geo，再走同一条链路
+PYTHONPATH=src python -m quantum_dsl.dsl.geo_build \
+    examples/dsl/geo/cells_2q.meta.yaml --out-dir build/cells_2q
 
-从 worktree 根目录跑（scripts 内部用 `_HERE.parents[3]` 找到 worktree 根，自动把 `src/` 加入 `sys.path`）：
-
-```powershell
-# build_design 路径（左路）— 出 Metal QDesign
-C:\ProgramData\anaconda3\envs\metal-env\python.exe examples\dsl\scripts\run_chain_demo.py
-C:\ProgramData\anaconda3\envs\metal-env\python.exe examples\dsl\scripts\run_transmon_pocket_demo.py
-
-# build_mesh 路径（右路）— 出 Gmsh .msh
-C:\ProgramData\anaconda3\envs\metal-env\python.exe examples\dsl\scripts\run_chain_gmsh_demo.py --output examples\dsl\outputs\chain_2q.msh
-C:\ProgramData\anaconda3\envs\metal-env\python.exe examples\dsl\scripts\run_chain_gmsh_demo.py --gui
-
-# 链路双向追踪 (circuit ↔ geometry ↔ netlist round-trip)
-C:\ProgramData\anaconda3\envs\metal-env\python.exe examples\dsl\scripts\bidirectional_traversal_proof.py
+# 3) 真正解电容矩阵（需要 Palace + PALACE_BIN）：用 two_pads 参考
+PYTHONPATH=src python -m quantum_dsl.dsl.geo_build \
+    tests/fixtures/two_pads.meta.yaml --out-dir build/two_pads --run-palace
 ```
 
-## 运行 notebook
+产物：`chip.gds` / `chip.msh` / `chip.json`（+ `--png` 时的 `chip.png`；`--run-palace` 非
+dry-run 时的 `chip.results.yaml`）。`cells_2q` 还会写出 `cells_2q.elaborated.geo`。
 
-Notebook 启动时通过 `_HERE.parents` 上溯找 `src/qiskit_metal/`，不需要 pip install。
-用 `metal-env` 的 kernel 打开 `notebooks/*.ipynb` 直接跑。
+## 两种写法
 
-## 两种 YAML 写法
+**手写 `.geo`**（`chip_layout.geo`）：OpenCASCADE kernel，正向金属 tone，CPW gap 用
+`BooleanDifference` 从 ground sheet 蚀刻；每个面用 `Physical Surface("role::layer::comp::prim")`
+标注（绑定 key，见根 README）。`qlib.geo` 提供 `PAD` / `CPW` / `JUNCTION` / `GROUND_CUTOUT` 宏。
 
-**Primitive-native**（手写每个几何元素，灵活但啰嗦）：
+**`cells:` 块**（`cells_2q.meta.yaml`）：列出 v3 组件模板实例，`emit_geo` 复用 `build_ir`
+把它们 lower 成扁平、**带圆角**（预采样 shapely buffer）的 `.elaborated.geo`：
 
 ```yaml
-Q1:
-  primitives:
-    - {name: pad, type: poly.rectangle, center: [0mm, 0mm], size: [420um, 90um]}
-  pins:
-    - {name: bus, points: [[0.34mm, -6um], [0.34mm, 6um]], width: 12um}
+cells:
+  - cell_type: transmon_pocket
+    component: Q1
+    x: "-700um"
+    params: {connection_pads: {}}
+  - cell_type: transmon_pocket
+    component: Q2
+    x: "700um"
+    params: {connection_pads: {}}
 ```
-
-**组件模板**（写 type 和 options，模板生成几何 + pin）：
-
-```yaml
-Q1:
-  type: transmon_pocket   # 解析继承链 qcomponent → base_qubit → transmon_pocket
-  options:
-    pos_x: -1.2mm
-    connection_pads:
-      readout: {loc_W: 1, loc_H: 1}
-```
-
-两种写法都**不**走 qlibrary 的 Python class（不写 `class: TransmonPocket`），导出物都是标准 Metal `QDesign`。

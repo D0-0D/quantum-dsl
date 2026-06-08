@@ -1,21 +1,24 @@
 # -*- coding: utf-8 -*-
-"""quantum_dsl — a native YAML design DSL for superconducting-circuit layouts.
+"""quantum_dsl — a DSL for superconducting quantum-chip layout.
 
-Extracted as a standalone package from qiskit-metal's
-``qiskit_metal.toolbox_metal.dsl``. It resolves a single ``.metal.yaml`` file
-into a Metal ``QDesign`` (and, optionally, a Gmsh mesh) without instantiating
-qlibrary component classes.
+Two geometry front-ends feed a shared physical-group model that forks to
+multiple backends:
 
-The implementation lives in the :mod:`quantum_dsl.dsl` subpackage; the most
-common entry points are re-exported here for convenience::
+* **Native Gmsh ``.geo`` path (primary).** A Layer-1 ``*.meta.yaml`` physics
+  sidecar + a Layer-2 native Gmsh ``.geo`` (microns) fork to **gdstk → GDSII**
+  and **Gmsh → mesh → Palace** (Electrostatic capacitance matrix → circuit
+  model). Entry point :func:`quantum_dsl.dsl.geo_build.build_geo`::
 
-    import quantum_dsl
-    design = quantum_dsl.build_design("chain_2q_native.metal.yaml")
+      python -m quantum_dsl.dsl.geo_build chip.meta.yaml --out-dir build/
 
-This package depends on ``qiskit-metal`` at runtime (for unit parsing, the
-``draw`` helpers, ``QComponent`` and the optional Gmsh renderer utilities).
-The Gmsh adapter (``quantum_dsl.dsl.gmsh_adapter``) is imported lazily because
-it additionally needs the optional ``gmsh`` package.
+* **Legacy YAML path.** :func:`build_ir` / :func:`build_design` resolve a single
+  ``.metal.yaml`` into a qiskit-metal ``QDesign`` (and, via the Gmsh adapter, a
+  mesh) without instantiating qlibrary component classes. ``build_ir`` is also
+  reused by the native path's ``emit_geo`` cell bridge.
+
+This package depends on ``qiskit-metal`` at runtime (unit parsing, ``draw``
+helpers, ``QComponent``). The Gmsh / gdstk / gdsfactory adapters are imported
+lazily so ``import quantum_dsl`` stays free of those optional dependencies.
 """
 from __future__ import annotations
 

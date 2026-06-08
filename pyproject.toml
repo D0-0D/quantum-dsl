@@ -28,7 +28,10 @@ gmsh = ["gmsh"]
 gds = ["gdstk"]
 # Visualization only (quantum_dsl.dsl.gds_viz): bring chip.gds into gdsfactory.
 # matplotlib (the always-available fallback renderer) ships with qiskit-metal.
-viz = ["gdsfactory"]
+# Bounds are load-bearing: gdsfactory>=9.3 pulls numpy>=1.26 and breaks
+# qiskit-metal's numpy~=1.24 pin; kfactory 1.2.2 (gdsfactory 9.2.2's dep) fails to
+# import under pydantic>=2.11. See requirements.txt for the full rationale.
+viz = ["gdsfactory<9.3", "pydantic>=2.6.4,<2.11"]
 test = ["pytest>=7"]
 
 [tool.setuptools.packages.find]

@@ -1,0 +1,49 @@
+# quantum_dsl — cross-platform requirements (Windows + Linux/WSL, Python 3.10–3.11).
+#
+# Reference environment: conda `metal-env`, Python 3.11. Verified end-to-end
+# (native .geo → GDS + Gmsh mesh + Palace electrostatic C-matrix + circuit model +
+# gdsfactory visualization) with the versions resolved by the bounds below.
+#
+# IMPORTANT — qiskit-metal 0.5.x lives on conda-forge, NOT on PyPI (PyPI stops at
+# 0.1.5). So this file is a pip LAYER on top of a conda env, not a from-scratch
+# pure-pip install. Recommended setup on Windows or Linux:
+#
+#   conda create -n metal-env -c conda-forge python=3.11 qiskit-metal
+#   conda activate metal-env
+#   pip install -r requirements.txt
+#
+# NOTE: Palace (the electrostatic FEM solver) is NOT a pip package either — install
+# it separately (e.g. via spack or conda) and point the PALACE_BIN env var at the
+# binary. Everything below qiskit-metal IS pip-installable on both platforms.
+#
+# The version bounds are load-bearing, not cosmetic — this stack has two pinch
+# points where qiskit-metal's older deps collide with gdsfactory's newer ones:
+#   * qiskit-metal 0.5.1 pins an OLDER scientific stack (numpy~=1.24, scipy~=1.10,
+#     pandas==1.5.3, shapely~=2.0, matplotlib~=3.7).
+#   * gdsfactory >=9.3 would drag in numpy>=1.26 / scipy>=1.17 and break that pin,
+#     so gdsfactory is capped at <9.3 (resolves to 9.2.2 + kfactory 1.2.2).
+#   * kfactory 1.2.2 fails to import under pydantic >=2.11 ("model not fully
+#     defined"); pyaedt (a qiskit-metal dep) caps pydantic <2.12 — so pydantic is
+#     constrained to >=2.6.4,<2.11 (resolves to 2.10.6).
+
+# --- core runtime ---
+pyyaml>=5.4
+qiskit-metal==0.5.1
+
+# --- qiskit-metal scientific stack (explicit: keeps gdsfactory from upgrading them) ---
+numpy~=1.24
+scipy~=1.10
+pandas==1.5.3
+shapely~=2.0
+matplotlib~=3.7
+
+# --- geometry / mesh / layout backends (the native-geo pipeline) ---
+gmsh~=4.11.1      # Gmsh mesher  (quantum_dsl.dsl.gmsh_adapter)
+gdstk~=0.9        # GDSII emitter (quantum_dsl.dsl.gds_adapter)
+
+# --- visualization backend (the [viz] extra; gf.import_gds bridge in gds_viz) ---
+gdsfactory<9.3
+pydantic>=2.6.4,<2.11
+
+# --- tests ---
+pytest>=7
