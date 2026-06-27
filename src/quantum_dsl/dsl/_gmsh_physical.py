@@ -282,13 +282,18 @@ def assign_physical_groups(tracker: GeomTracker,
     if tracker.vacuum_box is not None:
         vac_name = PHYSICAL_GROUP_NAMING["vacuum_volume"]
         outer_name = PHYSICAL_GROUP_NAMING["vacuum_outer"]
-        registry.add(vac_name, dim=3, tags=[tracker.vacuum_box])
+        # Approach A carve can split the dielectric into several conformal
+        # volumes (pocket interior + per-lead CPW-gap slivers); they are ALL
+        # vacuum, so the 'vacuum' material group must span every one (else a
+        # dropped sliver solves as an incomplete dielectric domain).
+        vac_volumes = [tracker.vacuum_box, *tracker.vacuum_extra]
+        registry.add(vac_name, dim=3, tags=vac_volumes)
         # carve 路径 (Approach A): vacuum_outer = 域 combined 边界 − 空腔壁
         # (resolve_conductor_faces 已算好, 排除了与 substrate 的内部界面 + 端子腔壁,
         # 否则 _surface_tags_of(vacuum) 会把腔壁/内部界面错并进 Ground)。
         # legacy / 无 carve: 退回真空体边界。
         outer_tags = (tracker.vacuum_outer_faces
-                      or _surface_tags_of([tracker.vacuum_box]))
+                      or _surface_tags_of(vac_volumes))
         registry.add(outer_name, dim=2, tags=outer_tags)
 
     # 5) 端口面 (M4): tracker.ports 由 `resolve_port_surfaces` 在 cut

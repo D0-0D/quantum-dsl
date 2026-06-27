@@ -74,6 +74,14 @@ class GeomTracker:
     # 每个 layer 的 ground plane volume tags (cut 之后会被 remap)
     layer_ground: dict[int, list[int]] = field(default_factory=dict)
     vacuum_box: Optional[int] = None
+    # Approach A: carving conductors+ground out of ONE box can SPLIT the
+    # dielectric into several connected volumes (a ground-plane design pinches
+    # the thin metal-layer vacuum into the pocket interior + one sliver per lead
+    # CPW-gap). All are the SAME dielectric (vacuum), conformal after fragment.
+    # vacuum_box = primary (largest) volume; vacuum_extra = the rest. Every stage
+    # that treats the vacuum as a domain (fragment / 'vacuum' material / outer
+    # boundary / face resolution) must span vacuum_box + vacuum_extra.
+    vacuum_extra: list[int] = field(default_factory=list)
     # --- Approach A: conductors-as-voids (geo path) ----------------------
     # 金属 terminal 在 carve_conductors 之前先 extrude 成实体, 暂存这里 (按
     # (component, primitive) 键), 然后被 occ.cut OUT of vacuum_box (consumed)。
@@ -179,8 +187,18 @@ class GeomTracker:
         for layer in list(self.layer_ground.keys()):
             self.layer_ground[layer] = _remap_list(3, self.layer_ground[layer])
         if self.vacuum_box is not None:
+            # The bulk vacuum_box fragments WITH the substrate, which can sever
+            # the (physically-truncated) below-substrate vacuum into a piece
+            # DISCONNECTED from the conductors; keep only its PRIMARY fragment
+            # piece, exactly as the single-vacuum path always has. Tagging a
+            # disconnected vacuum piece 'vacuum' makes MFEM's face generation
+            # choke → Palace abort (regression seen on two_pads).
             mapped = _expand(3, self.vacuum_box)
             self.vacuum_box = mapped[0] if mapped else self.vacuum_box
+        # Carve-time extras (pocket interior + per-lead CPW-gap slivers — all at
+        # the metal layer ABOVE the substrate, conformal/adjacent to the bulk
+        # after fragment) remap ~1:1; drop any that were consumed.
+        self.vacuum_extra = _remap_list(3, self.vacuum_extra)
         for name in list(self.ports.keys()):
             self.ports[name] = _remap_list(2, self.ports[name])
         for name in list(self.symmetry_surfaces.keys()):

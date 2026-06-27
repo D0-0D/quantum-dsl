@@ -212,6 +212,7 @@ def fragment_everything(tracker: GeomTracker) -> None:
             inputs_3d.extend((3, t) for t in tags)
     if tracker.vacuum_box is not None:
         inputs_3d.append((3, tracker.vacuum_box))
+    inputs_3d.extend((3, t) for t in tracker.vacuum_extra)
 
     inputs_2d: list[tuple[int, int]] = []
     for layer_dict in tracker.juncs.values():
@@ -311,27 +312,30 @@ def carve_conductors(tracker: GeomTracker) -> None:
     new_vac, _ = gmsh.model.occ.cut(
         [(3, tracker.vacuum_box)], cut_tools,
         removeObject=True, removeTool=True)
+    gmsh.model.occ.synchronize()
     vac_tags = [t for (d, t) in new_vac if d == 3]
-    if len(vac_tags) != 1:
-        # Carving disjoint cavities out of one box keeps it connected (1 volume).
-        # A split (0 or >1 volumes) breaks the single-'vacuum' assumption in
-        # build_palace_config: only vac_tags[0] would receive a material
-        # attribute, so the dropped vacuum volume(s) leave Palace solving on an
-        # INCOMPLETE dielectric domain and emitting a plausible-but-wrong
-        # capacitance matrix with no hard error. Fail loud instead of silently
-        # mis-registering (a swallowed warning is too easy to miss in solver logs).
+    if not vac_tags:
+        # 0 volumes = the cut consumed the whole box. The carve tools must be a
+        # strict subset of the vacuum interior; an empty result is a real error.
         raise DesignDslError(
-            f"carve_conductors: the vacuum box split into {len(vac_tags)} "
-            f"volumes {vac_tags} after carving conductor/ground terminals; "
-            f"build_palace_config assumes exactly one connected 'vacuum' "
-            f"volume. This usually means the terminal layout pinches the "
-            f"vacuum into disconnected regions — widen the airbox or adjust "
-            f"the geometry so the carved cavities stay interior to a single "
-            f"connected vacuum.")
+            "carve_conductors: cutting the conductor/ground terminals consumed "
+            "the entire vacuum box (0 volumes remain) — the carve tools must "
+            "lie strictly inside the vacuum interior.")
+    # Carving the conductors + ground sheet out of ONE box can SPLIT the vacuum
+    # into several connected volumes: a ground-plane design pinches the thin
+    # metal-layer vacuum into the pocket interior plus one sliver per lead
+    # CPW-gap. Every result is still vacuum (the box MINUS metal) and the slivers
+    # are conformal with the bulk after fragment_everything, so we KEEP them all
+    # and tag them all 'vacuum' (vacuum_box = largest/primary, vacuum_extra =
+    # rest). Each vacuum-domain stage (fragment / material / outer boundary /
+    # face resolution) spans box + extra. (This previously raised on >1 volume,
+    # which blocked every ground+lead design from solving — only vac_tags[0]
+    # would have received a material attribute, leaving an incomplete domain.)
+    vac_tags.sort(key=lambda t: gmsh.model.occ.getMass(3, t), reverse=True)
     tracker.vacuum_box = vac_tags[0]
+    tracker.vacuum_extra = vac_tags[1:]
     tracker.conductor_solids.clear()  # consumed by the cut
     tracker.ground_solids.clear()     # consumed by the cut
-    gmsh.model.occ.synchronize()
 
 
 def resolve_conductor_faces(tracker: GeomTracker,
@@ -352,6 +356,7 @@ def resolve_conductor_faces(tracker: GeomTracker,
     domain: list[tuple[int, int]] = []
     if tracker.vacuum_box is not None:
         domain.append((3, tracker.vacuum_box))
+    domain.extend((3, t) for t in tracker.vacuum_extra)
     for layer, spec in layer_stack_si.items():
         if spec.get("kind") == "dielectric":
             domain.extend((3, t) for t in tracker.layer_ground.get(layer, []))

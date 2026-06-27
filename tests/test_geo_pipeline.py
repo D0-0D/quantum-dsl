@@ -252,20 +252,22 @@ def test_two_pads_live_capacitance_matrix(tmp_path):
 
 
 # -----------------------------------------------------------------------------
-# carve_conductors — fail loud (not warn) when the carve splits the vacuum
+# carve_conductors — split vacuum is KEPT (multi-volume), empty vacuum raises
 # -----------------------------------------------------------------------------
 
-def test_carve_conductors_raises_when_vacuum_splits():
-    """A carve that severs the vacuum box into != 1 connected volume must raise.
+def test_carve_conductors_keeps_all_split_vacuum_volumes():
+    """A carve that severs the vacuum into several connected volumes keeps ALL.
 
-    Regression for the review finding: the old code only ``warnings.warn``-ed and
-    kept ``vac_tags[0]``, so the dropped vacuum volume(s) got no material
-    attribute and Palace silently solved on an INCOMPLETE dielectric domain ->
-    plausible-but-wrong capacitance matrix. It must now raise a DesignDslError.
+    A ground-plane + lead design pinches the thin metal-layer vacuum into the
+    pocket interior plus one sliver per lead CPW-gap; every piece is still part
+    of the dielectric domain. Earlier code raised on a split (after an even-older
+    warn-and-drop that solved on an INCOMPLETE domain). Now carve retains every
+    post-cut volume — vacuum_box (largest) + vacuum_extra — so
+    assign_physical_groups can tag them all 'vacuum' and Palace solves the full
+    domain. Regression: ground+lead designs (e.g. the transmon cell) must build.
     """
     from quantum_dsl.dsl._gmsh_geometry import GeomTracker
     from quantum_dsl.dsl._gmsh_layers import carve_conductors
-    from quantum_dsl.dsl.errors import DesignDslError
 
     gmsh.initialize()
     gmsh.option.setNumber("General.Terminal", 0)
@@ -280,6 +282,35 @@ def test_carve_conductors_raises_when_vacuum_splits():
     tr.vacuum_box = vac
     tr.conductor_solids = {1: {("Q", "wall"): [slab]}}
 
-    with pytest.raises(DesignDslError, match="split into"):
+    carve_conductors(tr)  # must NOT raise — both halves are vacuum
+    all_vac = [tr.vacuum_box, *tr.vacuum_extra]
+    assert len(all_vac) == 2, f"expected both severed halves kept, got {all_vac}"
+    assert tr.vacuum_box is not None
+    model_vols = {t for (d, t) in gmsh.model.getEntities(3)}
+    assert set(all_vac) <= model_vols
+    # vacuum_box is the larger half (sorted by volume): both halves ~ 4.5*100.
+    # autouse _clean_gmsh_session finalizes the session afterwards.
+
+
+def test_carve_conductors_raises_when_vacuum_fully_consumed():
+    """If the carve tools cover the ENTIRE vacuum box (0 volumes remain) that is
+    a genuine authoring error and must still raise (not silently produce an
+    empty dielectric domain)."""
+    from quantum_dsl.dsl._gmsh_geometry import GeomTracker
+    from quantum_dsl.dsl._gmsh_layers import carve_conductors
+    from quantum_dsl.dsl.errors import DesignDslError
+
+    gmsh.initialize()
+    gmsh.option.setNumber("General.Terminal", 0)
+    gmsh.model.add("carve_consume")
+    vac = gmsh.model.occ.addBox(0, 0, 0, 10, 10, 10)
+    big = gmsh.model.occ.addBox(-1, -1, -1, 12, 12, 12)  # fully contains vac
+    gmsh.model.occ.synchronize()
+
+    tr = GeomTracker()
+    tr.vacuum_box = vac
+    tr.conductor_solids = {1: {("Q", "all"): [big]}}
+
+    with pytest.raises(DesignDslError, match="0 volumes remain"):
         carve_conductors(tr)
     # autouse _clean_gmsh_session finalizes the session afterwards.
