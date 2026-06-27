@@ -237,7 +237,17 @@ def fragment_everything(tracker: GeomTracker) -> None:
 
     object_dimtag = all_inputs[0]
     tools = all_inputs[1:]
+    # The geometry is at the µm→m dilated scale (~1e-4 m). OCC's exact fragment
+    # of a COPLANAR interface (a carved-ground void bottom vs the substrate top,
+    # both at z=0) is numerically unstable there and throws "Boolean fragments
+    # failed". Temporarily scale the whole model back to microns — where the
+    # ~1–1000 coordinates make the coincident faces robust — fragment, then scale
+    # back to meters. This lets the conductor sit ON the dielectric (coplanar at
+    # z=0, no vacuum gap) exactly as the physical stack requires, instead of
+    # dropping the substrate by a non-physical ε that depresses every C ~30%.
+    gmsh.model.occ.dilate(gmsh.model.occ.getEntities(), 0, 0, 0, 1e6, 1e6, 1e6)
     out_dimtags, out_map = gmsh.model.occ.fragment([object_dimtag], tools)
+    gmsh.model.occ.dilate(gmsh.model.occ.getEntities(), 0, 0, 0, 1e-6, 1e-6, 1e-6)
     # out_map[i] 对应 inputs[i] (object 在前, tools 顺序排其后)
     ordered_inputs = [object_dimtag] + tools
     old_to_new: dict[tuple[int, int], list[tuple[int, int]]] = {}
@@ -271,7 +281,8 @@ def carve_conductors(tracker: GeomTracker) -> None:
             not tracker.conductor_solids and not tracker.ground_solids):
         return
 
-    cut_tools: list[tuple[int, int]] = []
+    conductor_tools: list[tuple[int, int]] = []
+    ground_tools: list[tuple[int, int]] = []
     for layer, named in tracker.conductor_solids.items():
         for (component, primitive), tags in named.items():
             if not tags:
@@ -284,7 +295,7 @@ def carve_conductors(tracker: GeomTracker) -> None:
                 for i in range(3):
                     mins[i] = min(mins[i], bb[i])
                     maxs[i] = max(maxs[i], bb[i + 3])
-                cut_tools.append((3, t))
+                conductor_tools.append((3, t))
             tracker.conductor_bbox[(layer, component, primitive)] = (
                 mins[0], mins[1], mins[2], maxs[0], maxs[1], maxs[2])
 
@@ -302,18 +313,31 @@ def carve_conductors(tracker: GeomTracker) -> None:
             for i in range(3):
                 mins[i] = min(mins[i], bb[i])
                 maxs[i] = max(maxs[i], bb[i + 3])
-            cut_tools.append((3, t))
+            ground_tools.append((3, t))
         tracker.ground_bbox[layer] = (
             mins[0], mins[1], mins[2], maxs[0], maxs[1], maxs[2])
 
-    if not cut_tools:
+    if not conductor_tools and not ground_tools:
         return
 
-    new_vac, _ = gmsh.model.occ.cut(
-        [(3, tracker.vacuum_box)], cut_tools,
-        removeObject=True, removeTool=True)
-    gmsh.model.occ.synchronize()
-    vac_tags = [t for (d, t) in new_vac if d == 3]
+    # Cut the GROUND sheet and the conductors in SEPARATE passes (ground first).
+    # A single combined cut of (ground + leads) mis-subtracts any lead that
+    # threads the ground's CPW cutout: OCC leaves the lead's footprint as a
+    # separated vacuum fragment ("fill") instead of a void, so its walls never
+    # become Terminal faces — observed on the qm4q transmon cell, where 3 of 4
+    # leads were silently dropped (a wrong 3-terminal capacitance matrix, no
+    # error). Cutting the ground first (it imprints the pocket + CPW gaps into
+    # the vacuum) then the conductors (now sitting in clean vacuum) carves every
+    # conductor into a proper void.
+    vac: list[tuple[int, int]] = [(3, tracker.vacuum_box)]
+    for tools in (ground_tools, conductor_tools):
+        if not tools:
+            continue
+        new_vac, _ = gmsh.model.occ.cut(
+            vac, tools, removeObject=True, removeTool=True)
+        gmsh.model.occ.synchronize()
+        vac = [(d, t) for (d, t) in new_vac if d == 3]
+    vac_tags = [t for (d, t) in vac if d == 3]
     if not vac_tags:
         # 0 volumes = the cut consumed the whole box. The carve tools must be a
         # strict subset of the vacuum interior; an empty result is a real error.
@@ -322,15 +346,24 @@ def carve_conductors(tracker: GeomTracker) -> None:
             "the entire vacuum box (0 volumes remain) — the carve tools must "
             "lie strictly inside the vacuum interior.")
     # Carving the conductors + ground sheet out of ONE box can SPLIT the vacuum
-    # into several connected volumes: a ground-plane design pinches the thin
-    # metal-layer vacuum into the pocket interior plus one sliver per lead
-    # CPW-gap. Every result is still vacuum (the box MINUS metal) and the slivers
-    # are conformal with the bulk after fragment_everything, so we KEEP them all
-    # and tag them all 'vacuum' (vacuum_box = largest/primary, vacuum_extra =
-    # rest). Each vacuum-domain stage (fragment / material / outer boundary /
-    # face resolution) spans box + extra. (This previously raised on >1 volume,
-    # which blocked every ground+lead design from solving — only vac_tags[0]
-    # would have received a material attribute, leaving an incomplete domain.)
+    # into several volumes: a ground-plane design pinches the thin metal-layer
+    # vacuum into the pocket interior plus one sliver per lead CPW-gap. These
+    # pieces are still FACE-ADJACENT to the bulk, so re-FUSE them into one
+    # connected vacuum. Kept as separate volumes they leave coincident,
+    # un-stitched sliver|bulk faces (same COM, both bordering the bulk) that gmsh
+    # rejects at 3D mesh generation with "Invalid boundary mesh (overlapping
+    # facets)"; fusing removes those internal interfaces and restores the single-
+    # 'vacuum' invariant. Any pieces that are GENUINELY disconnected (no shared
+    # face) survive fuse as >1 volume and fall through to vacuum_extra, where the
+    # multi-vacuum machinery (fragment / material / outer boundary / face
+    # resolution all span box + extra) tags them 'vacuum' too — they carry no
+    # coincident faces precisely because they are spatially disjoint.
+    if len(vac_tags) > 1:
+        fused, _ = gmsh.model.occ.fuse(
+            [(3, vac_tags[0])], [(3, t) for t in vac_tags[1:]],
+            removeObject=True, removeTool=True)
+        gmsh.model.occ.synchronize()
+        vac_tags = [t for (d, t) in fused if d == 3]
     vac_tags.sort(key=lambda t: gmsh.model.occ.getMass(3, t), reverse=True)
     tracker.vacuum_box = vac_tags[0]
     tracker.vacuum_extra = vac_tags[1:]

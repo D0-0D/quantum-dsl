@@ -178,12 +178,16 @@ def build_geo(geo_path: Optional[Union[str, Path]] = None,
                 if mesh_result.mesh_path else None)
     l0 = float(solver.get("l0", 1.0))
     order = int(solver.get("order", 2))
+    # outer_boundary: "ground" (default, grounded enclosure) | "open" (natural
+    # Neumann ≈ free-space FarField, matches qiskit-metal/Elmer).
+    ground_outer = str(solver.get("outer_boundary", "ground")).lower() != "open"
     cfg = build_palace_config(
         mesh_result.physical_attributes,
         layer_stack,
         sim_gmsh.get("ports", ()),
         l0=l0,
         order=order,
+        ground_outer=ground_outer,
         mesh_path=mesh_rel,
     )
     validate_config(cfg, mesh_result.physical_attributes)

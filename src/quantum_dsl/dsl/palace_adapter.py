@@ -187,6 +187,7 @@ def build_palace_config(
     *,
     l0: float = 1.0,
     order: int = 2,
+    ground_outer: bool = True,
     mesh_path: str | os.PathLike[str] | None = None,
 ) -> dict:
     """构建 Palace **Electrostatic** (电容) JSON 配置 (dict)。
@@ -247,7 +248,14 @@ def build_palace_config(
         _attr_of(physical_attributes, name)
         for name in _ground_groups(physical_attributes)
     ]
-    ground_attrs.append(_attr_of(physical_attributes, "vacuum_outer"))
+    # The vacuum_box outer wall: grounded (V=0, default) models a grounded
+    # enclosure; leaving it open (natural Neumann) is the closest Palace analog
+    # of an open / free-space FarField boundary, which is what qiskit-metal's
+    # Elmer reference uses. Open is only honoured when a metal ground sheet
+    # already provides the V=0 reference — otherwise the electrostatic problem
+    # would be singular, so we force-ground the outer wall.
+    if ground_outer or not ground_attrs:
+        ground_attrs.append(_attr_of(physical_attributes, "vacuum_outer"))
 
     # --- Boundaries.Terminal: 每个导体面一个, Index 从 1 起 -------------
     # 复用 terminal_bindings 计算出的 (index, group, attr) —— 与结果写出端

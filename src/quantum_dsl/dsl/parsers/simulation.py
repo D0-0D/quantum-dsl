@@ -260,6 +260,20 @@ def _parse_gmsh_simulation(node: Any, variables: Mapping[str, Any],
         out["gds"] = _parse_gds_settings(node["gds"], variables)
     if "solver" in node:
         out["solver"] = _parse_solver_settings(node["solver"], variables)
+    if "substrate_gap_um" in node:
+        # auto-substrate top nudge below a carved metal ground (µm). 0 = coplanar
+        # (metal directly on dielectric, physically exact). Default (key absent)
+        # is the 1µm in _gmsh_geo_source.CARVED_GROUND_SUBSTRATE_GAP_SI.
+        try:
+            gap = float(node["substrate_gap_um"])
+        except (TypeError, ValueError) as exc:
+            raise DesignDslError(
+                "simulation.gmsh.substrate_gap_um must be a number (µm), got "
+                f"{node['substrate_gap_um']!r}") from exc
+        if gap < 0:
+            raise DesignDslError(
+                f"simulation.gmsh.substrate_gap_um must be >= 0, got {gap}")
+        out["substrate_gap_um"] = gap
 
     # plan §0 end-of-section requirement: when the gmsh block is present,
     # layer_stack is mandatory and must contain at least one metal entry.
@@ -712,6 +726,13 @@ def _parse_solver_settings(node: Any,
             raise DesignDslError(
                 "simulation.gmsh.solver.device must be a non-empty string")
         out["device"] = device
+    if "outer_boundary" in node:
+        ob = node["outer_boundary"]
+        if ob not in ("ground", "open"):
+            raise DesignDslError(
+                "simulation.gmsh.solver.outer_boundary must be 'ground' or "
+                f"'open', got {ob!r}")
+        out["outer_boundary"] = ob
     return out
 
 

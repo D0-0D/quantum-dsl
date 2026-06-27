@@ -181,7 +181,28 @@ def define_size_fields(tracker: GeomTracker,
 def generate_mesh(dim: int = 3) -> None:
     if gmsh is None:
         raise ImportError("gmsh required for generate_mesh")
-    gmsh.model.mesh.generate(dim)
+    import os as _os
+    override = _os.environ.get("QDSL_MESH_ALGO3D")
+    if override and dim == 3:
+        gmsh.option.setNumber("Mesh.Algorithm3D", int(override))
+        gmsh.model.mesh.generate(dim)
+        return
+    try:
+        gmsh.model.mesh.generate(dim)
+    except Exception:
+        if dim != 3:
+            raise
+        # The default Delaunay 3D mesher throws "PLC Error: a segment and a
+        # facet intersect" on a coplanar metal-on-substrate interface (conductor
+        # bottom == substrate top at z=0) — the physically-correct stack with no
+        # vacuum gap. HXT (Algorithm3D=10) meshes that coincident footprint
+        # robustly, so fall back to it. Most geometries mesh fine with the
+        # default and never hit this path (HXT fails on some of them, so it must
+        # NOT be the global default).
+        gmsh.model.mesh.clear()
+        gmsh.option.setNumber("Mesh.Algorithm3D", 10)
+        gmsh.model.mesh.generate(dim)
+        gmsh.option.setNumber("Mesh.Algorithm3D", 1)  # restore default
 
 
 _KNOWN_FORMATS = {"msh4", "msh2", "vtk", "stl", "step", "iges", "brep", "pos"}

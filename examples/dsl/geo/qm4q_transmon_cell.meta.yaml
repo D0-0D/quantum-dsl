@@ -1,0 +1,81 @@
+# =====================================================================
+# qm4q_transmon_cell.meta.yaml — Layer-1 Physics Metadata sidecar for
+# qm4q_transmon_cell.geo.
+#
+# 复现对象: qiskit-metal 教程 "1.3 Build a 4-qubit chip" 里的单个
+# TransmonPocket (Q1) — 2 主焊盘 + 4 连接 pad (a/b/c/d), 4 个 CPW pin 开路,
+# 作为 LOM 的一个 cell。目标: 用我们的 geo→gmsh→Palace 静电管线解出
+# 6×6 Maxwell 电容矩阵, 与 qiskit-metal 自带的 gmsh→Elmer 解对比。
+#
+# 物理量对齐 qiskit-metal MultiPlanar + Elmer 默认:
+#   - layer 1 = pec metal, 2µm @ z=0;  layer 3 = silicon dielectric, -750µm
+#   - silicon Relative Permittivity = 11.45 (与 Elmer elmer_configs 一致)
+#   - vacuum box ≈ z[-1650, +890] µm (airbox top/bottom 对齐)
+# 单位: 微米 (µm).
+# =====================================================================
+
+schema: qiskit-metal/design-dsl/3
+
+geo: qm4q_transmon_cell.geo
+
+vars: {}
+
+simulation:
+  gmsh:
+    # ---- layer stack (µm) — 对齐 qiskit-metal MultiPlanar 默认 ----------
+    layer_stack:
+      1:
+        kind: metal
+        thickness: 2
+        z: 0
+        material: pec
+      3:
+        kind: dielectric
+        thickness: -750
+        z: 0
+        material: silicon
+        eps_r: 11.45
+
+    # ---- airbox (µm) — 对齐 qiskit-metal 的 vacuum box ------------------
+    # qiskit-metal vacuum: z[-1650,+890]; 侧向≈ground 边界 (这里给小 buffer)。
+    airbox:
+      top: 890
+      bottom: 1650
+      side_buffer: 200
+
+    # ---- mesh sizing (µm) — 对齐参考 Elmer (min 5 / max 50) ------------
+    # order 1 + 此网格用于管线验证; 与参考逐位收紧时可上 order 2 / 更细网格。
+    mesh:
+      max_size: 50
+      min_size: 5
+      max_size_jj: 20
+      conductor_refine:
+        min_dist: 4
+        max_dist: 30
+
+    # ---- GDS layer map (gdstk) ----------------------------------------
+    gds:
+      lib_name: qm4q_cell
+      top_cell: qm4q_cell
+      unit: 1.0e-6
+      precision: 1.0e-9
+      arc_tol_um: 0.01
+      union_same_layer: true
+      default_datatype: 0
+      by_role:
+        metal:     {layer: 1,  datatype: 0}
+        ground:    {layer: 1,  datatype: 0}
+        jj:        {layer: 20, datatype: 0}
+
+    # 金属共面坐在硅上 (无真空缝, 物理精确)。默认 1µm 会让电容偏低 ~30%。
+    # 共面靠 fragment 缩回 µm + 网格 HXT 回退稳健处理。
+    substrate_gap_um: 0
+
+    # ---- Palace solver ------------------------------------------------
+    solver:
+      type: Electrostatic
+      order: 2          # 收敛设置 (order 1 欠收敛, 对网格敏感 ±20%); 与参考对标用 order 2
+      l0: 1.0
+      # open (natural Neumann ≈ free-space FarField) matches qiskit-metal/Elmer,
+      # which uses a FarField outer BC. Default "ground" models a grounded box.
+      outer_boundary: open

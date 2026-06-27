@@ -61,16 +61,15 @@ __all__ = [
 # in the mesh branch is byte-identical to the project SI boundary).
 SI_PER_INTERNAL = 1e-6
 
-# Tiny (1 µm in SI) downward nudge applied to an AUTO-created dielectric substrate
-# top ONLY when a metal ground sheet is carved (M5a, Approach A).  A carved ground
-# is a frame-/annulus-shaped void whose bottom face would otherwise be *coplanar*
-# with the substrate top at z=0; OCC's fragment of that complex coincident
-# interface is numerically unstable at the µm→m dilated scale (~1e-4 m) and fails
-# erratically ("Boolean fragments failed").  Dropping the substrate top by this ε
-# decouples the planes and stabilises the fragment.  ε ≪ feature scale (1 µm vs
-# 100s of µm), and it is NOT applied when there is no carved ground (so the
-# two_pads live-solve reference C-matrix is untouched).  Magnitude matches the
-# existing ``_gmsh_layers.FRAGMENT_TOL_SI`` coplanar-avoidance tolerance.
+# DEFAULT substrate-top ε-nudge below a carved metal ground (SI metres). The
+# default 1 µm keeps the metal/ground void bottom a free, non-coincident face,
+# which the carve/fragment/resolve path has always relied on (a centered-pad
+# fixture e.g. tiny_chip otherwise mis-resolves under exact coplanarity).
+# Physically a vacuum gap under the metal depresses capacitance (~30% at 1 µm),
+# so accuracy-critical designs override it toward 0 via the meta key
+# ``simulation.gmsh.substrate_gap_um`` (e.g. qm4q uses 0 = coplanar, the
+# physically-correct metal-on-substrate stack; fragment scales to µm + the mesher
+# falls back to HXT so the coplanar interface still builds).
 CARVED_GROUND_SUBSTRATE_GAP_SI = 1e-6
 
 
@@ -514,7 +513,9 @@ def populate_tracker_from_geo(geo_surfaces: list[GeoSurface],
 def ensure_dielectric_substrates(geo_surfaces: list[GeoSurface],
                                  layer_stack_si: dict[int, dict],
                                  tracker: GeomTracker,
-                                 bbox_si: tuple[float, float, float, float]
+                                 bbox_si: tuple[float, float, float, float],
+                                 substrate_gap_si: float =
+                                 CARVED_GROUND_SUBSTRATE_GAP_SI
                                  ) -> None:
     """对没有 ``substrate::`` 面被标注的 dielectric layer, 用 bbox 兜底画衬底。
 
@@ -536,14 +537,21 @@ def ensure_dielectric_substrates(geo_surfaces: list[GeoSurface],
             continue
         missing[layer] = spec
     if missing:
-        # When a metal ground sheet is carved (Approach A), drop the auto
-        # substrate top by a tiny ε so it is not coplanar with the carved void
-        # bottom at z=0 — see CARVED_GROUND_SUBSTRATE_GAP_SI.  No carved ground
-        # (e.g. two_pads) → render verbatim, leaving its C-matrix untouched.
-        if tracker.ground_solids:
-            gap = CARVED_GROUND_SUBSTRATE_GAP_SI
+        # Drop the auto-substrate top by a TINY ε below the carved metal/ground
+        # bottom (z=0) when a metal ground is carved. ε must be:
+        #   - large enough to keep the metal/ground void bottom a FREE face (not
+        #     coplanar-coincident with the substrate top) — exact coplanarity
+        #     makes resolve_conductor_faces mis-key a centered terminal vs the
+        #     ground annulus, and tetgen choke on the coincident footprint;
+        #   - small enough to be ~physically negligible. The OLD value was 1 µm,
+        #     which depressed every capacitance ~30% (the near-surface coplanar
+        #     coupling field sees the vacuum gap). 0.1 µm cuts that error ~10×
+        #     while keeping the faces cleanly separated.
+        # (fragment_everything scales back to µm + generate_mesh falls back to
+        # HXT, so this small gap fragments and meshes robustly.)
+        if tracker.ground_solids and substrate_gap_si:
             missing = {
-                layer: {**spec, "z": float(spec.get("z", 0.0)) - gap}
+                layer: {**spec, "z": float(spec.get("z", 0.0)) - substrate_gap_si}
                 for layer, spec in missing.items()
             }
         render_layer_grounds(bbox_si, missing, tracker)

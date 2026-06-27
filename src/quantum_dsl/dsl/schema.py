@@ -58,7 +58,7 @@ GEOMETRY_KEYS = {"design", "templates", "components", "transforms"}
 SIMULATION_KEYS = {"gmsh"}
 GMSH_SIM_KEYS = {
     "layer_stack", "airbox", "ports", "symmetry", "mesh", "output",
-    "gds", "solver",
+    "gds", "solver", "substrate_gap_um",
 }
 LAYER_STACK_ENTRY_KEYS = {
     "kind", "thickness", "z", "material", "eps_r", "tan_delta",
@@ -124,7 +124,7 @@ GDS_SIM_KEYS = {
 GDS_LAYER_MAP_ENTRY_KEYS = {"layer", "datatype"}
 
 # simulation.gmsh.solver block: Palace solver settings.
-SOLVER_KEYS = {"type", "order", "l0", "device"}
+SOLVER_KEYS = {"type", "order", "l0", "device", "outer_boundary"}
 SOLVER_TYPES = {"Electrostatic"}  # Eigenmode / Driven added in a later milestone.
 DESIGN_KEYS = {
     "class", "metadata", "overwrite_enabled", "enable_renderers", "variables",
