@@ -282,3 +282,10 @@ Single metal layer + dielectric substrate is the scope; defer until a multi-laye
   导体 + 单一连通真空; geo 套件 **73 passed, 3 skipped**。Palace 按用户要求不跑。剩余物理 → **#20**
   (tier-2 不支持浮动多岛 transmon + 浮动 bus 被错误接地而非 Schur 消元; 外加 meta→tier-2 接线 bug)。
   例改动 (chip_layout.geo + qlib.geo) 未提交。
+- [`session/2606272333.md`](session/2606272333.md) — 2026-06-27 · **qm4q repro: 核实 spec + 多真空体 carve 修复**
+  (分支 `fix/carve-multi-vacuum`)。核实结论: spec 阻塞点是**内部**的、非外部依赖 (外部依赖全 OK; gmsh 实为
+  4.11.1 非 4.15.2; spec 把症状/修复都讲错, 号称的 `_exp_d.geo` 不存在)。建权威参考 env **qmetal-src**
+  (quantum-metal 0.7.3 + gmsh 4.15.2, libGLU 坑用 conda libglu 解), metal-env 不动。修 qm4q `.geo` tag 碰撞
+  (ground 先建 + 显式高位 tag → 6 导体齐, `37ff0fe`)。实现**多真空体 carve 支持** (`38092df`: carve 不再因
+  >1 真空报错, 全部赋 vacuum 材料)。**未完**: two_pads 实解回归 (remap 修复后) 未重验; qm4q v2 仍卡在 gmsh
+  mesh.generate "overlapping facets"。下一步建议先做参考侧 Elmer (必产物 + 学 qiskit-metal 怎么干净划网格)。
