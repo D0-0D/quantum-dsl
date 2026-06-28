@@ -610,9 +610,16 @@ def build_mesh_from_geo(geo_path: Union[str, Path],
         bbox_si = compute_chip_bbox_from_geo(geo_surfaces, side_buffer_si)
 
         # substrate fallback: render dielectric box for any dielectric layer
-        # not explicitly authored as a substrate:: surface.
-        ensure_dielectric_substrates(
-            geo_surfaces, resolved_options.layer_stack, tracker, bbox_si)
+        # not explicitly authored as a substrate:: surface. substrate_gap_um
+        # (meta, default 1µm) controls the carved-ground substrate-top nudge;
+        # 0 = coplanar metal-on-substrate (physically exact, e.g. qm4q).
+        if "substrate_gap_um" in sim_gmsh:
+            ensure_dielectric_substrates(
+                geo_surfaces, resolved_options.layer_stack, tracker, bbox_si,
+                float(sim_gmsh["substrate_gap_um"]) * SI_PER_INTERNAL)
+        else:
+            ensure_dielectric_substrates(
+                geo_surfaces, resolved_options.layer_stack, tracker, bbox_si)
 
         # Stage C: vacuum box (ground sheet is authored, not synthesized) -----
         render_vacuum_box(bbox_si, resolved_options.airbox, tracker)
