@@ -289,3 +289,8 @@ Single metal layer + dielectric substrate is the scope; defer until a multi-laye
   (ground 先建 + 显式高位 tag → 6 导体齐, `37ff0fe`)。实现**多真空体 carve 支持** (`38092df`: carve 不再因
   >1 真空报错, 全部赋 vacuum 材料)。**未完**: two_pads 实解回归 (remap 修复后) 未重验; qm4q v2 仍卡在 gmsh
   mesh.generate "overlapping facets"。下一步建议先做参考侧 Elmer (必产物 + 学 qiskit-metal 怎么干净划网格)。
+- [`session/2606300056.md`](session/2606300056.md) — 2026-06-30 · **build 结果归档 + 文件指纹清单**
+  (分支 `main`)。`build_geo()` 每次 build 把 `meta.yaml` + `.geo` 复制进 `out_dir`(保留原名),并写
+  `chip.manifest.yaml` —— 登记输入副本 + 全部产物(gds/msh/json/results)的 sha256/字节数/修改时间(UTC)。
+  新增 `_file_record()` helper(复用 `_sha256_file`)、return dict 加 `"manifest"` 键、CLI 多打印 `Manifest` 行;
+  纯附加,未碰 results schema/provenance。+2 测试;`tests/test_geo_pipeline.py` **10 passed, 1 skipped**(was 9/1)。

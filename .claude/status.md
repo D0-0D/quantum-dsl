@@ -45,6 +45,12 @@ R3 circuit solve ✅, R4 read QDA ✅, R5 GDSFactory) + verbal "电容矩阵就�
 - M5a impl (emit_geo bridge, carved ground): see `session/2606080338.md`.
 
 ## Recent notable commits
+- _(branch `main` — 2606300056)_ **build 结果归档 + 文件指纹清单**: `build_geo()` 现在每次 build
+  都把 `meta.yaml` + `.geo` 复制进 `out_dir`(保留原名),并写一个 `chip.manifest.yaml` —— 登记
+  输入副本 + 全部产物(gds/msh/json/results)的 sha256 指纹、字节数、修改时间(UTC)。纯附加,
+  未碰 results schema / provenance。新增 `_file_record()` helper、return dict 加 `"manifest"` 键、
+  CLI 多打印 `Manifest` 行。+2 测试;`tests/test_geo_pipeline.py` **10 passed, 1 skipped**(was 9/1)。
+  See `session/2606300056.md`.
 - _(branch `fix/review-critical-robustness` — 2606081710)_ **xhigh re-review of #14 → 3 critical
   fixes** (silent-wrong-result hardening, each + regression test; all 3 adversarially verified
   "sound"): `carve_conductors` now **raises** on a split vacuum (was warn-and-continue → incomplete

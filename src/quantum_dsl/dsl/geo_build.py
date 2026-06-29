@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import shutil
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -52,6 +53,29 @@ def _sha256_file(path: Optional[Union[str, Path]]) -> Optional[str]:
     return h.hexdigest()
 
 
+def _file_record(path: Optional[Union[str, Path]],
+                 *, role: str) -> Optional[dict[str, Any]]:
+    """单文件的指纹+时间记录 (sha256 / 字节数 / mtime); 文件不存在返回 None。
+
+    用于 ``chip.manifest.yaml`` 的文件夹级清单 — 每条登记 ``out_dir`` 内一个文件的
+    内容 SHA-256 与修改时间, 便于脱离源仓库后自证产物来源 / 做失效检测。
+    """
+    if path is None:
+        return None
+    p = Path(path)
+    if not p.is_file():
+        return None
+    st = p.stat()
+    return {
+        "name": p.name,
+        "role": role,
+        "sha256": _sha256_file(p),
+        "bytes": st.st_size,
+        "modified_utc": datetime.fromtimestamp(st.st_mtime, timezone.utc)
+        .isoformat(timespec="seconds"),
+    }
+
+
 def build_geo(geo_path: Optional[Union[str, Path]] = None,
               meta_path: Optional[Union[str, Path]] = None,
               out_dir: Union[str, Path] = "build",
@@ -70,9 +94,12 @@ def build_geo(geo_path: Optional[Union[str, Path]] = None,
 
     Returns:
         ``{"gds": Path|None, "msh": Path|None, "palace_json": Path,
-           "physical_groups": [sorted names], "results": Path|None}``。
+           "physical_groups": [sorted names], "results": Path|None,
+           "manifest": Path}``。
         ``results`` 仅在 ``run_palace and not dry_run`` 且 Palace 真写出了电容
         CSV 时, 指向 ``out_dir/chip.results.yaml`` (OUTPUT-ONLY 结果产物); 否则 None。
+        ``manifest`` 总是指向 ``out_dir/chip.manifest.yaml`` (输入副本 + 全部产物的
+        sha256 指纹与时间戳清单); 输入的 meta.yaml / .geo 也被复制进 ``out_dir``。
 
     Raises:
         DesignDslError: sidecar / geo 缺失或非法, 或下游 adapter 报错。
@@ -134,6 +161,7 @@ def build_geo(geo_path: Optional[Union[str, Path]] = None,
         "palace_json": None,
         "physical_groups": [],
         "results": None,
+        "manifest": None,
     }
 
     # SESSION OWNERSHIP (critical): the GDS and mesh branches each call
@@ -268,6 +296,40 @@ def build_geo(geo_path: Optional[Union[str, Path]] = None,
                     cap, out_dir / "chip.results.yaml",
                     provenance=provenance, circuit_model=circuit_model)
 
+    # ---- ARCHIVE inputs + write file manifest (every build) ---------------
+    # Copy the meta.yaml + .geo into out_dir (keep original names) so a build
+    # folder is self-contained, then record sha256 + mtime of inputs AND every
+    # produced artifact in chip.manifest.yaml (folder-level fingerprint list;
+    # distinct from results.yaml's own provenance block).
+    import yaml  # core dep, lazy-imported to keep the bare import path light
+
+    meta_dst = out_dir / Path(meta_path).name
+    if Path(meta_path).resolve() != meta_dst.resolve():
+        shutil.copy2(meta_path, meta_dst)
+    geo_dst = out_dir / Path(geo).name
+    if Path(geo).resolve() != geo_dst.resolve():
+        shutil.copy2(geo, geo_dst)
+
+    files = [
+        _file_record(meta_dst, role="input"),
+        _file_record(geo_dst, role="input"),
+        _file_record(result["gds"], role="output"),
+        _file_record(result["msh"], role="output"),
+        _file_record(result["palace_json"], role="output"),
+        _file_record(result["results"], role="output"),
+    ]
+    manifest = {
+        "schema": "quantum-dsl/build-manifest/1",
+        "generated_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "out_dir": str(out_dir),
+        "files": [f for f in files if f is not None],
+    }
+    manifest_path = out_dir / "chip.manifest.yaml"
+    with manifest_path.open("w", encoding="utf-8") as fh:
+        yaml.safe_dump(manifest, fh, sort_keys=False, allow_unicode=True,
+                       default_flow_style=False)
+    result["manifest"] = manifest_path
+
     return result
 
 
@@ -319,6 +381,8 @@ def main(argv: Optional[list[str]] = None) -> int:
     print(f"Palace JSON : {result['palace_json']}")
     if result.get("results"):
         print(f"Results     : {result['results']}")
+    if result.get("manifest"):
+        print(f"Manifest    : {result['manifest']}")
     print(f"physical_groups ({len(result['physical_groups'])}): "
           f"{result['physical_groups']}")
 

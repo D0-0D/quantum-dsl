@@ -207,6 +207,40 @@ def test_two_pads_carve_groups(tmp_path):
 @pytest.mark.skipif(
     not os.environ.get("QDSL_RUN_PALACE"),
     reason="live Palace solve; set QDSL_RUN_PALACE=1 (needs Palace/WSL spack)")
+def test_build_geo_archives_inputs_and_writes_manifest(tmp_path):
+    """每次 build 都把 meta.yaml + .geo 复制进 out_dir, 并写 chip.manifest.yaml
+    (输入副本 + 全部产物的 sha256/时间戳); 此处不跑 Palace, 故无 results 条目。"""
+    import hashlib
+    import yaml
+    from quantum_dsl.dsl.geo_build import build_geo
+
+    res = build_geo(meta_path=str(TWO_PADS_META), out_dir=str(tmp_path),
+                    run_palace=False)
+
+    # input copies present with original names
+    meta_copy = tmp_path / TWO_PADS_META.name
+    assert meta_copy.is_file()
+    geo_name = parse_geo_meta_sidecar(TWO_PADS_META)["geo"].name
+    assert (tmp_path / geo_name).is_file()
+
+    assert res["manifest"] == tmp_path / "chip.manifest.yaml"
+    doc = yaml.safe_load(res["manifest"].read_text(encoding="utf-8"))
+    assert doc["schema"] == "quantum-dsl/build-manifest/1"
+
+    by_name = {f["name"]: f for f in doc["files"]}
+    # inputs (both copies) + outputs (gds/msh/json) recorded; no results.yaml.
+    assert by_name[TWO_PADS_META.name]["role"] == "input"
+    assert by_name[geo_name]["role"] == "input"
+    assert {"chip.gds", "chip.msh", "chip.json"} <= set(by_name)
+    assert "chip.results.yaml" not in by_name
+
+    # every record has a sha256 / bytes / modified_utc, and the sha is correct.
+    for rec in doc["files"]:
+        assert rec["sha256"] and rec["bytes"] > 0 and rec["modified_utc"]
+    gds_bytes = (tmp_path / "chip.gds").read_bytes()
+    assert by_name["chip.gds"]["sha256"] == hashlib.sha256(gds_bytes).hexdigest()
+
+
 def test_two_pads_live_capacitance_matrix(tmp_path):
     import yaml
     from quantum_dsl.dsl.geo_build import build_geo
@@ -214,6 +248,10 @@ def test_two_pads_live_capacitance_matrix(tmp_path):
     res = build_geo(meta_path=str(TWO_PADS_META), out_dir=str(tmp_path),
                     run_palace=True, dry_run=False)
     assert res["results"] is not None, "no chip.results.yaml produced"
+
+    # a real solve -> manifest also lists the chip.results.yaml output.
+    man = yaml.safe_load(Path(res["manifest"]).read_text(encoding="utf-8"))
+    assert "chip.results.yaml" in {f["name"] for f in man["files"]}
     doc = yaml.safe_load(Path(res["results"]).read_text(encoding="utf-8"))
 
     cap = doc["capacitance"]
