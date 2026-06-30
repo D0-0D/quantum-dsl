@@ -5,6 +5,7 @@ __pycache__/
 .eggs/
 build/
 dist/
+palace/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
