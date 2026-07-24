@@ -11,8 +11,6 @@
    **最新的 `*.meta.yaml` + 手写 `.geo`** 路径(`quantum_dsl.dsl.geo_build`)。
    - **「全用 YAML 写」**(旧 `.metal.yaml → shapely → QDesign`)记为 **legacy**。
    - **「emit geo」**(由 YAML 自动生成 `.geo`)也记为 **legacy**。
-2. **协作方式**:用户用**手机远程控制**本会话、**不清楚仓库完整细节**;要求**每一步动手前
-   先确认具体细节**,回复简短,背景调研由我自己做。
 3. **诊断任务(已完成)**:看现有两个例子里"芯片那个"(`chip_layout`),给完整物理+计算图像,
    判断是否过于 toy-model。→ 已给结论:作为 DSL→GDS+mesh→Palace 全链路 demo 合格;作为真实
    芯片偏 toy(缺读出谐振器/ports/控制线、纯静电、直角矩形)。

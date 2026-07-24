@@ -178,6 +178,14 @@ def define_size_fields(tracker: GeomTracker,
         gmsh.option.setNumber("Mesh.MeshSizeMax", size_max)
 
 
+def _mesh_3d_is_empty() -> bool:
+    """当前模型有 3D 实体却没有任何 3D 单元 → 3D 网格失败 (可能是静默失败)。"""
+    if not gmsh.model.getEntities(3):
+        return False  # 无体可网格化 (纯 2D 模型), 不算失败
+    _, element_tags, _ = gmsh.model.mesh.getElements(3)
+    return sum(len(tags) for tags in element_tags) == 0
+
+
 def generate_mesh(dim: int = 3) -> None:
     if gmsh is None:
         raise ImportError("gmsh required for generate_mesh")
@@ -189,20 +197,30 @@ def generate_mesh(dim: int = 3) -> None:
         return
     try:
         gmsh.model.mesh.generate(dim)
+        # The default Delaunay 3D mesher fails with "PLC Error: a segment and a
+        # facet intersect" on a coplanar metal-on-substrate interface (conductor
+        # bottom == substrate top at z=0) — the physically-correct stack with no
+        # vacuum gap. Depending on the gmsh build, that failure either raises
+        # (older SDK builds) or is merely LOGGED while generate() returns with an
+        # EMPTY 3D mesh (conda-forge 4.11.1 / pip 4.15.2) — check both.
+        failed = dim == 3 and _mesh_3d_is_empty()
     except Exception:
         if dim != 3:
             raise
-        # The default Delaunay 3D mesher throws "PLC Error: a segment and a
-        # facet intersect" on a coplanar metal-on-substrate interface (conductor
-        # bottom == substrate top at z=0) — the physically-correct stack with no
-        # vacuum gap. HXT (Algorithm3D=10) meshes that coincident footprint
-        # robustly, so fall back to it. Most geometries mesh fine with the
-        # default and never hit this path (HXT fails on some of them, so it must
-        # NOT be the global default).
+        failed = True
+    if failed:
+        # HXT (Algorithm3D=10) meshes the coincident footprint robustly, so
+        # fall back to it. Most geometries mesh fine with the default and never
+        # hit this path (HXT fails on some of them, so it must NOT be the
+        # global default).
         gmsh.model.mesh.clear()
         gmsh.option.setNumber("Mesh.Algorithm3D", 10)
         gmsh.model.mesh.generate(dim)
         gmsh.option.setNumber("Mesh.Algorithm3D", 1)  # restore default
+        if _mesh_3d_is_empty():
+            raise RuntimeError(
+                "3D mesh generation produced no elements (Delaunay failed, HXT "
+                "fallback also empty) — refusing to write an empty mesh")
 
 
 _KNOWN_FORMATS = {"msh4", "msh2", "vtk", "stl", "step", "iges", "brep", "pos"}

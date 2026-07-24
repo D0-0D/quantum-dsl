@@ -352,3 +352,55 @@ def test_carve_conductors_raises_when_vacuum_fully_consumed():
     with pytest.raises(DesignDslError, match="0 volumes remain"):
         carve_conductors(tr)
     # autouse _clean_gmsh_session finalizes the session afterwards.
+
+
+# -----------------------------------------------------------------------------
+# generate_mesh — silent-empty 3D failure must trigger the HXT fallback
+# -----------------------------------------------------------------------------
+
+def test_generate_mesh_silent_empty_falls_back_to_hxt(monkeypatch):
+    """Newer gmsh builds (conda-forge 4.11.1 / pip 4.15.2) LOG the coplanar
+    "PLC Error" and return normally with an EMPTY 3D mesh instead of raising —
+    generate_mesh must detect the empty mesh and still fall back to HXT
+    (regression: qm4q silently wrote a 533-byte 0-element chip.msh)."""
+    from quantum_dsl.dsl._gmsh_mesh import generate_mesh
+
+    gmsh.initialize()
+    gmsh.option.setNumber("General.Terminal", 0)
+    gmsh.model.add("silent_empty")
+    gmsh.model.occ.addBox(0, 0, 0, 1, 1, 1)
+    gmsh.model.occ.synchronize()
+
+    real_generate = gmsh.model.mesh.generate
+    calls = {"n": 0}
+
+    def first_call_silently_fails(dim=3):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return  # simulate: PLC error logged, no exception, no elements
+        real_generate(dim)
+
+    monkeypatch.setattr(gmsh.model.mesh, "generate", first_call_silently_fails)
+    generate_mesh(dim=3)
+
+    assert calls["n"] == 2, "empty first pass must trigger exactly one retry"
+    _, element_tags, _ = gmsh.model.mesh.getElements(3)
+    assert sum(len(t) for t in element_tags) > 0, "HXT fallback must produce a mesh"
+    assert gmsh.option.getNumber("Mesh.Algorithm3D") == 1  # default restored
+
+
+def test_generate_mesh_raises_when_hxt_also_empty(monkeypatch):
+    """If the HXT fallback ALSO yields no 3D elements, generate_mesh must raise
+    instead of letting the caller write an empty (unsolvable) mesh."""
+    from quantum_dsl.dsl._gmsh_mesh import generate_mesh
+
+    gmsh.initialize()
+    gmsh.option.setNumber("General.Terminal", 0)
+    gmsh.model.add("always_empty")
+    gmsh.model.occ.addBox(0, 0, 0, 1, 1, 1)
+    gmsh.model.occ.synchronize()
+
+    monkeypatch.setattr(gmsh.model.mesh, "generate", lambda dim=3: None)
+
+    with pytest.raises(RuntimeError, match="no elements"):
+        generate_mesh(dim=3)

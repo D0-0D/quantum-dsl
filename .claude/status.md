@@ -45,6 +45,14 @@ R3 circuit solve ✅, R4 read QDA ✅, R5 GDSFactory) + verbal "电容矩阵就�
 - M5a impl (emit_geo bridge, carved ground): see `session/2606080338.md`.
 
 ## Recent notable commits
+- _(branch `main`, **未提交** — 2607021950)_ **静默空网格根因修复 + qm4q 汇报稿**:新 gmsh 构建
+  (metal-env 已重建为 conda 4.11.1;qmetal-src pip 4.15.2)对共面 PLC 失败**不抛异常**,旧
+  `generate_mesh` 的 HXT 回退永不触发 → qm4q 静默产出 533B 空网格(`build/qm4q/chip.msh` 即此),
+  Palace abort。修复:空 3D 网格也触发回退、回退仍空则 raise;+2 回归测试
+  (`test_geo_pipeline.py` **12 passed, 1 skipped**)。**演示/复现命令必须
+  `export QDSL_MESH_ALGO3D=10`**(失败-Delaunay 后的进程内回退在新 gmsh 下无效,从头 HXT 两 env 均稳)。
+  端到端重验 `build/qm4q_demo`(pad_top 103.5 fF,与 6/27 基线 <2%)。新增
+  `docs/report/qm4q_talk_script.md`(对着念/操作的汇报稿)。See `session/2607021950.md`。
 - _(branch `main` — 2606300056)_ **build 结果归档 + 文件指纹清单**: `build_geo()` 现在每次 build
   都把 `meta.yaml` + `.geo` 复制进 `out_dir`(保留原名),并写一个 `chip.manifest.yaml` —— 登记
   输入副本 + 全部产物(gds/msh/json/results)的 sha256 指纹、字节数、修改时间(UTC)。纯附加,

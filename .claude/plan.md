@@ -294,3 +294,9 @@ Single metal layer + dielectric substrate is the scope; defer until a multi-laye
   `chip.manifest.yaml` —— 登记输入副本 + 全部产物(gds/msh/json/results)的 sha256/字节数/修改时间(UTC)。
   新增 `_file_record()` helper(复用 `_sha256_file`)、return dict 加 `"manifest"` 键、CLI 多打印 `Manifest` 行;
   纯附加,未碰 results schema/provenance。+2 测试;`tests/test_geo_pipeline.py` **10 passed, 1 skipped**(was 9/1)。
+- [`session/2607021950.md`](session/2607021950.md) — 2026-07-02 · **qm4q 汇报稿 + 静默空网格根因修复**。
+  发现当前仓库复现不了 walkthrough:共面 PLC 失败在新 gmsh 构建(4.11.1/4.15.2)不抛异常 → HXT 回退
+  永不触发 → 静默写 533B 空网格、Palace abort。修 `generate_mesh`(空 3D 网格也触发回退;回退仍空则
+  raise)+2 回归测试(**12 passed, 1 skipped**);实测演示命令须带 `QDSL_MESH_ALGO3D=10`(两 env 均稳)。
+  端到端重验:`build/qm4q_demo` 新解 pad_top 103.5 fF,与 6/27 基线 <2%。新文档
+  `docs/report/qm4q_talk_script.md`(对着念/操作的分幕汇报稿,含行号指引 + 保底预案)。
