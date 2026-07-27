@@ -1,0 +1,82 @@
+# =====================================================================
+# sung_2021_device.meta.yaml
+# Metadata binding for the 3-body interacting system.
+#
+# Extracted Hamiltonian Parameters (Ref: Fig 7 caption):
+# QB1: E_J = 12.2 GHz
+# CPLR: E_J1 = 46 GHz, E_J2 = 25 GHz (Total E_J = 71 GHz max)
+# QB2: E_J1 = 13 GHz, E_J2 = 2.8 GHz (Total E_J = 15.8 GHz max)
+# =====================================================================
+
+schema: qiskit-metal/design-dsl/3
+
+geo: sung_2021_device.geo
+
+vars: {}
+
+circuit_model:
+  qubits:
+    - name: QB1
+      island: metal::1::QB1::pad_top
+      E_J: 12.2GHz
+    - name: CPLR
+      island: metal::1::CPLR::pad_top
+      E_J: 71GHz
+    - name: QB2
+      island: metal::1::QB2::pad_top
+      E_J: 15.8GHz
+
+simulation:
+  gmsh:
+    # ---- Layer Stack (µm) -------------------------------------------
+    layer_stack:
+      1:
+        kind: metal
+        thickness: 2
+        z: 0
+        material: pec
+      3:
+        kind: dielectric
+        thickness: -750
+        z: 0
+        material: silicon
+        eps_r: 11.45
+
+    # ---- Airbox (µm) ------------------------------------------------
+    airbox:
+      top: 890
+      bottom: 1650
+      side_buffer: 200
+
+    # ---- Mesh Sizing (µm) -------------------------------------------
+    mesh:
+      max_size: 80
+      min_size: 2
+      max_size_jj: 0.5
+      conductor_refine:
+        min_dist: 2
+        max_dist: 40
+
+    # ---- GDS Layer Map ----------------------------------------------
+    gds:
+      lib_name: sung_device
+      top_cell: sung_device
+      unit: 1.0e-6
+      precision: 1.0e-9
+      arc_tol_um: 0.01
+      union_same_layer: true
+      default_datatype: 0
+      by_role:
+        metal:  {layer: 1,  datatype: 0}
+        ground: {layer: 1,  datatype: 0}
+        jj:     {layer: 20, datatype: 0}
+
+    # Use exact coplanar alignment at z=0 interface
+    substrate_gap_um: 0
+
+    # ---- Palace Solver ----------------------------------------------
+    solver:
+      type: Electrostatic
+      order: 2
+      l0: 1.0
+      outer_boundary: open
