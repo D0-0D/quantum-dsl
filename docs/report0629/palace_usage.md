@@ -88,7 +88,7 @@ abla V \) 计算电场，再根据高斯定律 \( Q = \oint_S \mathbf{D} \cdot \
 
 ###  `paraview/` 文件夹：用于3D可视化
 
-这个文件夹主要存放供 **ParaView** 软件读取的数据文件，用于三维可视化。
+存放供 **ParaView** 软件读取的数据文件，用于三维可视化。
 
 *   **数据格式**：主要是 `.vtu` (VTK Unstructured Grid) 格式文件。
 
