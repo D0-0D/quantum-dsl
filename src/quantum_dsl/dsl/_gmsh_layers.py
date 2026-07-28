@@ -29,11 +29,14 @@ except ImportError:  # pragma: no cover — exercised on lite installs
 # 共面 substrate / vacuum 在 OCC fragment 时被切成两块独立 volume。
 FRAGMENT_TOL_SI = 1e-6
 
-# Coordinate scale used around ``occ.fragment`` (see fragment_everything for the
-# why). ``QDSL_FRAGMENT_SCALE`` is an escape hatch for bisecting an OCC boolean
-# failure on a new design — it is a pure numerical-conditioning knob, the
-# resulting topology must be identical whatever value works.
-FRAGMENT_SCALE = float(os.environ.get("QDSL_FRAGMENT_SCALE", "1e2"))
+# Coordinate scales tried around ``occ.fragment`` (see fragment_everything for
+# the why). Tried in order; the FIRST candidate whose fragment OCC accepts wins.
+# ``1.0`` means "don't touch the shapes at all" and is deliberately first.
+# ``QDSL_FRAGMENT_SCALE`` pins the ladder to a single value — an escape hatch for
+# bisecting an OCC boolean failure on a new design.
+_ENV_FRAGMENT_SCALE = os.environ.get("QDSL_FRAGMENT_SCALE")
+FRAGMENT_SCALE_LADDER: tuple[float, ...] = (
+    (float(_ENV_FRAGMENT_SCALE),) if _ENV_FRAGMENT_SCALE else (1.0, 1e2))
 
 # 拓扑不变量的容差 (见 check_fragment_topology / _check_carved_faces)。
 # 实测的损坏形态超标 1.5x 以上, 健康模型贴着 1.00x, 所以 0.1% 的余量就够。
@@ -200,6 +203,35 @@ def apply_symmetry_cuts(symmetry_specs,
         gmsh.model.occ.synchronize()
 
 
+def _fragment_at_scale(scale: float,
+                       object_dimtag: tuple[int, int],
+                       tools: list[tuple[int, int]]) -> list:
+    """在 ``scale`` 下跑一次 ``occ.fragment``, 返回 ``outDimTagsMap``。
+
+    ``scale == 1.0`` 时完全不动 shape (连 dilate 都不调 —— 见
+    ``fragment_everything`` 里的矩阵: identity dilate 也是一次有损重建)。
+    其余情况 dilate → fragment → dilate 回来。
+
+    fragment 抛异常时先把 dilate 撤回再原样上抛: gmsh 在 rebind 之前就报
+    "Boolean ... failed", 模型未被改动, 所以调用方可以换下一个 scale 重试。
+    """
+    if scale == 1.0:
+        return gmsh.model.occ.fragment([object_dimtag], tools)[1]
+
+    def _dilate(factor: float) -> None:
+        gmsh.model.occ.dilate(gmsh.model.occ.getEntities(), 0, 0, 0,
+                              factor, factor, factor)
+
+    _dilate(scale)
+    try:
+        out_map = gmsh.model.occ.fragment([object_dimtag], tools)[1]
+    except Exception:
+        _dilate(1.0 / scale)
+        raise
+    _dilate(1.0 / scale)
+    return out_map
+
+
 def fragment_everything(tracker: GeomTracker) -> None:
     """Stage E: OCC fragment 把所有 volume + JJ surface + vacuum 缝合一致。
 
@@ -253,34 +285,62 @@ def fragment_everything(tracker: GeomTracker) -> None:
 
     object_dimtag = all_inputs[0]
     tools = all_inputs[1:]
-    # The geometry is at the µm→m dilated scale (~1e-4 m). OCC's exact fragment
-    # of a COPLANAR interface (a carved-ground void bottom vs the substrate top,
-    # both at z=0) is numerically unstable there and throws "Boolean fragments
-    # failed". Temporarily rescale the whole model by FRAGMENT_SCALE, fragment,
-    # then scale back to meters. This lets the conductor sit ON the dielectric
-    # (coplanar at z=0, no vacuum gap) exactly as the physical stack requires,
-    # instead of dropping the substrate by a non-physical ε that depresses every
-    # C ~30%.
+    # `dilate(s) → fragment → dilate(1/s)` around the fragment is NOT a unit
+    # conversion — s and 1/s cancel. It exists because OCC's exact fragment of a
+    # COPLANAR interface (a carved-ground void bottom vs the substrate top, both
+    # at z=0) sometimes throws "Boolean fragments failed" at the µm→m dilated
+    # scale (~1e-4 m), and re-running it on rescaled shapes gets past that. What
+    # actually helps is not the coordinates: `occ.dilate` is a
+    # BRepBuilderAPI_GTransform, i.e. a full REBUILD of every curve/surface (an
+    # accidental shape-heal), and s=1 heals just as well as s=1e2.
     #
-    # FRAGMENT_SCALE is a pure numerical-conditioning knob and OCC is empirically
-    # picky about it with NO monotone safe direction. Measured on gmsh 4.11.1
-    # (sung reproduced identically on 4.15.2):
-    #   scale             1      10     1e2   1e3    1e4    1e5    1e6
-    #   sung fragment     ok     ok     ok    ok     BAD    ok     BAD
-    #   qm4q fragment     throw  throw  ok    ok     throw  ok     ok
-    #   qm4q mesh (HXT)    -      -     ok    FAIL   -      ok     ok
-    #   cells_2q e2e      ?      ?      ok    ok     ?      FAIL   ok
-    # BAD = fragment returns **silently** broken topology (the substrate
-    # duplicated, the vacuum never cut at all, a negative-area face) and the model
-    # flows on to Palace as a wrong answer with no error; throw = "Boolean
-    # fragments failed". 1e2 is the only value clean everywhere, hence the default.
-    # check_fragment_topology() below is what turns the next silent failure into an
-    # error instead of a wrong capacitance matrix.
-    _s = FRAGMENT_SCALE
-    gmsh.model.occ.dilate(gmsh.model.occ.getEntities(), 0, 0, 0, _s, _s, _s)
-    out_dimtags, out_map = gmsh.model.occ.fragment([object_dimtag], tools)
-    _i = 1.0 / _s
-    gmsh.model.occ.dilate(gmsh.model.occ.getEntities(), 0, 0, 0, _i, _i, _i)
+    # But that rebuild is LOSSY — it re-approximates geometry and inflates
+    # vertex/edge tolerances — so it is damage for every design that did not need
+    # it. Measured end to end on gmsh 4.11.1 (chip.msh actually written):
+    #   round-trip        none   s=1    s=3    s=1e2
+    #   m4yaml (legacy)   ok     empty  ok     BAD
+    #   chain_2q (legacy) ok     ok     ok     BAD
+    #   sung (geo)        ok     mesh   mesh   mesh
+    #   qm4q (geo)        throw  ok     ok     ok
+    #   two_pads/cells_2q/chip_layout (geo)  ok everywhere
+    # BAD = fragment returns **silently** broken topology (a negative-volume body,
+    # or the inputs handed back completely uncut) and the model would flow on to
+    # Palace as a wrong answer with no error; throw = "Boolean fragments failed";
+    # empty/mesh = fragment fine, 3D mesher then fails or emits 0 elements.
+    #
+    # So there is no single scale, and no per-path or bbox-derived formula either
+    # (qm4q and sung are the same path, the same substrate_gap_um: 0 coplanar
+    # carve, and want opposite answers). Hence a LADDER: try the untouched shapes
+    # first — correct for 6 of the 7 designs above — and escalate to the rescaled
+    # rebuild only for a design whose fragment OCC refuses outright. gmsh reports
+    # a failed boolean before it rebinds anything, so the model is still pristine
+    # for the next candidate. check_fragment_topology() below is what turns a
+    # SILENT failure (which no retry can detect from the exception) into an error
+    # instead of a wrong capacitance matrix.
+    #
+    # ponytail: the ladder only escalates on a RAISED boolean. A fragment that
+    # succeeds but returns corrupt topology has already destroyed the model, so
+    # check_fragment_topology() raises and tells the author to pin
+    # QDSL_FRAGMENT_SCALE by hand. Upgrade path if a design ever needs that
+    # automatically: snapshot the shapes (occ.copy of every input) before the
+    # first attempt and restore + remap from the copies instead of retrying
+    # in place.
+    out_map = None
+    attempts: list[str] = []
+    for scale in FRAGMENT_SCALE_LADDER:
+        try:
+            out_map = _fragment_at_scale(scale, object_dimtag, tools)
+            break
+        except Exception as exc:  # noqa: BLE001 — OCC/gmsh raise bare Exception
+            attempts.append(f"scale {scale:g}: {' '.join(str(exc).split())}")
+    if out_map is None:
+        raise DesignDslError(
+            "occ.fragment failed at every candidate coordinate scale "
+            f"{tuple(FRAGMENT_SCALE_LADDER)!r}: " + "; ".join(attempts) +
+            ". The fragment stitches the coplanar metal/substrate/vacuum "
+            "interfaces; without it there is no conformal mesh. Try pinning "
+            "QDSL_FRAGMENT_SCALE=<value> to bisect (see the measured matrix in "
+            "fragment_everything).")
     # out_map[i] 对应 inputs[i] (object 在前, tools 顺序排其后)
     ordered_inputs = [object_dimtag] + tools
     old_to_new: dict[tuple[int, int], list[tuple[int, int]]] = {}
@@ -319,7 +379,8 @@ def check_fragment_topology() -> None:
             f"(dim, tag, mass) = {negative[:8]}. A negative area/volume means "
             f"the boolean fragment silently failed; meshing this model would "
             f"produce a wrong capacitance matrix with no error. Retry with a "
-            f"different QDSL_FRAGMENT_SCALE (current {FRAGMENT_SCALE:g}).")
+            f"different QDSL_FRAGMENT_SCALE (ladder tried: "
+            f"{tuple(FRAGMENT_SCALE_LADDER)!r}).")
 
     volume_tags = [tag for (_d, tag) in gmsh.model.getEntities(3)]
     if not volume_tags:
@@ -338,7 +399,8 @@ def check_fragment_topology() -> None:
             f"body OCC duplicated, or a body it failed to cut (e.g. the dielectric "
             f"substrate still sitting inside an un-cut vacuum box). Per-volume m^3: "
             f"{ {t: float(f'{m:.4g}') for t, m in masses.items()} }. Retry with a "
-            f"different QDSL_FRAGMENT_SCALE (current {FRAGMENT_SCALE:g}).")
+            f"different QDSL_FRAGMENT_SCALE (ladder tried: "
+            f"{tuple(FRAGMENT_SCALE_LADDER)!r}).")
 
 
 def _centroid_in_bbox(bb: tuple, c: tuple, tol: float = 1e-9) -> bool:
@@ -565,7 +627,8 @@ def _check_dielectric_volumes(tracker: GeomTracker,
                 f"{len(tags)} ({tags}). >1 means OCC duplicated or split the "
                 f"substrate body, 0 means it was consumed — either way the "
                 f"electrostatic domain is wrong. Retry with a different "
-                f"QDSL_FRAGMENT_SCALE (current {FRAGMENT_SCALE:g}).")
+                f"QDSL_FRAGMENT_SCALE (ladder tried: "
+                f"{tuple(FRAGMENT_SCALE_LADDER)!r}).")
 
 
 def _check_carved_faces(tracker: GeomTracker) -> None:

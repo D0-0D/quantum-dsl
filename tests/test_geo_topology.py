@@ -21,9 +21,12 @@ gmsh = pytest.importorskip("gmsh")
 from quantum_dsl.dsl import gmsh_adapter  # noqa: E402
 from quantum_dsl.dsl._gmsh_geometry import GeomTracker  # noqa: E402
 from quantum_dsl.dsl._gmsh_layers import (  # noqa: E402
+    FRAGMENT_SCALE_LADDER,
     _bbox_contains,
     _centroid_in_bbox,
+    _fragment_at_scale,
     check_fragment_topology,
+    fragment_everything,
     resolve_conductor_faces,
 )
 from quantum_dsl.dsl.errors import DesignDslError  # noqa: E402
@@ -32,6 +35,21 @@ from quantum_dsl.dsl.parsers.simulation import (  # noqa: E402
 )
 
 EXAMPLES = Path(__file__).resolve().parents[1] / "examples" / "dsl" / "geo"
+
+# Palace 只认 physical-group 名, 所以这两个例子的输出名集合是对外契约。
+_EXPECTED_GROUPS = {
+    "sung_2021_device": [
+        "CPLR_pad_bot_sfs", "CPLR_pad_top_sfs",
+        "QB1_pad_bot_sfs", "QB1_pad_top_sfs",
+        "QB2_pad_bot_sfs", "QB2_pad_top_sfs",
+        "gnd_layer1_sfs", "substrate_layer3", "vacuum", "vacuum_outer",
+    ],
+    "qm4q_transmon_cell": [
+        "Q1_conn_a_sfs", "Q1_conn_b_sfs", "Q1_conn_c_sfs", "Q1_conn_d_sfs",
+        "Q1_pad_bot_sfs", "Q1_pad_top_sfs",
+        "gnd_layer1_sfs", "substrate_layer3", "vacuum", "vacuum_outer",
+    ],
+}
 
 
 @pytest.fixture(autouse=True)
@@ -101,6 +119,98 @@ def test_negative_area_face_raises(monkeypatch):
 
     with pytest.raises(DesignDslError, match="NEGATIVE mass"):
         check_fragment_topology()
+
+
+# -----------------------------------------------------------------------------
+# FRAGMENT_SCALE_LADDER — the dilate round-trip is a LOSSY shape rebuild, so the
+# untouched shapes must be tried first and the rescale used only as a fallback.
+# -----------------------------------------------------------------------------
+
+def _vacuum_over_substrate() -> tuple[GeomTracker, tuple, list]:
+    """真空盒 + 与其共底的衬底盒 (fragment 的最小输入: object + 1 tool)。"""
+    _session("ladder")
+    vac = gmsh.model.occ.addBox(0, 0, -1e-4, 2e-4, 2e-4, 2e-4)
+    sub = gmsh.model.occ.addBox(0, 0, -1e-4, 2e-4, 2e-4, 1e-4)
+    gmsh.model.occ.synchronize()
+    tracker = GeomTracker()
+    tracker.vacuum_box = vac
+    tracker.layer_ground = {3: [sub]}
+    return tracker, (3, sub), [(3, vac)]
+
+
+def test_ladder_tries_the_untouched_shapes_first():
+    """``FRAGMENT_SCALE_LADDER[0] == 1.0`` 是契约, 不是巧合。
+
+    ``occ.dilate`` 是 ``BRepBuilderAPI_GTransform`` —— 一次完整的曲面重建, 会
+    重新逼近几何并抬高 vertex/edge 容差。实测 (见 ``fragment_everything`` 的矩阵)
+    legacy YAML 路径和 sung_2021_device 在 **任何** scale 的往返之后都出不了
+    3D 网格 (空网格 / tetgen 自交), 只有完全不动 shape 才行。
+    """
+    assert FRAGMENT_SCALE_LADDER[0] == 1.0
+
+
+def test_fragment_at_scale_1_does_not_dilate(monkeypatch):
+    """scale=1.0 必须 **一次 dilate 都不调** —— identity 变换也是一次有损重建。"""
+    _tracker, obj, tools = _vacuum_over_substrate()
+    calls = []
+    monkeypatch.setattr(gmsh.model.occ, "dilate",
+                        lambda *a, **kw: calls.append(a))
+
+    out_map = _fragment_at_scale(1.0, obj, tools)
+
+    assert calls == [], "scale 1.0 must leave the shapes untouched"
+    assert len(out_map) == 2  # object + 1 tool
+
+
+def test_fragment_at_scale_round_trip_restores_the_coordinates():
+    """scale != 1 时 dilate(s) / dilate(1/s) 必须精确抵消 (它不是单位换算)。"""
+    _tracker, obj, tools = _vacuum_over_substrate()
+    before = gmsh.model.getBoundingBox(-1, -1)
+
+    _fragment_at_scale(1e2, obj, tools)
+    gmsh.model.occ.synchronize()
+
+    after = gmsh.model.getBoundingBox(-1, -1)
+    for b, a in zip(before, after):
+        assert a == pytest.approx(b, abs=1e-12)
+
+
+def test_ladder_escalates_after_a_failed_boolean(monkeypatch):
+    """第一个 scale 上 OCC 直接拒绝 (``Boolean fragments failed``) 时必须换下
+    一档重试 —— ``qm4q_transmon_cell`` 正是这种设计。
+
+    gmsh 在 rebind 任何 entity 之前就报这个错, 所以模型仍是原样, 重试合法。
+    """
+    if len(FRAGMENT_SCALE_LADDER) < 2:
+        pytest.skip("QDSL_FRAGMENT_SCALE pins the ladder to a single value")
+    tracker, _obj, _tools = _vacuum_over_substrate()
+    real_fragment = gmsh.model.occ.fragment
+    calls: list[int] = []
+
+    def _flaky(objects, tools, **kw):
+        calls.append(1)
+        if len(calls) == 1:
+            raise Exception("Boolean fragments failed")
+        return real_fragment(objects, tools, **kw)
+
+    monkeypatch.setattr(gmsh.model.occ, "fragment", _flaky)
+
+    fragment_everything(tracker)  # must not raise
+
+    assert len(calls) == 2, "the ladder did not escalate to the next scale"
+
+
+def test_ladder_exhausted_raises_with_every_attempt_named(monkeypatch):
+    """所有 scale 都失败时报 DesignDslError, 并把每一档的原始报错都带上。"""
+    tracker, _obj, _tools = _vacuum_over_substrate()
+
+    def _always_fails(*_a, **_kw):
+        raise Exception("Boolean fragments failed")
+
+    monkeypatch.setattr(gmsh.model.occ, "fragment", _always_fails)
+
+    with pytest.raises(DesignDslError, match="failed at every candidate"):
+        fragment_everything(tracker)
 
 
 # -----------------------------------------------------------------------------
@@ -189,10 +299,11 @@ def test_examples_fragment_to_clean_topology(monkeypatch):
 
     Fails at the previous FRAGMENT_SCALE=1e6 (and at 1e4) for
     ``sung_2021_device`` — OCC silently returned 3 volumes, the substrate
-    duplicated and the vacuum never cut, plus a negative-area face — and at scale
-    1/10/1e4 for ``qm4q_transmon_cell`` ("Boolean fragments failed"). The mesher
-    is stubbed out: this pins the GEOMETRY, which is what the scale affects,
-    without paying for a 3D mesh (the full scale matrix is in
+    duplicated and the vacuum never cut, plus a negative-area face — and with the
+    ladder pinned to ``QDSL_FRAGMENT_SCALE=1`` for ``qm4q_transmon_cell``
+    ("Boolean fragments failed": this is THE design that needs the escalation
+    rung). The mesher is stubbed out: this pins the GEOMETRY, which is what the
+    scale affects, without paying for a 3D mesh (the full scale matrix is in
     ``fragment_everything``).
 
     Both examples run in ONE gmsh session owned by the test: gmsh's ``.geo``
@@ -220,6 +331,7 @@ def test_examples_fragment_to_clean_topology(monkeypatch):
         assert len(groups["substrate_layer3"][1]) == 1, (stem, groups)
         assert len(groups["vacuum"][1]) == 1, (stem, groups)
         assert "gnd_layer1_sfs" in groups, (stem, sorted(groups))
+        assert sorted(groups) == _EXPECTED_GROUPS[stem], (stem, sorted(groups))
 
 
 def test_dielectric_layer_must_own_exactly_one_volume():
