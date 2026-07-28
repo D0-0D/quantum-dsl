@@ -101,6 +101,16 @@ def _conductor_surface_tags(tracker: GeomTracker,
         for tags in named.values():
             for t in tags:
                 seen.setdefault(abs(int(t)), None)
+    # ...and so does the carved GROUND sheet (M5a). Omitting it left the ground's
+    # cavity walls unrefined: a 2 µm-tall wall got ~max_size elements, gmsh's
+    # Mesh.MinimumCurvePoints=3 then put a midpoint on every 2 µm vertical edge,
+    # and the 2D mesher emitted a zero-area triangle from the three collinear
+    # nodes on each of the two walls sharing that edge → "Invalid boundary mesh
+    # (overlapping facets)" at 3D generation. Any design with a carved ground
+    # (i.e. every ground-plane design) hit this.
+    for tags in tracker.ground_faces.values():
+        for t in tags:
+            seen.setdefault(abs(int(t)), None)
     return list(seen.keys())
 
 
@@ -146,6 +156,17 @@ def define_size_fields(tracker: GeomTracker,
     # JJ 局部细化 (用 surface 的 curve)
     jj_surfaces = _junction_surface_tags(tracker)
     jj_curves = _curves_of_surfaces(jj_surfaces)
+    if "max_size_jj" in mesh_opts and not jj_curves:
+        # The native-geo path treats the JJ as a lumped element:
+        # populate_tracker_from_geo REMOVES the jj:: surface and never fills
+        # tracker.juncs, so no JJ size field can exist and an authored
+        # max_size_jj silently does nothing.  Say so instead of letting the
+        # author believe they refined the junction.
+        logger.warning(
+            "mesh.max_size_jj=%s is inert: no junction surface is tracked "
+            "(the native-geo path removes jj:: surfaces as lumped elements). "
+            "Use mesh.min_size to control the finest cells.",
+            mesh_opts["max_size_jj"])
     if jj_curves:
         jj_df = gmsh.model.mesh.field.add("Distance")
         gmsh.model.mesh.field.setNumbers(jj_df, "CurvesList", jj_curves)
@@ -194,6 +215,17 @@ def generate_mesh(dim: int = 3) -> None:
     if override and dim == 3:
         gmsh.option.setNumber("Mesh.Algorithm3D", int(override))
         gmsh.model.mesh.generate(dim)
+        # The override skips the Delaunay→HXT fallback (the caller picked the
+        # algorithm on purpose), but it must NOT skip the empty-mesh check: a
+        # silently-empty 3D mesh is exactly the failure this env var is used to
+        # work around, and writing it produces a ~500 B .msh that Palace aborts
+        # on with no useful message.  The documented demo command sets this var,
+        # so this path needs the guard MORE than the default one, not less.
+        if _mesh_3d_is_empty():
+            raise RuntimeError(
+                f"3D mesh generation produced no elements with "
+                f"Mesh.Algorithm3D={int(override)} (QDSL_MESH_ALGO3D) — refusing "
+                f"to write an empty mesh")
         return
     try:
         gmsh.model.mesh.generate(dim)
