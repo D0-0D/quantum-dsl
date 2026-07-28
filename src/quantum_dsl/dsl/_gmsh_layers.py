@@ -14,6 +14,8 @@ deny-list (硬性): `qiskit_metal.designs.*`, `qiskit_metal.qlibrary.*`,
 
 from __future__ import annotations
 
+import os
+
 from ._gmsh_geometry import GeomTracker
 from .errors import DesignDslError
 
@@ -26,6 +28,20 @@ except ImportError:  # pragma: no cover — exercised on lite installs
 # fragment 1um (在 SI 即 1e-6) 兜底, 与 `gmsh_renderer.py:761` 同理: 避免
 # 共面 substrate / vacuum 在 OCC fragment 时被切成两块独立 volume。
 FRAGMENT_TOL_SI = 1e-6
+
+# Coordinate scale used around ``occ.fragment`` (see fragment_everything for the
+# why). ``QDSL_FRAGMENT_SCALE`` is an escape hatch for bisecting an OCC boolean
+# failure on a new design — it is a pure numerical-conditioning knob, the
+# resulting topology must be identical whatever value works.
+FRAGMENT_SCALE = float(os.environ.get("QDSL_FRAGMENT_SCALE", "1e2"))
+
+# 拓扑不变量的容差 (见 check_fragment_topology / _check_carved_faces)。
+# 实测的损坏形态超标 1.5x 以上, 健康模型贴着 1.00x, 所以 0.1% 的余量就够。
+TOPOLOGY_VOLUME_SLACK = 1.001
+# 一个 carve terminal / ground 的腔壁总面积相对其 bbox 表面积的上限倍数。
+# 健康值贴着 1.0 (qm4q / sung 实测 0.99), 损坏的整张 z=0 界面是 1.1x 以上,
+# 2.0 给多孔 ground sheet (每个孔额外贡献 周长 x 厚度) 留足余量。
+CARVED_FACE_AREA_SLACK = 2.0
 
 
 def render_layer_grounds(bbox_si: tuple[float, float, float, float],
@@ -240,14 +256,31 @@ def fragment_everything(tracker: GeomTracker) -> None:
     # The geometry is at the µm→m dilated scale (~1e-4 m). OCC's exact fragment
     # of a COPLANAR interface (a carved-ground void bottom vs the substrate top,
     # both at z=0) is numerically unstable there and throws "Boolean fragments
-    # failed". Temporarily scale the whole model back to microns — where the
-    # ~1–1000 coordinates make the coincident faces robust — fragment, then scale
-    # back to meters. This lets the conductor sit ON the dielectric (coplanar at
-    # z=0, no vacuum gap) exactly as the physical stack requires, instead of
-    # dropping the substrate by a non-physical ε that depresses every C ~30%.
-    gmsh.model.occ.dilate(gmsh.model.occ.getEntities(), 0, 0, 0, 1e6, 1e6, 1e6)
+    # failed". Temporarily rescale the whole model by FRAGMENT_SCALE, fragment,
+    # then scale back to meters. This lets the conductor sit ON the dielectric
+    # (coplanar at z=0, no vacuum gap) exactly as the physical stack requires,
+    # instead of dropping the substrate by a non-physical ε that depresses every
+    # C ~30%.
+    #
+    # FRAGMENT_SCALE is a pure numerical-conditioning knob and OCC is empirically
+    # picky about it with NO monotone safe direction. Measured on gmsh 4.11.1
+    # (sung reproduced identically on 4.15.2):
+    #   scale             1      10     1e2   1e3    1e4    1e5    1e6
+    #   sung fragment     ok     ok     ok    ok     BAD    ok     BAD
+    #   qm4q fragment     throw  throw  ok    ok     throw  ok     ok
+    #   qm4q mesh (HXT)    -      -     ok    FAIL   -      ok     ok
+    #   cells_2q e2e      ?      ?      ok    ok     ?      FAIL   ok
+    # BAD = fragment returns **silently** broken topology (the substrate
+    # duplicated, the vacuum never cut at all, a negative-area face) and the model
+    # flows on to Palace as a wrong answer with no error; throw = "Boolean
+    # fragments failed". 1e2 is the only value clean everywhere, hence the default.
+    # check_fragment_topology() below is what turns the next silent failure into an
+    # error instead of a wrong capacitance matrix.
+    _s = FRAGMENT_SCALE
+    gmsh.model.occ.dilate(gmsh.model.occ.getEntities(), 0, 0, 0, _s, _s, _s)
     out_dimtags, out_map = gmsh.model.occ.fragment([object_dimtag], tools)
-    gmsh.model.occ.dilate(gmsh.model.occ.getEntities(), 0, 0, 0, 1e-6, 1e-6, 1e-6)
+    _i = 1.0 / _s
+    gmsh.model.occ.dilate(gmsh.model.occ.getEntities(), 0, 0, 0, _i, _i, _i)
     # out_map[i] 对应 inputs[i] (object 在前, tools 顺序排其后)
     ordered_inputs = [object_dimtag] + tools
     old_to_new: dict[tuple[int, int], list[tuple[int, int]]] = {}
@@ -255,6 +288,57 @@ def fragment_everything(tracker: GeomTracker) -> None:
         old_to_new[old] = list(mapping)
     tracker.remap(old_to_new)
     gmsh.model.occ.synchronize()
+    check_fragment_topology()
+
+
+def check_fragment_topology() -> None:
+    """fragment 之后的模型级拓扑不变量 —— 违反即 raise, 不让损坏模型流到 mesher。
+
+    ``occ.fragment`` 的契约: 输出的 volume 互不重叠, 且所有 entity 的 mass 为正。
+    OCC 在数值条件差的坐标尺度上会 **静默** 违约 (见 ``fragment_everything`` 里
+    FRAGMENT_SCALE 的注释), 返回的模型能一路走到 Palace 变成没有报错的错解。
+    这里只用两个 O(entities) 的检查就能拦住实测到的全部损坏形态:
+
+    1. 任何 dim-2 / dim-3 实体的 ``occ.getMass`` 不得为负 (损坏的 face);
+    2. 所有 volume 的体积之和 ≤ 整模型 bbox 的体积 —— 互不重叠的必要条件。
+       "体被复制" 和 "体根本没被切开" 两种损坏都会让这个和超出。
+    """
+    if gmsh is None:
+        raise ImportError("gmsh required for check_fragment_topology")
+
+    negative: list[tuple[int, int, float]] = []
+    for dim in (2, 3):
+        for (_d, tag) in gmsh.model.getEntities(dim):
+            mass = gmsh.model.occ.getMass(dim, tag)
+            if mass < 0.0:
+                negative.append((dim, tag, mass))
+    if negative:
+        raise DesignDslError(
+            f"post-fragment topology is corrupt: OCC returned "
+            f"{len(negative)} entity/entities with NEGATIVE mass "
+            f"(dim, tag, mass) = {negative[:8]}. A negative area/volume means "
+            f"the boolean fragment silently failed; meshing this model would "
+            f"produce a wrong capacitance matrix with no error. Retry with a "
+            f"different QDSL_FRAGMENT_SCALE (current {FRAGMENT_SCALE:g}).")
+
+    volume_tags = [tag for (_d, tag) in gmsh.model.getEntities(3)]
+    if not volume_tags:
+        return
+    masses = {tag: gmsh.model.occ.getMass(3, tag) for tag in volume_tags}
+    total = sum(masses.values())
+    x0, y0, z0, x1, y1, z1 = gmsh.model.getBoundingBox(-1, -1)
+    bbox_volume = (x1 - x0) * (y1 - y0) * (z1 - z0)
+    if bbox_volume > 0.0 and total > bbox_volume * TOPOLOGY_VOLUME_SLACK:
+        raise DesignDslError(
+            f"post-fragment topology is corrupt: the {len(volume_tags)} volumes "
+            f"OVERLAP — their total volume {total:.6g} m^3 is "
+            f"{total / bbox_volume:.3f}x "
+            f"the whole model's bounding box ({bbox_volume:.6g} m^3), but "
+            f"occ.fragment must return non-overlapping bodies. Typical causes: a "
+            f"body OCC duplicated, or a body it failed to cut (e.g. the dielectric "
+            f"substrate still sitting inside an un-cut vacuum box). Per-volume m^3: "
+            f"{ {t: float(f'{m:.4g}') for t, m in masses.items()} }. Retry with a "
+            f"different QDSL_FRAGMENT_SCALE (current {FRAGMENT_SCALE:g}).")
 
 
 def _centroid_in_bbox(bb: tuple, c: tuple, tol: float = 1e-9) -> bool:
@@ -263,6 +347,29 @@ def _centroid_in_bbox(bb: tuple, c: tuple, tol: float = 1e-9) -> bool:
     return (x0 - tol <= c[0] <= x1 + tol and
             y0 - tol <= c[1] <= y1 + tol and
             z0 - tol <= c[2] <= z1 + tol)
+
+
+def _bbox_contains(outer: tuple, inner: tuple, rel_tol: float = 1e-3) -> bool:
+    """``inner`` bbox 是否被 ``outer`` bbox 完整包住 (相对容差)。
+
+    质心测试单独用不够: chip-wide ground 的 bbox 在 xy 上 **包含** 整张 z=0
+    衬底/真空界面, 那张巨型 face 的质心 (0,0,0) 正好落在里面, 于是 ground 会把
+    它认领成 ``gnd_layer{N}_sfs`` —— 整个衬底顶面被接地, 静默错解。腔壁 face
+    必然是认领方实体自己的边界, 所以它的 bbox 必须落在认领方 bbox 之内。
+    """
+    ox0, oy0, oz0, ox1, oy1, oz1 = outer
+    tol = rel_tol * max(ox1 - ox0, oy1 - oy0, oz1 - oz0) + 1e-12
+    return (inner[0] >= ox0 - tol and inner[1] >= oy0 - tol and
+            inner[2] >= oz0 - tol and inner[3] <= ox1 + tol and
+            inner[4] <= oy1 + tol and inner[5] <= oz1 + tol)
+
+
+def _bbox_surface_area(bb: tuple) -> float:
+    """bbox 的表面积 —— carve 腔壁总面积的上界基准。"""
+    dx = bb[3] - bb[0]
+    dy = bb[4] - bb[1]
+    dz = bb[5] - bb[2]
+    return 2.0 * (dx * dy + dy * dz + dz * dx)
 
 
 def carve_conductors(tracker: GeomTracker) -> None:
@@ -383,6 +490,7 @@ def resolve_conductor_faces(tracker: GeomTracker,
     """
     if gmsh is None:
         raise ImportError("gmsh required for resolve_conductor_faces")
+    _check_dielectric_volumes(tracker, layer_stack_si)
     if not tracker.conductor_bbox and not tracker.ground_bbox:
         return
 
@@ -404,13 +512,18 @@ def resolve_conductor_faces(tracker: GeomTracker,
             continue
         face = abs(int(tag))
         c = gmsh.model.occ.getCenterOfMass(2, face)
+        # 归位判据 = 质心落在 bbox 内 **且** face 自己的 bbox 被该 bbox 包住。
+        # 只看质心不够 —— 见 `_bbox_contains` 的 docstring: chip-wide ground 的
+        # bbox 会吞掉整张 z=0 衬底/真空界面 (质心恰好 (0,0,0))。腔壁 face 一定是
+        # 认领方实体的边界, 所以范围包含是硬约束。
+        face_bb = gmsh.model.getBoundingBox(2, face)
         # Terminal bboxes are checked FIRST: they are small and specific, and a
         # chip-wide ground bbox (M5a) spatially CONTAINS every terminal (the
         # ground's xy bbox ignores its holes), so terminals must win the centroid
         # test before the ground claims their cavity walls.
         hit = None
         for (layer, component, primitive), bb in tracker.conductor_bbox.items():
-            if _centroid_in_bbox(bb, c):
+            if _centroid_in_bbox(bb, c) and _bbox_contains(bb, face_bb):
                 hit = (layer, component, primitive)
                 break
         if hit is not None:
@@ -422,7 +535,7 @@ def resolve_conductor_faces(tracker: GeomTracker,
         # terminal bbox because the metals sit inside the ground's holes).
         gnd_layer = None
         for layer, bb in tracker.ground_bbox.items():
-            if _centroid_in_bbox(bb, c):
+            if _centroid_in_bbox(bb, c) and _bbox_contains(bb, face_bb):
                 gnd_layer = layer
                 break
         if gnd_layer is not None:
@@ -430,6 +543,72 @@ def resolve_conductor_faces(tracker: GeomTracker,
         else:
             outer.append(face)
     tracker.vacuum_outer_faces = outer
+    _check_carved_faces(tracker)
+
+
+def _check_dielectric_volumes(tracker: GeomTracker,
+                              layer_stack_si: dict[int, dict]) -> None:
+    """每个 ``kind: dielectric`` layer 在 fragment 之后必须恰好剩 1 个体。
+
+    衬底盒由 ``ensure_dielectric_substrates`` / ``render_layer_grounds`` 每层画
+    一个; fragment 不该把它切开也不该复制它。>1 = OCC 泄漏/复制出了体 (实测
+    sung_2021_device 上衬底被复制成 2 份, 各 1.2e9 µm³), 0 = 体被整个吃掉。
+    """
+    for layer, spec in layer_stack_si.items():
+        if spec.get("kind") != "dielectric":
+            continue
+        tags = tracker.layer_ground.get(layer, [])
+        if len(tags) != 1:
+            raise DesignDslError(
+                f"post-fragment topology is corrupt: dielectric layer {layer} "
+                f"must own exactly 1 volume after fragment but owns "
+                f"{len(tags)} ({tags}). >1 means OCC duplicated or split the "
+                f"substrate body, 0 means it was consumed — either way the "
+                f"electrostatic domain is wrong. Retry with a different "
+                f"QDSL_FRAGMENT_SCALE (current {FRAGMENT_SCALE:g}).")
+
+
+def _check_carved_faces(tracker: GeomTracker) -> None:
+    """每个 carve 出来的 terminal / ground 必须拿到自洽的一组腔壁 face。
+
+    - ≥1 个 face: 0 个 = 该 terminal 在 Palace 里没有边界, C 矩阵少一维 (静默);
+    - 总面积 ≤ 其 bbox 表面积 x ``CARVED_FACE_AREA_SLACK``: 认领到一张远大于
+      自己脚印的 face (实测: 整张 1.6e6 µm² 的 z=0 衬底界面被 553600 µm² 的
+      ground 认领) 就会在这里炸掉, 而不是安静地把整个衬底顶面接地。
+    """
+    def _total_area(faces: list[int]) -> float:
+        return sum(gmsh.model.occ.getMass(2, f) for f in faces)
+
+    for (layer, component, primitive), bb in tracker.conductor_bbox.items():
+        faces = tracker.conductor_faces.get(layer, {}).get(
+            (component, primitive), [])
+        label = f"terminal metal::{layer}::{component}::{primitive}"
+        _check_one_carved(label, bb, faces, _total_area(faces))
+
+    for layer, bb in tracker.ground_bbox.items():
+        faces = tracker.ground_faces.get(layer, [])
+        _check_one_carved(f"ground sheet on layer {layer}", bb, faces,
+                          _total_area(faces))
+
+
+def _check_one_carved(label: str, bb: tuple, faces: list[int],
+                      area: float) -> None:
+    if not faces:
+        raise DesignDslError(
+            f"post-fragment face resolution failed: {label} was carved out of "
+            f"the vacuum but ended up with 0 boundary faces — it would carry no "
+            f"Palace boundary condition at all (a silently missing row/column in "
+            f"the capacitance matrix). Its carve bbox (m) is {bb}.")
+    cap = _bbox_surface_area(bb) * CARVED_FACE_AREA_SLACK
+    if area > cap:
+        raise DesignDslError(
+            f"post-fragment face resolution is inconsistent: {label} claims "
+            f"{len(faces)} face(s) totalling {area:.6g} m^2, which exceeds "
+            f"{CARVED_FACE_AREA_SLACK:g}x the surface area of its own carve bbox "
+            f"({_bbox_surface_area(bb):.6g} m^2). A carved terminal/ground can only "
+            f"own its own cavity walls, so it has been attributed a face that is "
+            f"not its own (e.g. the whole substrate/vacuum interface). bbox (m) = "
+            f"{bb}, faces = {faces[:12]}.")
 
 
 def apply_cuts(tracker: GeomTracker,
