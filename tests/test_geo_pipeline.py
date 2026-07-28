@@ -38,6 +38,8 @@ FIXTURES = Path(__file__).resolve().parent / "fixtures"
 TINY_GEO = FIXTURES / "tiny_chip.geo"
 TINY_META = FIXTURES / "tiny_chip.meta.yaml"
 TWO_PADS_META = FIXTURES / "two_pads.meta.yaml"
+SUNG_META = (Path(__file__).resolve().parents[1]
+             / "examples" / "dsl" / "geo" / "sung_2021_device.meta.yaml")
 
 
 @pytest.fixture(autouse=True)
@@ -197,6 +199,91 @@ def test_two_pads_carve_groups(tmp_path):
     # carved conductors have no 3D volume group, and there is no ground sheet.
     assert "A_pad" not in names and "B_pad" not in names
     assert not any(n.startswith("gnd_") for n in names)
+
+
+# -----------------------------------------------------------------------------
+# shipped example: examples/dsl/geo/sung_2021_device — GDS + mesh + Palace config
+# -----------------------------------------------------------------------------
+
+# Runs in a SUBPROCESS (see the test's docstring): gmsh keeps compiled .geo
+# ``Macro``s in a PROCESS-GLOBAL table that survives finalize() while qlib.geo's
+# ``_QLIB_INCLUDED`` include-guard constant does not, so merging qlib.geo in this
+# process would make every LATER test that merges it (e.g.
+# tests/test_geo_topology.py::test_examples_fragment_to_clean_topology) die with
+# "Redefinition of function PAD".
+_SUNG_BUILD_CHILD = r'''
+import json, sys
+from pathlib import Path
+import gmsh
+from quantum_dsl.dsl.gds_adapter import build_gds
+from quantum_dsl.dsl.gmsh_adapter import build_mesh_from_geo
+from quantum_dsl.dsl.palace_adapter import (build_palace_config,
+                                            validate_config,
+                                            write_palace_config)
+from quantum_dsl.dsl.parsers.simulation import parse_geo_meta_sidecar
+
+meta_path, out = Path(sys.argv[1]), Path(sys.argv[2])
+meta = parse_geo_meta_sidecar(meta_path)
+sim = meta["simulation"]["gmsh"]
+# coarsened on purpose: this guards topology + naming, not capacitance accuracy.
+sim["mesh"] = {"max_size": 200, "min_size": 8,
+               "conductor_refine": {"min_dist": 8, "max_dist": 60}}
+gmsh.initialize()                      # one session spans both branches
+gmsh.option.setNumber("General.Terminal", 0)
+build_gds(meta["geo"], output_path=out / "chip.gds")
+res = build_mesh_from_geo(meta["geo"], sim, output_path=out / "chip.msh",
+                          generate=True)
+gmsh.finalize()
+s = sim["solver"]
+cfg = build_palace_config(res.physical_attributes, res.options.layer_stack,
+                          l0=float(s["l0"]), order=int(s["order"]),
+                          ground_outer=s["outer_boundary"] != "open",
+                          mesh_path=res.mesh_path.name)
+validate_config(cfg, res.physical_attributes)
+write_palace_config(cfg, out / "chip.json")
+print(json.dumps(sorted(res.physical_groups)))
+'''
+
+
+def test_sung_2021_example_builds_differential_islands(tmp_path):
+    """The shipped Sung-2021 example builds GDS + mesh + Palace config (no solve),
+    keeps its 10 physical groups, and declares every transmon as TWO islands.
+
+    One island per qubit silently grounds the other pad of a floating transmon
+    (1.70x on C_Sigma / E_C for this device), so the two-island declaration and
+    the pad group names it references are part of the example's contract.
+    """
+    import json
+    import os
+    import subprocess
+    import sys
+
+    meta = parse_geo_meta_sidecar(SUNG_META)
+    qubits = meta["circuit_model"]["qubits"]
+    assert [q["name"] for q in qubits] == ["QB1", "CPLR", "QB2"]
+    assert [len(q["islands"]) for q in qubits] == [2, 2, 2]
+
+    env = dict(os.environ)
+    src_root = Path(geo.__file__).resolve().parents[2]   # .../src
+    env["PYTHONPATH"] = os.pathsep.join(
+        [str(src_root)] + ([env["PYTHONPATH"]] if env.get("PYTHONPATH") else []))
+    proc = subprocess.run(
+        [sys.executable, "-c", _SUNG_BUILD_CHILD, str(SUNG_META), str(tmp_path)],
+        capture_output=True, text=True, env=env, timeout=1800)
+    assert proc.returncode == 0, proc.stdout[-2000:] + proc.stderr[-2000:]
+
+    groups = json.loads(proc.stdout.strip().splitlines()[-1])
+    assert set(groups) == {
+        "QB1_pad_top_sfs", "QB1_pad_bot_sfs",
+        "CPLR_pad_top_sfs", "CPLR_pad_bot_sfs",
+        "QB2_pad_top_sfs", "QB2_pad_bot_sfs",
+        "gnd_layer1_sfs", "substrate_layer3", "vacuum", "vacuum_outer"}
+    # every declared island is a real conductor terminal group
+    for qubit in qubits:
+        for island in qubit["islands"]:
+            assert island in groups, island
+    for name in ("chip.gds", "chip.msh", "chip.json"):
+        assert (tmp_path / name).is_file(), name
 
 
 # -----------------------------------------------------------------------------
