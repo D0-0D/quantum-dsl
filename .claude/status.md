@@ -150,6 +150,15 @@ R3 circuit solve ✅, R4 read QDA ✅, R5 GDSFactory) + verbal "电容矩阵就�
 - **`occ.fragment` 对近邻但不重叠的 pocket carve 退化**(A4 实测): pocket 重叠 30/40 µm 干净,
   重叠 10 µm 与完全不重叠都抛 `Boolean fragments failed`, 且 scale 1/1e2/1e3 皆然 → 是 boolean
   本身。重画例子几何时留意, 已写进 `sung_2021_device.geo` header。
+- **ε-nudge 已重新标定** (2607290110): 默认 `CARVED_GROUND_SUBSTRATE_GAP_SI` **1 µm → 0.01 µm**。
+  实测(`two_pads` + 一张 carved ground 环, 只变 ε, 8-rank Palace 实解): 旧的 1 µm 默认值
+  **压低 C_AA 29.1%、压低耦合 C_AB 40.3%**; 0.01 µm 只差 0.03%。所以历史上那个「~30% 误差」
+  **是默认值比需要的大三个数量级造成的, 不是挖空的内在代价**。ε=0 不是万能解: 该几何在任何
+  coordinate scale 下都 fragment 失败; ε=0.5 更产出损坏拓扑(被 A1 的不变量拦住) → OCC 共面
+  布尔的抽风是**非单调**的。完整 ε 阶梯表在 `_gmsh_geo_source.CARVED_GROUND_SUBSTRATE_GAP_SI`
+  的注释里。适用面: 只在**有 carved ground** 且走 **auto-substrate** 时触发 —— `two_pads`
+  (没有 `ground::`)与 `qm4q`/`sung`(显式 `substrate_gap_um: 0`)一直都是物理精确的,
+  受影响的只有 `chip_layout` 与 `tiny_chip` fixture。
 - **feature 缺口**(编号沿用 2607280204 的提出顺序):
   - ✅ ⑤ **SQUID / 磁通可调 E_J** —— 2607290110 落地。`squid: {E_J1, E_J2, flux}` 子块,
     `E_J,eff = E_JΣ·sqrt(cos²(πΦ/Φ0) + d²sin²(πΦ/Φ0))`(Koch 2007 的无奇点等价形式,
@@ -159,11 +168,10 @@ R3 circuit solve ✅, R4 read QDA ✅, R5 GDSFactory) + verbal "电容矩阵就�
   - 🔴 ① `targets:` 验收块(meta 里声明期望 C/E_C/g + 容差, 求解后写 `validation:` 段并打印偏差)
     —— **性价比最高**, 且是 2607280204 那次事故的根因级预防(单岛写法 C_Σ 错 1.70×, 管线全绿)。
   - 🔴 ② Elmer 作为第二求解器后端做交叉验证(现在仍是 scratchpad 手工搭的)。
-  - 🔴 ③ `mesh.conductor_mode: void|volume`(现在只有 conductors-as-voids 一条路) —— 代价有二:
-    OCC 布尔脆弱(见上一条 bullet), 以及为躲开「金属底面与衬底顶面精确共面」而默认插入的 1 µm
-    ε-nudge —— 代码自己的注释说它**压低所有电容 ~30%**(`_gmsh_geo_source.py:546`), 比它想保留的
-    百分之几的边缘场大一个数量级。volume 模式(零厚度面 `fragment` 进界面, Palace 自己的 CPW 例子
-    与 qiskit-metal 的 Elmer 流程都这么做)既是退路, 也是第一次能让两条路的 C 互相对照。
+  - 🔴 ③ `mesh.conductor_mode: void|volume`(现在只有 conductors-as-voids 一条路) —— 代价是
+    OCC 布尔在共面输入上脆弱(见上一条 bullet), 而 ε-nudge 只是绕开它的标定旋钮。volume 模式
+    (零厚度面 `fragment` **进**界面, Palace 自己的 CPW 例子与 qiskit-metal 的 Elmer 流程都这么做)
+    根本不需要共面布尔, 既是退路, 也是第一次能让两条路的 C 互相对照。
   - 🔴 ④ 网格收敛扫描 `--converge`(实测 5/50→2/30 差 6%, 而 `tier` 只描述完整度不描述精度)。
   - 🔴 ⑥ 浮动 bus 的 Schur 消元(#20 另一半, 现在被硬接地)。**不能**用 σ 那套办法: qubit 的两焊盘
     与外界无电荷交换故丢掉 σ 正确, 而浮动 bus 是真正的动力学自由度、同时耦合两个 qubit,

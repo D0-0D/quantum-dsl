@@ -45,10 +45,11 @@ simulation:
 
     # ---- mesh sizing (µm) — 对齐参考 Elmer (min 5 / max 50) ------------
     # order 1 + 此网格用于管线验证; 与参考逐位收紧时可上 order 2 / 更细网格。
+    # No `max_size_jj`: inert on the native-geo path (jj:: surfaces are removed
+    # as lumped elements, so no jj size field is ever built) — build_mesh warns.
     mesh:
       max_size: 50
       min_size: 5
-      max_size_jj: 20
       conductor_refine:
         min_dist: 4
         max_dist: 30

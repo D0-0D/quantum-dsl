@@ -264,8 +264,10 @@ def _parse_gmsh_simulation(node: Any, variables: Mapping[str, Any],
         out["solver"] = _parse_solver_settings(node["solver"], variables)
     if "substrate_gap_um" in node:
         # auto-substrate top nudge below a carved metal ground (µm). 0 = coplanar
-        # (metal directly on dielectric, physically exact). Default (key absent)
-        # is the 1µm in _gmsh_geo_source.CARVED_GROUND_SUBSTRATE_GAP_SI.
+        # (metal directly on dielectric, physically exact — but only builds for
+        # geometries occ.fragment accepts at exact coplanarity). Default (key
+        # absent) = 0.01 µm, see _gmsh_geo_source.CARVED_GROUND_SUBSTRATE_GAP_SI
+        # for the measured C-vs-ε ladder behind that number.
         try:
             gap = float(node["substrate_gap_um"])
         except (TypeError, ValueError) as exc:

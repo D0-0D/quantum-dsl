@@ -61,16 +61,33 @@ __all__ = [
 # in the mesh branch is byte-identical to the project SI boundary).
 SI_PER_INTERNAL = 1e-6
 
-# DEFAULT substrate-top ε-nudge below a carved metal ground (SI metres). The
-# default 1 µm keeps the metal/ground void bottom a free, non-coincident face,
-# which the carve/fragment/resolve path has always relied on (a centered-pad
-# fixture e.g. tiny_chip otherwise mis-resolves under exact coplanarity).
-# Physically a vacuum gap under the metal depresses capacitance (~30% at 1 µm),
-# so accuracy-critical designs override it toward 0 via the meta key
-# ``simulation.gmsh.substrate_gap_um`` (e.g. qm4q uses 0 = coplanar, the
-# physically-correct metal-on-substrate stack; fragment scales to µm + the mesher
-# falls back to HXT so the coplanar interface still builds).
-CARVED_GROUND_SUBSTRATE_GAP_SI = 1e-6
+# DEFAULT substrate-top ε-nudge below a carved metal ground (SI metres). ε keeps
+# the metal/ground void bottom a free, non-coincident face; exact coplanarity
+# (ε=0) is the physically correct metal-on-substrate stack but is not universally
+# buildable — ``occ.fragment`` on the coincident footprint is geometry-dependent
+# (qm4q and sung author ``substrate_gap_um: 0`` and build fine; a centered-pad
+# ground annulus does not, at any coordinate scale).
+#
+# ε is NOT free: a vacuum gap under the metal replaces silicon (eps_r 11.45) with
+# vacuum exactly where the field is strongest, depressing every capacitance.
+# Measured on two_pads + a carved ground annulus (2607290110, 8-rank Palace,
+# same mesh settings, only ε varied) — C_AA / C_AB in fF:
+#     eps=0      -> occ.fragment fails at every scale
+#     eps=0.001  -> 26.2405 / -1.6950   (reference)
+#     eps=0.01   -> 26.2325 / -1.6943   (-0.03% / -0.04%)
+#     eps=0.1    -> 26.1500 / -1.6854   (-0.35% / -0.56%)
+#     eps=0.5    -> post-fragment topology corrupt (caught by the invariant)
+#     eps=1.0    -> 18.6077 / -1.0117   (-29.1% / -40.3%)   <- the OLD default
+# So the historical "~30% error" was an artifact of the 1 µm default being three
+# orders of magnitude larger than it needs to be, not an intrinsic cost of the
+# carve. 0.01 µm sits an order of magnitude clear of both ends of the measured
+# working band, is below the physical film thickness (100-200 nm), and costs
+# 0.03%. Accuracy-critical designs can still pin ``simulation.gmsh
+# .substrate_gap_um: 0`` when their geometry fragments at exact coplanarity.
+# ponytail: a calibration knob, not a fix — the real fix is a conductor
+# representation that needs no coplanar boolean at all (mesh.conductor_mode:
+# void|volume, i.e. zero-thickness metal fragmented INTO the interface).
+CARVED_GROUND_SUBSTRATE_GAP_SI = 1e-8
 
 
 # ---------------------------------------------------------------------------
@@ -543,14 +560,13 @@ def ensure_dielectric_substrates(geo_surfaces: list[GeoSurface],
         # exact coplanarity makes resolve_conductor_faces mis-key a centered
         # terminal vs the ground annulus, and tetgen choke on the coincident
         # footprint.
-        # ε is NOT physically free: a vacuum gap under the metal depresses every
-        # capacitance (~30% at the 1 µm default). The fix is NOT a smaller ε but
-        # ε = 0: set ``simulation.gmsh.substrate_gap_um: 0`` for a physically
-        # exact coplanar metal-on-substrate stack (qm4q does). The default stays
-        # 1 µm only for backward compatibility with the fixtures that mis-resolve
-        # under exact coplanarity — see CARVED_GROUND_SUBSTRATE_GAP_SI.
-        # (fragment_everything scales the model for occ.fragment + generate_mesh
-        # falls back to HXT, so ε=0 fragments and meshes robustly.)
+        # ε is NOT physically free — it swaps silicon for vacuum right where the
+        # field is strongest. The measured C-vs-ε ladder (and why the default is
+        # 0.01 µm rather than the old 1 µm, which cost 29% on C and 40% on the
+        # coupling) lives on CARVED_GROUND_SUBSTRATE_GAP_SI. ε=0 is the physically
+        # exact stack (``simulation.gmsh.substrate_gap_um: 0``, as qm4q and sung
+        # author) but only builds for geometries whose coincident footprint
+        # occ.fragment happens to accept.
         if tracker.ground_solids and substrate_gap_si:
             missing = {
                 layer: {**spec, "z": float(spec.get("z", 0.0)) - substrate_gap_si}

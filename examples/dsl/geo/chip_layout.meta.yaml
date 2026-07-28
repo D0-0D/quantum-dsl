@@ -41,10 +41,12 @@ simulation:
       side_buffer: 200
 
     # ---- mesh sizing (µm) -----------------------------------------
+    # No `max_size_jj`: on the native-geo path the jj:: surfaces are removed as
+    # lumped elements (populate_tracker_from_geo), so a jj size field is never
+    # built and the key is inert (build_mesh warns about it). Use min_size.
     mesh:
       max_size: 80
       min_size: 2
-      max_size_jj: 0.5
       conductor_refine:
         min_dist: 2
         max_dist: 40
