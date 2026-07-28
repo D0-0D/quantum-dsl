@@ -20,7 +20,7 @@ import gmsh / gdstk / numpy / scipy, 因此在任何环境 (含 metal-env-old) �
         C' = Bᵀ C_S B
         E_C,k  = (e²/2) · [C'⁻¹]_θθ,kk                     (充电能, 焦耳)
         C_Σ,k  = 1 / [C'⁻¹]_θθ,kk                          (等效节点电容, 法拉)
-        E_J,k  = (ħ/2e)² / L_J,k   (或直接给定)            (约瑟夫森能, 焦耳)
+        E_J,k  = (ħ/2e)² / L_J,k   (或直接给定, 或 SQUID 见下)  (约瑟夫森能, 焦耳)
         f01,k  = (√(8 E_C E_J) − E_C) / h                  (跃迁频率, Hz)
         α_k    = −E_C,k / h                                (非简谐性, Hz)
         g_ij/2π = ½ · |[C'⁻¹]_ij| / √([C'⁻¹]_ii·[C'⁻¹]_jj) · √(f_i·f_j)  (电荷耦合, Hz)
@@ -34,6 +34,18 @@ import gmsh / gdstk / numpy / scipy, 因此在任何环境 (含 metal-env-old) �
     N=2 退化为 g = ½(C_g/√(C_Σi C_Σj))√(f_i f_j)。对称双焊盘浮动 qubit
     ``C_S = [[g+m, −m], [−m, g+m]]`` 手算给 C' = diag(g/2+m, 2g), 即
     C_Σ = m + g/2 = c_tb + c_t0∥c_b0 (经典串联结果)。
+
+    **磁通可调 (可非对称) SQUID** (Koch et al. 2007, PRA 76, 042319 的标准结果):
+    结元件是两个并联结 E_J1/E_J2 时, 有效约瑟夫森能随 **归一化** 外磁通 Φ/Φ0
+    (磁通量子数, 无量纲) 变化
+        E_JΣ = E_J1 + E_J2,   d = (E_J2 − E_J1)/(E_J1 + E_J2) ∈ [−1, 1]
+        E_J,eff(Φ) = E_JΣ · |cos(πΦ/Φ0)| · sqrt(1 + d² tan²(πΦ/Φ0))
+                   ≡ E_JΣ · sqrt(cos²(πΦ/Φ0) + d² sin²(πΦ/Φ0))
+    **实现一律用下面那个恒等形式**: tan 在 Φ=0.5Φ0 处发散, 上式在那里是 0×∞ → nan,
+    而无奇点形式代数上完全等价且处处有限。检查点: Φ=0 → E_JΣ; d=0 → E_JΣ|cos|,
+    在 Φ=0.5Φ0 归零; d≠0 时 Φ=0.5Φ0 不归零, 极小值 = E_JΣ|d|。周期为 Φ0
+    (flux=1.2 合法, 与 0.2 同值)。E_J,eff 趋零 → E_J/E_C < 1/8, 走既有的
+    "non-transmon regime" 报错路径 (不新造失败模式)。
 
     **未被任何 qubit 引用的 Terminal 一律视作接地电极** (固定电势) —— 不进入 C_S,
     其电容已折进被引用岛的对角线。已知局限: 一条 **浮动耦合总线** (galvanic 隔离、
@@ -89,7 +101,10 @@ _F_PER_FF = 1.0e-15  # 1 fF = 1e-15 F
 
 @dataclass(frozen=True)
 class JunctionInput:
-    """一个量子比特的输入: 岛 (Terminal 组名) + 约瑟夫森元件 (L_J 或 E_J)。
+    """一个量子比特的输入: 岛 (Terminal 组名) + 约瑟夫森元件 (L_J / E_J / SQUID)。
+
+    结元件三种写法 **恰选一种** (sidecar 里对应 ``L_J:`` / ``E_J:`` / ``squid:``):
+    单结电感 ``L_J``、单结能量 ``E_J``、或磁通可调 SQUID ``E_J1``+``E_J2``(+``flux``)。
 
     Fields:
         name:    量子比特名 (结果里 qubit 的标识)。
@@ -97,14 +112,24 @@ class JunctionInput:
                  ``{component}_{primitive}_sfs``)。1 个岛 = **接地 transmon** (结跨岛
                  与地); 2 个岛 = **浮动/差分 transmon** (结跨两焊盘, 顺序 (a, b) 定义
                  θ = φ_a − φ_b, 符号不影响任何输出量)。>2 个岛需要多个结, 不支持。
-        L_J:     约瑟夫森电感, **亨利 (SI)**; 与 E_J 二选一。
-        E_J:     约瑟夫森能, **焦耳 (SI)**; 与 L_J 二选一。
+        L_J:     约瑟夫森电感, **亨利 (SI)**; 与 E_J / SQUID 三选一。
+        E_J:     约瑟夫森能, **焦耳 (SI)**; 与 L_J / SQUID 三选一。
+        E_J1:    SQUID 第一个结的约瑟夫森能, **焦耳 (SI)**; 与 E_J2 成对出现。
+        E_J2:    SQUID 第二个结的约瑟夫森能, **焦耳 (SI)**; 与 E_J1 成对出现。
+                 E_J1≠E_J2 即非对称 SQUID (工艺常态), 不对称度
+                 d = (E_J2−E_J1)/(E_J1+E_J2)。
+        flux:    外磁通, **归一化为磁通量子数 Φ/Φ0 (无量纲)**, 默认 0.0 (=零磁通,
+                 E_J,eff 取最大值 E_JΣ)。任意实数, 周期 1。只对 SQUID 有意义 ——
+                 与 L_J/E_J 同时给非零 flux 会报错 (免得静默无效)。
     """
 
     name: str
     islands: tuple[str, ...]
     L_J: float | None = None
     E_J: float | None = None
+    E_J1: float | None = None
+    E_J2: float | None = None
+    flux: float = 0.0
 
     def __post_init__(self) -> None:
         if not self.name or not isinstance(self.name, str):
@@ -112,21 +137,58 @@ class JunctionInput:
         if not self.islands:
             raise DesignDslError(
                 f"JunctionInput {self.name!r}: islands must be non-empty")
-        if (self.L_J is None) == (self.E_J is None):
+        is_squid = self.E_J1 is not None or self.E_J2 is not None
+        if (self.L_J is not None) + (self.E_J is not None) + is_squid != 1:
             raise DesignDslError(
-                f"JunctionInput {self.name!r}: set exactly one of L_J / E_J")
-        if self.L_J is not None and self.L_J <= 0:
+                f"JunctionInput {self.name!r}: set exactly one of L_J / E_J / "
+                f"squid (E_J1+E_J2)")
+        # 必须用 isfinite: ``nan <= 0`` 是 False, 光判 <= 0 会放行 nan/inf, 而下游
+        # ``f01 <= 0`` 对 nan 同样是 False → 绕过 non-transmon 守卫, 静默写出一整条
+        # nan 的结果。inf 同理。
+        if self.L_J is not None and not (math.isfinite(self.L_J) and self.L_J > 0):
             raise DesignDslError(
-                f"JunctionInput {self.name!r}: L_J must be > 0 (henry)")
-        if self.E_J is not None and self.E_J <= 0:
+                f"JunctionInput {self.name!r}: L_J must be > 0 and finite "
+                f"(henry), got {self.L_J}")
+        if self.E_J is not None and not (math.isfinite(self.E_J) and self.E_J > 0):
             raise DesignDslError(
-                f"JunctionInput {self.name!r}: E_J must be > 0 (joule)")
+                f"JunctionInput {self.name!r}: E_J must be > 0 and finite "
+                f"(joule), got {self.E_J}")
+        if is_squid and (self.E_J1 is None or self.E_J2 is None):
+            raise DesignDslError(
+                f"JunctionInput {self.name!r}: a SQUID needs BOTH E_J1 and E_J2 "
+                f"(joule) — one branch alone is a single junction, use E_J")
+        # nan/inf 必须挡: ``nan <= 0`` 是 False, 会一路静默算出 nan 的 f01/g。
+        for label, value in (("E_J1", self.E_J1), ("E_J2", self.E_J2)):
+            if value is not None and not (math.isfinite(value) and value > 0):
+                raise DesignDslError(
+                    f"JunctionInput {self.name!r}: {label} must be > 0 (joule), "
+                    f"got {value}")
+        if not math.isfinite(self.flux):
+            raise DesignDslError(
+                f"JunctionInput {self.name!r}: flux must be a finite number "
+                f"(Phi/Phi0), got {self.flux}")
+        if self.flux and not is_squid:
+            raise DesignDslError(
+                f"JunctionInput {self.name!r}: flux={self.flux} only applies to a "
+                f"SQUID (E_J1+E_J2) — a single L_J/E_J junction is not tunable")
 
     def e_j_joule(self) -> float:
-        """约瑟夫森能 (焦耳): 直接给的 E_J, 或由 L_J 推 (ħ/2e)²/L_J。"""
+        """有效约瑟夫森能 (焦耳): 直接给的 E_J、由 L_J 推 (ħ/2e)²/L_J, 或 SQUID 在
+        ``flux`` (归一化磁通 Φ/Φ0) 处的 E_J,eff。
+
+        SQUID 用 **无奇点** 的等价形式 ``E_JΣ·sqrt(cos²(πΦ/Φ0) + d²sin²(πΦ/Φ0))``
+        (``math.hypot``): 它与教科书写法 ``E_JΣ|cos|·sqrt(1+d²tan²)`` 代数上恒等, 但
+        后者的 tan 在 Φ=0.5Φ0 处发散 → 0×∞ → nan。d=0 时在 Φ=0.5Φ0 精确归零;
+        d≠0 时取到极小值 E_JΣ|d|。
+        """
         if self.E_J is not None:
             return self.E_J
-        return FLUX_QUANTUM_REDUCED ** 2 / self.L_J  # type: ignore[operator]
+        if self.L_J is not None:
+            return FLUX_QUANTUM_REDUCED ** 2 / self.L_J
+        e_sum = self.E_J1 + self.E_J2                    # type: ignore[operator]
+        asym = (self.E_J2 - self.E_J1) / e_sum           # type: ignore[operator]
+        phase = math.pi * self.flux                      # πΦ/Φ0
+        return e_sum * math.hypot(math.cos(phase), asym * math.sin(phase))
 
 
 @dataclass(frozen=True)
@@ -286,7 +348,8 @@ def solve_circuit_model(
 
     Args:
         cap_result: 已解析的电容结果 (须含非空 ``maxwell`` 矩阵 + ``terminals`` 绑定)。
-        qubits:     量子比特输入列表 (每个引用 1 或 2 个岛组名 + L_J/E_J)。
+        qubits:     量子比特输入列表 (每个引用 1 或 2 个岛组名 + L_J/E_J/SQUID;
+                    SQUID 取声明 ``flux`` 处的 E_J,eff, 见 ``JunctionInput``)。
 
     Returns:
         ``CircuitModelResult`` (qubits 派生参数 + 每个无序对的耦合 g)。
@@ -388,7 +451,8 @@ def solve_circuit_model(
                 f"qubit {q.name!r}: non-transmon regime — perturbative f01="
                 f"{f01 / 1e9:.4g} GHz <= 0 (E_J/E_C={e_j / e_c:.4g} < 1/8); the "
                 f"leading-order transmon model is invalid (increase E_J / "
-                f"decrease E_C: larger island capacitance or smaller L_J)")
+                f"decrease E_C: larger island capacitance, smaller L_J, or — for "
+                f"a SQUID — a flux further from 0.5 Phi0, where E_J,eff -> 0)")
         c_sigma = 1.0 / cinv_kk                          # Farad
         qubit_results.append(QubitResult(
             name=q.name,

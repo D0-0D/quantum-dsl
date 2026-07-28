@@ -13,10 +13,12 @@ GDS 与 mesh 两条分支在 M1 各自 **独立加载** ``.geo`` (load twice —
 单位契约见各 adapter docstring (GDS 保留微米; mesh dilate µm→m, Palace L0=1.0)。
 
 公开 API:
-    build_geo(geo_path=None, meta_path, out_dir, *, run_palace=False, dry_run=True) -> dict
+    build_geo(geo_path=None, meta_path, out_dir, *, run_palace=False, dry_run=True,
+              num_procs=1) -> dict
 
 CLI:
-    python -m quantum_dsl.dsl.geo_build <meta.yaml> --out-dir build/ [--run-palace --dry-run]
+    python -m quantum_dsl.dsl.geo_build <meta.yaml> --out-dir build/
+        [--run-palace --dry-run] [--np N]
 """
 
 from __future__ import annotations
@@ -81,7 +83,8 @@ def build_geo(geo_path: Optional[Union[str, Path]] = None,
               out_dir: Union[str, Path] = "build",
               *,
               run_palace: bool = False,
-              dry_run: bool = True) -> dict[str, Any]:
+              dry_run: bool = True,
+              num_procs: int = 1) -> dict[str, Any]:
     """从 sidecar (+ 配套 ``.geo``) 分叉构建 GDS + mesh + Palace 配置。
 
     Args:
@@ -91,6 +94,8 @@ def build_geo(geo_path: Optional[Union[str, Path]] = None,
         out_dir: 输出目录 (chip.gds / chip.msh / chip.json 写到这里)。
         run_palace: True 时调 ``run_palace`` (受 ``dry_run`` 控制)。
         dry_run: 传给 ``run_palace`` (``--dry-run``: 只校验/划分, 不求解)。
+        num_procs: Palace 的 MPI rank 数 (透传给 ``run_palace``); 仅在
+            ``run_palace and not dry_run`` 时有意义。必须 >= 1。
 
     Returns:
         ``{"gds": Path|None, "msh": Path|None, "palace_json": Path,
@@ -102,10 +107,15 @@ def build_geo(geo_path: Optional[Union[str, Path]] = None,
         sha256 指纹与时间戳清单); 输入的 meta.yaml / .geo 也被复制进 ``out_dir``。
 
     Raises:
-        DesignDslError: sidecar / geo 缺失或非法, 或下游 adapter 报错。
+        DesignDslError: sidecar / geo 缺失或非法, ``num_procs < 1``,
+            或下游 adapter 报错。
     """
     if meta_path is None:
         raise DesignDslError("build_geo requires meta_path (the *.meta.yaml).")
+    # 在这里校验 (而非 argparse): 直接调 API 的调用方也要被挡住。
+    if num_procs < 1:
+        raise DesignDslError(
+            f"num_procs must be >= 1 (MPI rank count), got {num_procs}.")
 
     # Lazy import of the optional gmsh/gdstk-backed adapters — keep the package
     # importable without gmsh/gdstk; only this orchestrator needs them.
@@ -225,7 +235,7 @@ def build_geo(geo_path: Optional[Union[str, Path]] = None,
 
     if run_palace:
         from .palace_adapter import run_palace as _run_palace
-        _run_palace(palace_json, dry_run=dry_run)
+        _run_palace(palace_json, dry_run=dry_run, num_procs=num_procs)
 
         # ---- RESULTS write-back (M3): OUTPUT-ONLY chip.results.yaml --------
         # Only a real solve (not --dry-run) produces capacitance CSVs.  Derive
@@ -276,6 +286,11 @@ def build_geo(geo_path: Optional[Union[str, Path]] = None,
                             islands=tuple(q["islands"]),
                             L_J=q.get("L_J"),
                             E_J=q.get("E_J"),
+                            # SQUID (flux-tunable, possibly asymmetric); flux is
+                            # Phi/Phi0 and defaults to 0.0 (zero flux, max E_J).
+                            E_J1=q.get("E_J1"),
+                            E_J2=q.get("E_J2"),
+                            flux=q.get("flux") or 0.0,
                         )
                         for q in cm_block["qubits"]
                     ]
@@ -286,7 +301,11 @@ def build_geo(geo_path: Optional[Union[str, Path]] = None,
                                 "name": q["name"],
                                 "islands": list(q["islands"]),
                                 **({"L_J_H": q["L_J"]} if q.get("L_J") is not None
-                                   else {"E_J_J": q["E_J"]}),
+                                   else {"E_J_J": q["E_J"]}
+                                   if q.get("E_J") is not None
+                                   else {"squid": {"E_J1_J": q["E_J1"],
+                                                   "E_J2_J": q["E_J2"],
+                                                   "flux_Phi0": q["flux"]}}),
                             }
                             for q in cm_block["qubits"]
                         ],
@@ -358,6 +377,10 @@ def main(argv: Optional[list[str]] = None) -> int:
         "--dry-run", action="store_true",
         help="pass --dry-run to Palace (validate/partition only).")
     parser.add_argument(
+        "--np", type=int, default=1, metavar="N",
+        help="number of MPI ranks for Palace (default: 1); only meaningful "
+             "with --run-palace and without --dry-run.")
+    parser.add_argument(
         "--png", nargs="?", const="chip.png", default=None,
         help="render the produced chip.gds to a PNG preview (M7; gdsfactory if "
              "installed, else matplotlib). Optional PATH relative to --out-dir "
@@ -371,6 +394,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             out_dir=args.out_dir,
             run_palace=args.run_palace,
             dry_run=args.dry_run,
+            num_procs=args.np,
         )
     except DesignDslError as exc:
         print(f"error: {exc}", file=sys.stderr)

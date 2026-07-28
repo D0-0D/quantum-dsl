@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import math
 import re
 from collections.abc import Mapping
 from pathlib import Path
@@ -22,6 +23,7 @@ from ..schema import (
     CELL_KEYS,
     CIRCUIT_MODEL_KEYS,
     CIRCUIT_QUBIT_KEYS,
+    CIRCUIT_SQUID_KEYS,
     GDS_LAYER_MAP_ENTRY_KEYS,
     GDS_SIM_KEYS,
     GEO_META_ROOT_KEYS,
@@ -808,24 +810,64 @@ def _parse_qubit_entry(entry: Any, index: int) -> dict[str, Any]:
     islands = tuple(
         _normalize_island_ref(isl, owner=owner) for isl in raw_islands)
 
-    # L_J (henry) XOR E_J (joule).
-    if ("L_J" in entry) == ("E_J" in entry):
+    # Exactly one junction element: L_J (henry) / E_J (joule) / squid block.
+    junction_keys = [k for k in ("L_J", "E_J", "squid") if k in entry]
+    if len(junction_keys) != 1:
         raise DesignDslError(
-            f"{owner} must set exactly one of 'L_J' / 'E_J'")
+            f"{owner} must set exactly one of 'L_J' / 'E_J' / 'squid'")
     resolved: dict[str, Any] = {"name": name, "islands": islands,
-                                "L_J": None, "E_J": None}
+                                "L_J": None, "E_J": None,
+                                "E_J1": None, "E_J2": None, "flux": None}
     if "L_J" in entry:
         l_j = _parse_unit_value(entry["L_J"], _HENRY_UNITS,
                                 owner=f"{owner}.L_J")
-        if l_j <= 0:
-            raise DesignDslError(f"{owner}.L_J must be > 0, got {l_j}")
+        # isfinite: ``1e400H`` float-溢出成 inf, 光判 <= 0 会放行 (见 e_j_joule 旁注)
+        if not (math.isfinite(l_j) and l_j > 0):
+            raise DesignDslError(
+                f"{owner}.L_J must be > 0 and finite, got {l_j}")
         resolved["L_J"] = l_j
-    else:
+    elif "E_J" in entry:
         e_j = _parse_ej_joule(entry["E_J"], owner=f"{owner}.E_J")
-        if e_j <= 0:
-            raise DesignDslError(f"{owner}.E_J must be > 0, got {e_j}")
+        if not (math.isfinite(e_j) and e_j > 0):
+            raise DesignDslError(
+                f"{owner}.E_J must be > 0 and finite, got {e_j}")
         resolved["E_J"] = e_j
+    else:
+        resolved.update(_parse_squid_entry(entry["squid"], owner=f"{owner}.squid"))
     return resolved
+
+
+def _parse_squid_entry(node: Any, *, owner: str) -> dict[str, Any]:
+    """Parse a qubit's ``squid:`` sub-block → ``{E_J1, E_J2, flux}``.
+
+    ``E_J1``/``E_J2`` (both REQUIRED, > 0) go through the very same
+    ``_parse_ej_joule`` path as a single ``E_J`` (frequency form ``60GHz`` = E_J/h,
+    or an explicit energy) → Joule.  ``flux`` is a BARE float = the external flux
+    normalised to the flux quantum, Phi/Phi0 (dimensionless, period 1, any real);
+    it defaults to 0.0 = zero flux, where E_J,eff is maximal (= E_J1 + E_J2).
+    E_J1 != E_J2 is the asymmetric SQUID; see ``circuit_model.JunctionInput``.
+    """
+    if not isinstance(node, Mapping):
+        raise DesignDslError(f"{owner} must be a mapping "
+                             f"(e.g. {{E_J1: 60GHz, E_J2: 11GHz, flux: 0.0}})")
+    _reject_unknown_keys(node, CIRCUIT_SQUID_KEYS, owner)
+    out: dict[str, Any] = {}
+    for key in ("E_J1", "E_J2"):
+        if key not in node:
+            raise DesignDslError(
+                f"{owner} must set both 'E_J1' and 'E_J2' (a SQUID has two "
+                f"junctions; for a single junction use 'E_J' or 'L_J')")
+        value = _parse_ej_joule(node[key], owner=f"{owner}.{key}")
+        if value <= 0:
+            raise DesignDslError(f"{owner}.{key} must be > 0, got {value}")
+        out[key] = value
+    flux = node.get("flux", 0.0)
+    if isinstance(flux, bool) or not isinstance(flux, (int, float)):
+        raise DesignDslError(
+            f"{owner}.flux must be a bare number — the external flux normalised "
+            f"to the flux quantum, Phi/Phi0 (dimensionless); got {flux!r}")
+    out["flux"] = float(flux)
+    return out
 
 
 def _parse_circuit_model(node: Any,
@@ -838,13 +880,17 @@ def _parse_circuit_model(node: Any,
           qubits:
             - {name: A, island: A_pad_sfs, L_J: 10nH}
             - {name: B, islands: [B_pad_sfs], E_J: 14GHz}
+            - name: C
+              islands: [C_top_sfs, C_bot_sfs]
+              squid: {E_J1: 60GHz, E_J2: 11GHz, flux: 0.0}
 
     ``island``/``islands`` reference a conductor terminal group name (or the
-    ``role::layer::component::primitive`` token); ``L_J`` (henry) and ``E_J``
-    (frequency E_J/h or energy) are mutually exclusive.  Returns
-    ``{"qubits": [{name, islands: tuple, L_J: float|None, E_J: float|None}]}``
-    with L_J in Henry and E_J in Joule.  Names + normalised islands must be
-    unique within the block.
+    ``role::layer::component::primitive`` token); the junction element is exactly
+    one of ``L_J`` (henry), ``E_J`` (frequency E_J/h or energy) or ``squid``
+    (a flux-tunable, possibly asymmetric SQUID — see ``_parse_squid_entry``).
+    Returns ``{"qubits": [{name, islands: tuple, L_J, E_J, E_J1, E_J2, flux}]}``
+    with L_J in Henry, E_J/E_J1/E_J2 in Joule, flux in Phi/Phi0 (unused fields
+    are ``None``).  Names + normalised islands must be unique within the block.
     """
     if not isinstance(node, Mapping):
         raise DesignDslError("circuit_model must be a mapping")

@@ -511,9 +511,21 @@ Each qubit entry accepts:
 
 - `name`: a human-readable qubit name
 - `island` or `islands`: one or more conductor-island references
-- exactly one of `L_J` or `E_J`
+- exactly one of `L_J`, `E_J` or `squid`
 
 The parser accepts SI-prefixed inductance strings such as `10nH` and frequency-form energy values such as `14GHz`.
+
+A flux-tunable (and possibly asymmetric) qubit declares a `squid:` sub-block instead of a single junction energy:
+
+```yaml
+circuit_model:
+  qubits:
+    - name: CPLR
+      islands: [metal::1::CPLR::pad_top, metal::1::CPLR::pad_bot]
+      squid: {E_J1: 60GHz, E_J2: 11GHz, flux: 0.0}
+```
+
+`E_J1` and `E_J2` (both required) are the two parallel junctions and take exactly the same unit-bearing strings as `E_J`; `flux` is a bare, dimensionless float, the external flux normalised to the flux quantum (Φ/Φ0), default `0.0`. The solver reports the effective Josephson energy at that flux, `E_JΣ·sqrt(cos²(πΦ/Φ0) + d²sin²(πΦ/Φ0))` with `d = (E_J2 − E_J1)/(E_J1 + E_J2)` (Koch et al. 2007) — so zero flux gives `E_J1 + E_J2`, and a symmetric SQUID switches off at `flux: 0.5`.
 
 ### 4.7 Cells block (`cells`)
 

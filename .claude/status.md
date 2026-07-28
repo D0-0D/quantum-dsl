@@ -24,12 +24,15 @@ commits, test-count changes)._
 - **Status**: **current phase COMPLETE** — R1–R5 + R+ all met; PR #14 (`feat/native-geo-dsl` →
   `main`) **merged** (`931b8ec`). Post-merge (2606080906): docs/examples cleaned up for the native
   path (see below).
-- **Tests** (2607280204): full suite **349 passed, 3 skipped, 1 deselected — 0 failed, 0 errors**
-  in conda `metal-env` (2 min 25 s). Run it as
-  `PYTHONPATH=src python -m pytest tests/ -q --deselect tests/test_geo_pipeline.py::test_two_pads_live_capacitance_matrix`
-  and **without** `QDSL_MESH_ALGO3D` exported — see the two ⚠ notes in `CLAUDE.md`.
-  - The `1 deselected` is the gated live-Palace test: it **cannot run at all right now**, `mpirun`
-    is wedged on this host (see Open/next steps).
+- **Tests** (2607290110): full suite **368 passed, 3 skipped — 0 failed, 0 errors, 0 deselected**
+  in conda `metal-env` (2 min 30 s). Run it as
+  `PYTHONPATH=src python -m pytest tests/ -q`
+  and **without** `QDSL_MESH_ALGO3D` exported — see the ⚠ notes in `CLAUDE.md`.
+  - The `--deselect` ritual is **gone**: the live-Palace `skipif` marker had drifted onto
+    `test_build_geo_archives_inputs_and_writes_manifest` (which needs no Palace) while the real
+    live test `test_two_pads_live_capacitance_matrix` had no gate at all. Fixed in 2607290110.
+    The 3 skips are now 2 × viz (`gdsfactory` absent) + 1 × gated live Palace.
+  - Reconciliation: 349 passed + 1 hand-deselected = 350 → +15 SQUID +1 `--np` +2 nan/inf = 368.
   - _Previously this file claimed `319 passed, 3 skipped` — that was stale by a wide margin. The
     real state at `5737011` was **8 failed / 313 passed / 2 errors**: session 2607021950's
     empty-mesh guard had **exposed** (not caused) a total breakage of the legacy YAML→gmsh path,
@@ -121,18 +124,23 @@ R3 circuit solve ✅, R4 read QDA ✅, R5 GDSFactory) + verbal "电容矩阵就�
 - `1e91315` **M3**: live Palace capacitance write-back + conductors-as-voids mesh.
 
 ## Open / next steps
-- 🔴 **BLOCKER — 本机 MPI 坏了, Palace 完全不可用**。`mpirun` 挂死在 `orte_ess_hnp` 的 init 内部
-  (`ess` 能选中 `hnp` 组件, 之后 `plm`/`oob`/`odls`/`rml` 的 verbose 一个字都不吐);
-  直接跑 `palace-x86_64.bin`(含 `OMPI_MCA_ess=singleton`) 同样挂 → 卡在 `MPI_Init` 本身。
-  已排除残留进程/磁盘/IPC/fd 上限/oob 网卡/IPv6 开关/TMPDIR/MCA 配置/hostfile/`plm isolated`。
-  建议先 `wsl --shutdown` 重启, 不行再重装 `openmpi-bin`。
-  **修好后必须补的实解回归**(现在完全没有实解覆盖):
-  1. `two_pads` C 矩阵是否仍为 `[[24.73,-1.98],[-1.98,24.72]]` fF —— 验证
-     `FRAGMENT_SCALE_LADDER` 与 `ground_faces` 细化没有移动电容值(目前只验到 `chip.json` 逐字节
-     相同 + physical group 不变 + `chip.msh` 尺寸差 0.3%);
-  2. `sung_2021_device` 用我们自己的 Palace 解一次, 与 Elmer 的 102.1/232.8/102.1 fF 对照
-     (现在这三个数**只有 Elmer 一侧的证据**);
-  3. `ground_faces` 细化对 C 的量化影响 = issue **#18** 的正题。
+- ✅ **MPI 挂死已修**(根因非 openmpi): hwloc 的 `gl` 插件会**通过 TCP** 探测 X display
+  `:0…:N`(127.0.0.1:6000+N) 来枚举 NVIDIA GPU; 本机 127.0.0.1:6001 黑洞掉 SYN(无 listener、
+  无 RST —— WSL2 localhost 转发), `connect()` 永久阻塞 → **任何** MPI 程序在 `MPI_Init` 返回前
+  就挂死且零输出。修法 `HWLOC_COMPONENTS=-gl`, 已用 `conda env config vars set` 持久化进
+  `metal-env` 与 `quantum-metal`(新建 env 必须照做)。取证见 `session/2607280204.md`。
+  ⚠ 早先「因为 `DISPLAY` 为空所以不是 X11」的判断是错的。
+  **三笔实解回归欠账**:
+  1. ✅ `two_pads` —— 实测 `[[24.7288,-1.976],[-1.976,24.7293]]` fF vs 基线
+     `[[24.73,-1.98],[-1.98,24.72]]`, **max |rel dev| 0.202%**; tier-2 `C_Σ=24.571 fF,
+     E_C=0.7883 GHz, f01=9.365 GHz, g=374.2 MHz`。`FRAGMENT_SCALE_LADDER` 与 `ground_faces`
+     细化**没有移动电容值**。(该测试目前只断言结构/符号, **数值断言仍待补**, 带容差。)
+  2. ➡ **已移交他人**: `sung_2021_device` 用我们自己的 Palace 解一次, 与 Elmer 的
+     102.1/232.8/102.1 fF 对照(这三个数目前**只有 Elmer 一侧的证据**)。现场在
+     `scratchpad/sung_palace/` + 对照脚本 `cmp_palace_elmer.py`; 最后状态 16 rank / order 2 /
+     2,242,111 未知量, terminal 1 已收敛(PCG 12 步), 在 terminal 2 被 SIGTERM 打断, 故
+     **没有 `terminal-C.csv`**(Palace 只在全部 terminal 解完后才写电容矩阵)。
+  3. 🔴 `ground_faces` 细化对 C 的量化影响 = issue **#18** 的正题, **仍欠**。
 - **参考侧对照已可跑**: ElmerFEM 9.0 装在 `~/opt/elmer`(`export PATH=$HOME/opt/elmer/bin:$PATH`),
   conda env `quantum-metal` = quantum-metal 0.7.6(editable 自 `~/metal/qiskit-metal`)。
   复用脚本(scratchpad, 见 session log): `qm_sung.py`(qiskit-metal 重建 + Elmer)、
@@ -142,12 +150,27 @@ R3 circuit solve ✅, R4 read QDA ✅, R5 GDSFactory) + verbal "电容矩阵就�
 - **`occ.fragment` 对近邻但不重叠的 pocket carve 退化**(A4 实测): pocket 重叠 30/40 µm 干净,
   重叠 10 µm 与完全不重叠都抛 `Boolean fragments failed`, 且 scale 1/1e2/1e3 皆然 → 是 boolean
   本身。重画例子几何时留意, 已写进 `sung_2021_device.geo` header。
-- **提出但未实施的 feature 缺口**(按性价比): ① `targets:` 验收块(meta 里声明期望 C/E_C/g + 容差,
-  求解后写 `validation:` 段并打印偏差 —— 本次事故的根因级预防) ② Elmer 作为第二求解器后端做交叉
-  验证 ③ `mesh.conductor_mode: void|volume`(现在只有 conductors-as-voids 一条路)
-  ④ 网格收敛扫描 `--converge`(实测 5/50→2/30 差 6%, 而 `tier` 只描述完整度不描述精度)
-  ⑤ SQUID/磁通可调 E_J(论文的 CPLR/QB2 是非对称 SQUID, 现在只能填零磁通最大值, 也是本次
-  g 偏高 1.4× 的主因) ⑥ 浮动 bus 的 Schur 消元(#20 另一半, 现在被硬接地)。
+- **feature 缺口**(编号沿用 2607280204 的提出顺序):
+  - ✅ ⑤ **SQUID / 磁通可调 E_J** —— 2607290110 落地。`squid: {E_J1, E_J2, flux}` 子块,
+    `E_J,eff = E_JΣ·sqrt(cos²(πΦ/Φ0) + d²sin²(πΦ/Φ0))`(Koch 2007 的无奇点等价形式,
+    教科书的 `|cos|·sqrt(1+d²tan²)` 在 Φ=0.5Φ0 处 tan 发散 → nan)。`L_J`/`E_J`/`squid` 三选一。
+  - ✅ **⑦(新)** `geo_build --np N` —— `run_palace` 一直支持 `num_procs`, 但 `geo_build` 硬编码
+    不传 → `--run-palace` 永远单 rank。2607290110 落地。
+  - 🔴 ① `targets:` 验收块(meta 里声明期望 C/E_C/g + 容差, 求解后写 `validation:` 段并打印偏差)
+    —— **性价比最高**, 且是 2607280204 那次事故的根因级预防(单岛写法 C_Σ 错 1.70×, 管线全绿)。
+  - 🔴 ② Elmer 作为第二求解器后端做交叉验证(现在仍是 scratchpad 手工搭的)。
+  - 🔴 ③ `mesh.conductor_mode: void|volume`(现在只有 conductors-as-voids 一条路) —— 代价有二:
+    OCC 布尔脆弱(见上一条 bullet), 以及为躲开「金属底面与衬底顶面精确共面」而默认插入的 1 µm
+    ε-nudge —— 代码自己的注释说它**压低所有电容 ~30%**(`_gmsh_geo_source.py:546`), 比它想保留的
+    百分之几的边缘场大一个数量级。volume 模式(零厚度面 `fragment` 进界面, Palace 自己的 CPW 例子
+    与 qiskit-metal 的 Elmer 流程都这么做)既是退路, 也是第一次能让两条路的 C 互相对照。
+  - 🔴 ④ 网格收敛扫描 `--converge`(实测 5/50→2/30 差 6%, 而 `tier` 只描述完整度不描述精度)。
+  - 🔴 ⑥ 浮动 bus 的 Schur 消元(#20 另一半, 现在被硬接地)。**不能**用 σ 那套办法: qubit 的两焊盘
+    与外界无电荷交换故丢掉 σ 正确, 而浮动 bus 是真正的动力学自由度、同时耦合两个 qubit,
+    必须正确积掉(消元会重整化 qubit-qubit 耦合)。
+  - 🟡 **`run_palace` 两处待整理**(2607290110 报告未改): `dry_run` 完全吞掉 `num_procs`
+    (Palace `--dry-run` 本意就是按 rank 数试划分, 故 `--np 8 --dry-run` 现在验不到 8 路划分);
+    native 分支无条件追加 `-np N` 而 WSL 分支只在 `>1` 时前置 `mpirun -np N`。
 - **#14 re-review follow-ups**: 3 critical fixes landed on `fix/review-critical-robustness`
   (push + PR pending). Deferred: **#18** (carved-ground mesh refinement → biased C; needs a
   live-Palace re-validation since it moves the C numbers), **#19** (robustness/silent-failure

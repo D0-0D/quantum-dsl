@@ -317,3 +317,16 @@ Single metal layer + dielectric substrate is the scope; defer until a multi-laye
   3 skipped, 1 deselected, 0 failed`**。例子端到端跑通且按论文标定 (C_Σ 比值 1.03/1.02/1.00,
   q–c 耦合 1.07×; 唯一未达标 C_12 低 ~50×, 已如实写进 header)。
   🔴 遗留: 本机 MPI 挂死 → 全程**无实解覆盖**, 修好后必须补 two_pads / sung 的 Palace 回归。
+- [`session/2607290110.md`](session/2607290110.md) — 2026-07-29 · **feature 缺口 ⑦ + ⑤ 落地**
+  (2 个并行 subagent, 同一主工作树, 文件域分开): `geo_build --np N`(`run_palace` 一直支持
+  `num_procs`, 但 `geo_build` 硬编码不传 → `--run-palace` 永远单 rank; sung 的 order-2 /
+  2.24M 未知量单 rank 90 分钟解不完就是这么来的) + **磁通可调非对称 SQUID**
+  (`squid: {E_J1, E_J2, flux}`, Koch 2007 的**无奇点**形式 `E_JΣ·sqrt(cos²+d²sin²)` —— 教科书
+  写法的 tan 在 Φ=0.5Φ0 发散成 nan; 这是 sung 那次 g 偏高 1.4× 的主因)。
+  顺手修两个 subagent 报告的 bug: **`L_J`/`E_J` 放行 nan/inf** → 结果整条 nan 且绕过
+  non-transmon 守卫、静默写进 `chip.results.yaml`(`nan <= 0` 为 False; YAML 侧 `1e400H` 溢出同样
+  能踩到) ; **live-Palace 的 `skipif` marker 错位**在不需要 Palace 的 manifest 测试上, 而真正的
+  活解测试没有 gate —— 这就是「1 skipped + 手工 `--deselect`」那个仪式的来源, 修完不再需要。
+  全套 **368 passed, 3 skipped, 0 failed/0 errors/0 deselected**。
+  MPI 挂死已在上一 session 查明并修好(hwloc `gl` 插件 TCP 探测 X display → `HWLOC_COMPONENTS=-gl`);
+  two_pads 实解回归通过(max |rel dev| 0.202%); **sung 的 Palace vs Elmer 对照已移交他人**。

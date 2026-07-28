@@ -35,6 +35,7 @@ __all__ = [
     "SOLVER_TYPES",
     "CIRCUIT_MODEL_KEYS",
     "CIRCUIT_QUBIT_KEYS",
+    "CIRCUIT_SQUID_KEYS",
     "DESIGN_KEYS",
     "TRANSFORM_KEYS",
     "COMPONENT_KEYS",
@@ -104,8 +105,14 @@ GEO_META_ROOT_KEYS = {"schema", "geo", "vars", "simulation", "circuit_model", "c
 # *.meta.yaml ``circuit_model`` block (M6 junction inputs → circuit_model.py).
 CIRCUIT_MODEL_KEYS = {"qubits"}
 # A single qubit entry: a name, exactly one island ref (``island`` scalar or
-# ``islands`` list), and exactly one of L_J / E_J.
-CIRCUIT_QUBIT_KEYS = {"name", "island", "islands", "L_J", "E_J"}
+# ``islands`` list), and exactly one of L_J / E_J / squid.
+CIRCUIT_QUBIT_KEYS = {"name", "island", "islands", "L_J", "E_J", "squid"}
+# The ``squid:`` sub-block of a qubit entry — a flux-tunable, possibly ASYMMETRIC
+# SQUID (two parallel junctions).  ``E_J1``/``E_J2`` take the same unit-bearing
+# strings as ``E_J`` (frequency E_J/h or energy); ``flux`` is a bare float =
+# Phi/Phi0 (normalised, dimensionless), default 0.0.  E_J,eff is computed in
+# ``circuit_model.JunctionInput.e_j_joule``.
+CIRCUIT_SQUID_KEYS = {"E_J1", "E_J2", "flux"}
 
 # A single ``cells:`` instance — one placed v3 component-template cell.
 # ``cell_type`` = template id (e.g. transmon_pocket); ``component`` = the globally

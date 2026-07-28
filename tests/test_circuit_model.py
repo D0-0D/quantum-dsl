@@ -536,6 +536,119 @@ def test_junction_input_rejects_empty_islands_and_nonpositive():
 
 
 # ---------------------------------------------------------------------------
+# (1) flux-tunable (asymmetric) SQUID — E_J,eff(Phi)
+#     Koch et al. 2007, PRA 76, 042319:
+#       E_JSigma = E_J1 + E_J2,  d = (E_J2 - E_J1)/(E_J1 + E_J2)
+#       E_J,eff  = E_JSigma * sqrt(cos^2(pi*Phi/Phi0) + d^2 sin^2(pi*Phi/Phi0))
+# ---------------------------------------------------------------------------
+
+def _ghz(f_ghz: float) -> float:
+    """A junction energy quoted as E_J/h in GHz -> Joule."""
+    return f_ghz * 1e9 * H_PLANCK
+
+
+def test_squid_symmetric_zero_flux_is_bit_identical_to_scalar_ej():
+    """d=0, flux=0 must be EXACTLY the old single-E_J path (regression guard):
+    hypot(cos(0), 0) is exactly 1.0, so E_J,eff == E_J1 + E_J2 bit-for-bit."""
+    squid = JunctionInput("Q", ("g",), E_J1=_ghz(8), E_J2=_ghz(8))
+    assert squid.e_j_joule() == _ghz(8) + _ghz(8)            # bit-exact
+    a = solve_circuit_model(_single(135.0), [JunctionInput(
+        "Q", ("Q_pad_sfs",), E_J1=_ghz(8), E_J2=_ghz(8))]).qubits[0]
+    b = solve_circuit_model(_single(135.0), [JunctionInput(
+        "Q", ("Q_pad_sfs",), E_J=_ghz(8) + _ghz(8))]).qubits[0]
+    assert a == b                                            # every field, bit-exact
+
+
+def test_squid_symmetric_at_half_flux_is_zero_not_nan():
+    """d=0 at Phi=0.5*Phi0: |cos|*sqrt(1+d^2 tan^2) is 0*inf -> nan in the
+    textbook form; the singularity-free form must give 0."""
+    e_sum = _ghz(16)
+    eff = JunctionInput("Q", ("g",), E_J1=_ghz(8), E_J2=_ghz(8),
+                        flux=0.5).e_j_joule()
+    assert not math.isnan(eff)
+    assert abs(eff) < 1e-15 * e_sum          # == 0 up to cos(pi/2) rounding
+    # ...and the vanishing E_J must fail through the EXISTING non-transmon path
+    with pytest.raises(DesignDslError, match="non-transmon regime"):
+        solve_circuit_model(_single(135.0), [JunctionInput(
+            "Q", ("Q_pad_sfs",), E_J1=_ghz(8), E_J2=_ghz(8), flux=0.5)])
+
+
+def test_squid_asymmetric_half_flux_equals_ejsigma_times_asymmetry():
+    """d != 0 does NOT switch off at Phi=0.5*Phi0 — the minimum is E_JSigma*|d|,
+    which for the analytic limit is just |E_J2 - E_J1| (here 49 GHz)."""
+    j = JunctionInput("Q", ("g",), E_J1=_ghz(60), E_J2=_ghz(11), flux=0.5)
+    e_sum = _ghz(60) + _ghz(11)
+    d = (_ghz(11) - _ghz(60)) / e_sum
+    assert j.e_j_joule() == pytest.approx(e_sum * abs(d), rel=1e-12)
+    assert j.e_j_joule() == pytest.approx(_ghz(49), rel=1e-12)
+
+
+def test_squid_is_periodic_in_one_flux_quantum():
+    def eff(flux):
+        return JunctionInput("Q", ("g",), E_J1=_ghz(60), E_J2=_ghz(11),
+                             flux=flux).e_j_joule()
+    assert eff(1.0) == pytest.approx(eff(0.0), rel=1e-12)
+    assert eff(1.2) == pytest.approx(eff(0.2), rel=1e-12)
+    assert eff(-0.3) == pytest.approx(eff(0.3), rel=1e-12)   # even in Phi
+    # zero flux is the maximum, and it is E_JSigma
+    assert eff(0.0) == pytest.approx(_ghz(71), rel=1e-12)
+    assert eff(0.2) < eff(0.0)
+
+
+def test_squid_monotone_down_to_the_asymmetry_floor():
+    """Sanity of the whole curve: strictly decreasing on [0, 0.5], floored at |d|."""
+    e_sum, floor = _ghz(71), _ghz(49)
+    vals = [JunctionInput("Q", ("g",), E_J1=_ghz(60), E_J2=_ghz(11),
+                          flux=k / 20.0).e_j_joule() for k in range(11)]
+    assert vals == sorted(vals, reverse=True)
+    assert vals[0] == pytest.approx(e_sum) and vals[-1] == pytest.approx(floor)
+
+
+def test_junction_input_rejects_mixed_and_bad_squid_inputs():
+    for kwargs in ({"L_J": 1e-9, "E_J1": _ghz(8), "E_J2": _ghz(8)},
+                   {"E_J": _ghz(16), "E_J1": _ghz(8), "E_J2": _ghz(8)},
+                   {"L_J": 1e-9, "E_J": _ghz(16), "E_J1": _ghz(8)}):
+        with pytest.raises(DesignDslError, match="exactly one of L_J / E_J"):
+            JunctionInput("Q", ("g",), **kwargs)
+    # a SQUID needs BOTH branches
+    with pytest.raises(DesignDslError, match="BOTH E_J1 and E_J2"):
+        JunctionInput("Q", ("g",), E_J1=_ghz(8), E_J2=None)
+    # positivity + non-finite (nan slips past a naive `<= 0` check)
+    with pytest.raises(DesignDslError, match="E_J1 must be > 0"):
+        JunctionInput("Q", ("g",), E_J1=0.0, E_J2=_ghz(8))
+    with pytest.raises(DesignDslError, match="E_J2 must be > 0"):
+        JunctionInput("Q", ("g",), E_J1=_ghz(8), E_J2=float("nan"))
+    with pytest.raises(DesignDslError, match="flux must be a finite"):
+        JunctionInput("Q", ("g",), E_J1=_ghz(8), E_J2=_ghz(8),
+                      flux=float("inf"))
+    # flux on a non-tunable junction would be silently ignored -> reject
+    with pytest.raises(DesignDslError, match="only applies to a SQUID"):
+        JunctionInput("Q", ("g",), L_J=1e-9, flux=0.3)
+
+
+@pytest.mark.parametrize("bad", [float("nan"), float("inf")])
+def test_junction_input_rejects_non_finite_l_j_and_e_j(bad):
+    """``nan <= 0`` is False, so a naive positivity check lets nan/inf through —
+    and the downstream ``f01 <= 0`` non-transmon guard is False for nan too, so
+    the whole result set comes out nan with no error raised at all."""
+    with pytest.raises(DesignDslError, match="L_J must be > 0 and finite"):
+        JunctionInput("Q", ("g",), L_J=bad)
+    with pytest.raises(DesignDslError, match="E_J must be > 0 and finite"):
+        JunctionInput("Q", ("g",), E_J=bad)
+
+
+def test_circuit_block_rejects_overflowing_l_j_and_e_j(tmp_path):
+    """YAML layer: ``1e400`` float-overflows to inf; the sidecar must reject it
+    (``"nanH"``/``"infH"`` are already blocked by the unit regex)."""
+    for line, msg in (("L_J: 1e400H", r"L_J must be > 0 and finite"),
+                      ("E_J: 1e400GHz", r"E_J must be > 0 and finite")):
+        with pytest.raises(DesignDslError, match=msg):
+            parse_geo_meta_sidecar(_sidecar(tmp_path,
+                "circuit_model:\n  qubits:\n"
+                f"    - {{name: A, island: A_pad_sfs, {line}}}\n"))
+
+
+# ---------------------------------------------------------------------------
 # (1) result dataclass shape
 # ---------------------------------------------------------------------------
 
@@ -611,6 +724,38 @@ def test_shipped_two_pads_sidecar_wires_islands_and_lj(tmp_path):
         josephson_energy_joule(10e-9) / H_PLANCK / 1e9, rel=1e-12)
 
 
+def test_circuit_block_parses_squid_and_feeds_junction_input(tmp_path):
+    """End-to-end: the ``squid:`` sub-block (unit-bearing E_J1/E_J2 + bare flux)
+    → parser → the exact ``geo_build`` wiring → ``JunctionInput`` → a real solve."""
+    meta = parse_geo_meta_sidecar(_sidecar(tmp_path,
+        "circuit_model:\n"
+        "  qubits:\n"
+        "    - name: CPLR\n"
+        "      islands: [A_pad_sfs, B_pad_sfs]\n"
+        "      squid: {E_J1: 60GHz, E_J2: 11GHz, flux: 0.0}\n"))
+    q = meta["circuit_model"]["qubits"][0]
+    assert q["islands"] == ("A_pad_sfs", "B_pad_sfs")
+    assert q["E_J1"] == pytest.approx(_ghz(60))      # 60GHz -> Joule (x h)
+    assert q["E_J2"] == pytest.approx(_ghz(11))
+    assert q["flux"] == 0.0                          # bare float, Phi/Phi0
+    assert q["L_J"] is None and q["E_J"] is None
+    # ...the geo_build wiring block, verbatim:
+    j = JunctionInput(name=q["name"], islands=tuple(q["islands"]),
+                      L_J=q.get("L_J"), E_J=q.get("E_J"),
+                      E_J1=q.get("E_J1"), E_J2=q.get("E_J2"),
+                      flux=q.get("flux") or 0.0)
+    assert j.e_j_joule() == pytest.approx(_ghz(71))  # zero flux -> E_JSigma
+    r = solve_circuit_model(_two_pads(), [j])
+    assert r.qubits[0].E_J_GHz == pytest.approx(71.0, rel=1e-9)
+
+
+def test_circuit_block_squid_flux_defaults_to_zero(tmp_path):
+    meta = parse_geo_meta_sidecar(_sidecar(tmp_path,
+        "circuit_model:\n  qubits:\n"
+        "    - {name: A, island: A_pad_sfs, squid: {E_J1: 60GHz, E_J2: 11GHz}}\n"))
+    assert meta["circuit_model"]["qubits"][0]["flux"] == 0.0
+
+
 def test_circuit_block_absent_yields_none(tmp_path):
     meta = parse_geo_meta_sidecar(_sidecar(tmp_path, ""))
     assert meta["circuit_model"] is None
@@ -651,6 +796,19 @@ def test_circuit_structured_island_non_metal_role_rejected(tmp_path):
      "explicit unit"),
     ("circuit_model:\n  qubits:\n    - {name: A, island: A_pad_sfs, L_J: 10mH-bad}\n",
      "must be"),
+    # squid: mutually exclusive with L_J/E_J, needs both branches, units required
+    ("circuit_model:\n  qubits:\n    - {name: A, island: A_pad_sfs, L_J: 10nH,"
+     " squid: {E_J1: 60GHz, E_J2: 11GHz}}\n", "exactly one of 'L_J'"),
+    ("circuit_model:\n  qubits:\n    - {name: A, island: A_pad_sfs,"
+     " squid: {E_J1: 60GHz}}\n", "both 'E_J1' and 'E_J2'"),
+    ("circuit_model:\n  qubits:\n    - {name: A, island: A_pad_sfs,"
+     " squid: {E_J1: 60GHz, E_J2: 11GHz, bogus: 1}}\n", "[Uu]nknown"),
+    ("circuit_model:\n  qubits:\n    - {name: A, island: A_pad_sfs,"
+     " squid: {E_J1: 60, E_J2: 11GHz}}\n", "explicit unit"),
+    ("circuit_model:\n  qubits:\n    - {name: A, island: A_pad_sfs,"
+     " squid: {E_J1: 60GHz, E_J2: 11GHz, flux: [0.5]}}\n", "bare number"),
+    ("circuit_model:\n  qubits:\n    - {name: A, island: A_pad_sfs,"
+     " squid: 60GHz}\n", "must be a mapping"),
 ])
 def test_circuit_block_invalid_raises(tmp_path, block, match):
     with pytest.raises(DesignDslError, match=match):

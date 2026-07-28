@@ -287,13 +287,37 @@ def test_sung_2021_example_builds_differential_islands(tmp_path):
 
 
 # -----------------------------------------------------------------------------
-# LIVE Palace solve (gated): two_pads -> known-sign 2x2 capacitance matrix.
-# Slow + needs Palace (native or WSL spack). Enable with QDSL_RUN_PALACE=1.
+# num_procs (CLI --np): 透传给 run_palace, 且 < 1 在 API 层就被挡住
 # -----------------------------------------------------------------------------
 
-@pytest.mark.skipif(
-    not os.environ.get("QDSL_RUN_PALACE"),
-    reason="live Palace solve; set QDSL_RUN_PALACE=1 (needs Palace/WSL spack)")
+def test_build_geo_passes_num_procs_to_run_palace(tmp_path, monkeypatch):
+    """``build_geo(num_procs=N)`` 必须原样到达 ``run_palace`` (否则 --run-palace
+    永远单 rank); ``num_procs < 1`` 抛 ``DesignDslError`` (API 直接调用也要被挡)。"""
+    from quantum_dsl.dsl import palace_adapter
+    from quantum_dsl.dsl.errors import DesignDslError
+    from quantum_dsl.dsl.geo_build import build_geo
+
+    calls = []
+    # geo_build 在调用点才 import run_palace, 因此打模块属性即可拦下。
+    monkeypatch.setattr(
+        palace_adapter, "run_palace",
+        lambda cfg, **kw: calls.append((Path(cfg).name, kw)))
+
+    build_geo(meta_path=str(TWO_PADS_META), out_dir=str(tmp_path),
+              run_palace=True, dry_run=True, num_procs=7)
+    assert calls == [("chip.json", {"dry_run": True, "num_procs": 7})]
+
+    with pytest.raises(DesignDslError, match="num_procs"):
+        build_geo(meta_path=str(TWO_PADS_META),
+                  out_dir=str(tmp_path / "rejected"),
+                  run_palace=True, dry_run=False, num_procs=0)
+    assert not (tmp_path / "rejected").exists()  # 校验先于任何构建工作
+
+
+# -----------------------------------------------------------------------------
+# build manifest (no Palace).
+# -----------------------------------------------------------------------------
+
 def test_build_geo_archives_inputs_and_writes_manifest(tmp_path):
     """每次 build 都把 meta.yaml + .geo 复制进 out_dir, 并写 chip.manifest.yaml
     (输入副本 + 全部产物的 sha256/时间戳); 此处不跑 Palace, 故无 results 条目。"""
@@ -328,6 +352,16 @@ def test_build_geo_archives_inputs_and_writes_manifest(tmp_path):
     assert by_name["chip.gds"]["sha256"] == hashlib.sha256(gds_bytes).hexdigest()
 
 
+# -----------------------------------------------------------------------------
+# LIVE Palace solve (gated): two_pads -> known-sign 2x2 capacitance matrix.
+# Slow + needs Palace (native or WSL spack). Enable with QDSL_RUN_PALACE=1.
+# (The marker used to sit on the manifest test above, which needs no Palace —
+# hence the "1 skipped, and --deselect the live one by hand" ritual.)
+# -----------------------------------------------------------------------------
+
+@pytest.mark.skipif(
+    not os.environ.get("QDSL_RUN_PALACE"),
+    reason="live Palace solve; set QDSL_RUN_PALACE=1 (needs Palace/WSL spack)")
 def test_two_pads_live_capacitance_matrix(tmp_path):
     import yaml
     from quantum_dsl.dsl.geo_build import build_geo
