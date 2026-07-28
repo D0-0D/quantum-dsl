@@ -85,7 +85,7 @@ R3 circuit solve ✅, R4 read QDA ✅, R5 GDSFactory) + verbal "电容矩阵就�
   (`~/opt/elmer`),在 qiskit-metal 0.7.6 里 1:1 重建器件 → Elmer 电容 + LOM 2.0 + `Hcpb` 显示
   E_C 比论文大 **4.5–6.9×**、无量纲耦合小 **20×/42×**(几何未按论文标定);例子的单岛
   `circuit_model` 写法在自己的几何上也有 **1.85×** 误差(#20)。See `session/2607280204.md`。
-- _(branch `main`, **未提交** — 2607021950)_ **静默空网格根因修复 + qm4q 汇报稿**:新 gmsh 构建
+- _(branch `main` — 2607021950, 已提交 `30a241e`)_ **静默空网格根因修复 + qm4q 汇报稿**:新 gmsh 构建
   (metal-env 已重建为 conda 4.11.1;qmetal-src pip 4.15.2)对共面 PLC 失败**不抛异常**,旧
   `generate_mesh` 的 HXT 回退永不触发 → qm4q 静默产出 533B 空网格(`build/qm4q/chip.msh` 即此),
   Palace abort。修复:空 3D 网格也触发回退、回退仍空则 raise;+2 回归测试
@@ -106,8 +106,7 @@ R3 circuit solve ✅, R4 read QDA ✅, R5 GDSFactory) + verbal "电容矩阵就�
   ill-conditioned matrices raise, not invert to garbage); Palace C-matrix CSV parser **rejects
   nan/inf**. Full suite **319 passed, 3 skipped** (was 314/3, +5 new tests, 0 regressions). Deferred
   findings filed as **#18** (carved-ground mesh refinement → biased C) + **#19** (robustness checklist);
-  the singular-guard item in **#15** is now resolved. See `session/2606081710.md`. _(branch not yet
-  merged/pushed.)_
+  the singular-guard item in **#15** is now resolved. See `session/2606081710.md`. _(已合并进 `main`。)_
 - _(branch `chore/viz-deps-and-cleanup` — 2606080906)_ **docs/examples cleanup + viz deps**:
   `examples/dsl/` is now geo-only (deleted `.note`/`notebooks`/`scripts`/`outputs`/`yaml` +
   `docs/codex_notes/dsl_v3_*`); the 2 test-referenced `.metal.yaml` moved to `tests/fixtures/`;
@@ -134,13 +133,23 @@ R3 circuit solve ✅, R4 read QDA ✅, R5 GDSFactory) + verbal "电容矩阵就�
   1. ✅ `two_pads` —— 实测 `[[24.7288,-1.976],[-1.976,24.7293]]` fF vs 基线
      `[[24.73,-1.98],[-1.98,24.72]]`, **max |rel dev| 0.202%**; tier-2 `C_Σ=24.571 fF,
      E_C=0.7883 GHz, f01=9.365 GHz, g=374.2 MHz`。`FRAGMENT_SCALE_LADDER` 与 `ground_faces`
-     细化**没有移动电容值**。(该测试目前只断言结构/符号, **数值断言仍待补**, 带容差。)
-  2. ➡ **已移交他人**: `sung_2021_device` 用我们自己的 Palace 解一次, 与 Elmer 的
-     102.1/232.8/102.1 fF 对照(这三个数目前**只有 Elmer 一侧的证据**)。现场在
-     `scratchpad/sung_palace/` + 对照脚本 `cmp_palace_elmer.py`; 最后状态 16 rank / order 2 /
-     2,242,111 未知量, terminal 1 已收敛(PCG 12 步), 在 terminal 2 被 SIGTERM 打断, 故
-     **没有 `terminal-C.csv`**(Palace 只在全部 terminal 解完后才写电容矩阵)。
-  3. 🔴 `ground_faces` 细化对 C 的量化影响 = issue **#18** 的正题, **仍欠**。
+     细化**没有移动电容值**。⚠ 但该测试**只断言结构/符号**, 上面这组数是手工核对的 ——
+     数值断言待补, 连同未被利用的 `terminal-Cinv.csv` 交叉校验记在 **#28**。(该测试目前只断言结构/符号, **数值断言仍待补**, 带容差。)
+  2. ✅ **`sung_2021_device` Palace ↔ Elmer ↔ 论文 三方闭环** (2607280204 §7)。Palace p=1 / 8 rank /
+     50.9 s: C_Σ **110.69 / 252.80 / 111.03 fF** vs Elmer **102.1 / 232.8 / 102.1** vs 论文
+     **99.3 / 227.9 / 101.9**; **Palace/Elmer = 1.084 / 1.086 / 1.087**。三个 qubit 上高度一致
+     → **系统性偏移而非噪声**, 最可能是网格收敛(我们 `max_size 80` vs Elmer 侧 `max 30`, 而 Elmer
+     自身 5/50→2/30 就降 6%), 次因是外边界不等价(自然 Neumann vs `Electric Infinity BC`)。
+     **表述: 两个独立求解器在较粗一方的网格收敛不确定度之内互相印证。** A4 的 1.03/1.02/1.00
+     仍以 Elmer 为准(网格更细), Palace 这组是佐证不是替代。
+     ⚠ 口径是 **order 1**, 而 sidecar 声明 `order: 2` —— 见下。
+  3. 🔴 `ground_faces` 细化对 C 的量化影响 = issue **#18** 的正题, **仍欠**(已在 #18 留进展评论)。(2607290110 的
+     ε-nudge 重标定量化的是**另一个**旋钮 —— 衬底顶面的 ε 缝, 不是 ground 腔壁的网格细化。)
+- 🔴 **order 2 在多 rank 下解不出来**(2607280204 §7): 16 rank 三次尝试都在第 2 个 terminal
+  静默掉 rank; order 1 / 8 rank 干净跑完。已排除场输出、OOM、vader/CMA(那只是 `ptrace_scope=1`
+  触发的噪音症状)。剩余怀疑: 误差估计器的 `RT (p=2): 14151282` 空间。**后果: 这个例子当前无法在
+  本机跑出它自己声明的精度。** 下一步: 降到 2 rank / 单 rank 加长 timeout, 区分「rank 间通信」
+  与「order 2 本身」。→ **#22**。
 - **参考侧对照已可跑**: ElmerFEM 9.0 装在 `~/opt/elmer`(`export PATH=$HOME/opt/elmer/bin:$PATH`),
   conda env `quantum-metal` = quantum-metal 0.7.6(editable 自 `~/metal/qiskit-metal`)。
   复用脚本(scratchpad, 见 session log): `qm_sung.py`(qiskit-metal 重建 + Elmer)、
@@ -165,35 +174,33 @@ R3 circuit solve ✅, R4 read QDA ✅, R5 GDSFactory) + verbal "电容矩阵就�
     教科书的 `|cos|·sqrt(1+d²tan²)` 在 Φ=0.5Φ0 处 tan 发散 → nan)。`L_J`/`E_J`/`squid` 三选一。
   - ✅ **⑦(新)** `geo_build --np N` —— `run_palace` 一直支持 `num_procs`, 但 `geo_build` 硬编码
     不传 → `--run-palace` 永远单 rank。2607290110 落地。
-  - 🔴 ① `targets:` 验收块(meta 里声明期望 C/E_C/g + 容差, 求解后写 `validation:` 段并打印偏差)
-    —— **性价比最高**, 且是 2607280204 那次事故的根因级预防(单岛写法 C_Σ 错 1.70×, 管线全绿)。
-  - 🔴 ② Elmer 作为第二求解器后端做交叉验证(现在仍是 scratchpad 手工搭的)。
+  - 🔴 ① `targets:` 验收块 → **#23**(性价比最高; 2607280204 那次事故的根因级预防)。
+  - 🔴 ② Elmer 第二求解器后端 → **#25**(含 ElmerFEM 9.0 的构建坑与 qiskit-metal 两个上游 bug)。
   - 🔴 ③ `mesh.conductor_mode: void|volume`(现在只有 conductors-as-voids 一条路) —— 代价是
     OCC 布尔在共面输入上脆弱(见上一条 bullet), 而 ε-nudge 只是绕开它的标定旋钮。volume 模式
     (零厚度面 `fragment` **进**界面, Palace 自己的 CPW 例子与 qiskit-metal 的 Elmer 流程都这么做)
-    根本不需要共面布尔, 既是退路, 也是第一次能让两条路的 C 互相对照。
-  - 🔴 ④ 网格收敛扫描 `--converge`(实测 5/50→2/30 差 6%, 而 `tier` 只描述完整度不描述精度)。
-  - 🔴 ⑥ 浮动 bus 的 Schur 消元(#20 另一半, 现在被硬接地)。**不能**用 σ 那套办法: qubit 的两焊盘
-    与外界无电荷交换故丢掉 σ 正确, 而浮动 bus 是真正的动力学自由度、同时耦合两个 qubit,
-    必须正确积掉(消元会重整化 qubit-qubit 耦合)。
-  - 🟡 **`run_palace` 两处待整理**(2607290110 报告未改): `dry_run` 完全吞掉 `num_procs`
+    根本不需要共面布尔, 既是退路, 也是第一次能让两条路的 C 互相对照。→ **#24**。
+  - 🔴 ④ 网格收敛扫描 `--converge` → **#26**。
+  - 🔴 ⑥ 浮动 bus 的 Schur 消元 → **#20** 的剩余部分。**不能**用 σ 那套办法: qubit 两焊盘与外界
+    无电荷交换故丢掉 σ 正确, 而浮动 bus 是真正的动力学自由度、同时耦合两个 qubit, 必须正确积掉
+    (消元会重整化 qubit-qubit 耦合)。
+  - 🟡 **`run_palace` / Palace config 三处待整理** → **#27**(另含场输出硬编码): `dry_run` 完全吞掉 `num_procs`
     (Palace `--dry-run` 本意就是按 rank 数试划分, 故 `--np 8 --dry-run` 现在验不到 8 路划分);
     native 分支无条件追加 `-np N` 而 WSL 分支只在 `>1` 时前置 `mpirun -np N`。
-- **#14 re-review follow-ups**: 3 critical fixes landed on `fix/review-critical-robustness`
-  (push + PR pending). Deferred: **#18** (carved-ground mesh refinement → biased C; needs a
-  live-Palace re-validation since it moves the C numbers), **#19** (robustness/silent-failure
-  checklist), and the remaining items in **#15**.
+- **#14 re-review follow-ups**: 那 3 个 critical fix **已在 `main`**
+  (`git branch --merged main` 含 `fix/review-critical-robustness`; nan/inf 拒绝在
+  `palace_adapter.py:539`, scale-relative 奇异守卫在 `circuit_model._invert_matrix`,
+  carve 分裂真空 raise 在 `_gmsh_layers`)。仍 open: **#18** / **#19** / **#15** 的剩余项。
 - **viz**: install the `viz` extra (`gdsfactory`) to exercise that backend live — it is absent in
   metal-env, so its 2 tests are gated/skipped (the matplotlib fallback IS verified).
 - **M5a follow-ups**: full-chip live Palace solve on an emit_geo ground design (gated); connection-pad
   transmons may overlap the ground (clean-disjoint cells are the tested path); ε-vacuum-gap artifact
   under carved metal.
-- **M6 follow-ups**: multi-island (floating/differential) qubits (schema accepts, solver defers) —
-  now tracked in **#20**, together with the floating-bus grounding bug (non-qubit terminals are
-  hard-grounded, killing bus-mediated coupling → needs Schur-complement) and the meta→tier-2 wiring
-  bug (`geo_build` reads `islands` but `two_pads.meta.yaml` has `island:`; `L_J: 10nH` never
-  unit-parsed). Surfaced while fixing `chip_layout.geo` (see `session/2606081754.md`).
-- **chip_layout.geo** (example): now a proper 2-transmon + coupling-bus layout (pads isolated in
-  vacuum pockets; lower pad capacitively coupled to the bus via a neck+paddle). tier-1 verified;
-  tier-2 blocked on **#20**. Changes uncommitted on `fix/review-critical-robustness`.
+- **#20 现状**(2607280204 更新, 三条里两条已了结): ✅ 多岛浮动/差分 transmon **已实现**
+  (`a8e3ed7`, 与 LOM 2.0 吻合 <0.1%); ✅ 「meta→tier-2 wiring bug」经核实**本就不存在**
+  (`_parse_qubit_entry` 早已把 `island:` 归一成 `islands`, `L_J: 10nH` 走 `_parse_unit_value`)
+  —— 已补测试钉住; 🔴 仅剩**浮动 bus 被硬接地**(需 Schur 消元)。
+- **chip_layout.geo** (example): 2-transmon + coupling-bus 布局(焊盘在真空孤岛里, 下焊盘经
+  neck+paddle 电容耦合到 bus)。**改动已提交** (`cfce32f`)。tier-1 已验证; tier-2 仍卡在 #20
+  的浮动 bus 那一半。
 - `CLAUDE.md` no longer pins "M1–M5" — milestones are re-scoped per phase (see `plan.md`).
