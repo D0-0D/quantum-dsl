@@ -1,6 +1,5 @@
 # =====================================================================
 # sung_2021_device.meta.yaml
-<<<<<<< Updated upstream
 # Layer-1 (physics metadata) sidecar for sung_2021_device.geo — a SIMPLIFIED
 # reproduction of the 3-body tunable-coupler device of
 #   Y. Sung et al., "Realization of High-Fidelity CZ and ZZ-Free iSWAP Gates
@@ -70,36 +69,12 @@
 # Also simplified away: readout resonators, flux-bias lines, and the SQUID loops
 # (a single E_J = zero-flux maximum, so there is no tuning axis).
 # ---------------------------------------------------------------------
-=======
-# Paper-inspired 3-body interacting system (Sung et al., PRX 11, 021058).
-#
-# This example intentionally uses the repo's tested `cells:` emit_geo path for
-# robust meshing while preserving the QB1-CPLR-QB2 topology and EJ targets.
-# =====================================================================
->>>>>>> Stashed changes
 
 schema: qiskit-metal/design-dsl/3
 
+geo: sung_2021_device.geo
+
 vars: {}
-
-cells:
-  - cell_type: transmon_pocket
-    component: QB1
-    x: "-900um"
-    params:
-      connection_pads: {}
-
-  - cell_type: transmon_pocket
-    component: CPLR
-    x: "0um"
-    params:
-      connection_pads: {}
-
-  - cell_type: transmon_pocket
-    component: QB2
-    x: "900um"
-    params:
-      connection_pads: {}
 
 circuit_model:
   # All three are FLOATING (differential) transmons: the junction bridges the
@@ -134,30 +109,25 @@ simulation:
 
     # ---- Airbox (µm) ------------------------------------------------
     airbox:
-      top: 900
-      bottom: 1200
-      side_buffer: 260
+      top: 890
+      bottom: 1650
+      side_buffer: 200
 
     # ---- Mesh Sizing (µm) -------------------------------------------
     # No `max_size_jj`: on the native-geo path the jj:: surfaces are removed as
     # lumped elements (populate_tracker_from_geo), so a jj size field is never
     # built and the key is inert.
     mesh:
-<<<<<<< Updated upstream
       max_size: 80
       min_size: 2
       conductor_refine:
         min_dist: 2
         max_dist: 40
-=======
-      max_size: 200
-      min_size: 40
->>>>>>> Stashed changes
 
     # ---- GDS Layer Map ----------------------------------------------
     gds:
-      lib_name: sung_2021_device
-      top_cell: sung_2021_device
+      lib_name: sung_device
+      top_cell: sung_device
       unit: 1.0e-6
       precision: 1.0e-9
       arc_tol_um: 0.01
@@ -168,8 +138,8 @@ simulation:
         ground: {layer: 1,  datatype: 0}
         jj:     {layer: 20, datatype: 0}
 
-    # Use the default mesher-safe nonzero substrate gap for carved-ground flows.
-    substrate_gap_um: 1
+    # Use exact coplanar alignment at z=0 interface
+    substrate_gap_um: 0
 
     # ---- Palace Solver ----------------------------------------------
     solver:

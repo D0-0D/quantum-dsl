@@ -40,9 +40,13 @@ against qiskit-metal, never to run this suite.
 > ⚠ **Do NOT run the suite with `QDSL_MESH_ALGO3D` exported** — the two `generate_mesh`
 > fallback tests exercise the path that variable deliberately bypasses. The demo command below
 > needs it; the suite must not have it. (They now `delenv` it defensively, so this is belt-and-braces.)
-> ⚠ **`mpirun` is currently wedged on the WSL host** (`orte_init` hangs, no output) → Palace cannot
-> run at all, so add `--deselect tests/test_geo_pipeline.py::test_two_pads_live_capacitance_matrix`
-> or the suite blocks for ~50 min. See `.claude/session/2607280204.md` for the diagnosis.
+> ⚠ **`HWLOC_COMPONENTS=-gl` is REQUIRED on this WSL host for any MPI program (i.e. for Palace).**
+> hwloc's `gl` plugin probes X displays `:0…:N` over TCP (127.0.0.1:6000+N) to enumerate NVIDIA
+> GPUs; here 127.0.0.1:6001 black-holes the SYN (no listener, no RST — WSL2 localhost forwarding),
+> so `connect()` blocks forever and **every** MPI program hangs before `MPI_Init` returns, with no
+> output at all. It is persisted in conda `metal-env` and `quantum-metal`
+> (`conda env config vars set HWLOC_COMPONENTS=-gl -n <env>`) — if you build a new env, set it there
+> too, or Palace will hang for the whole timeout. Diagnosis: `.claude/session/2607280204.md`.
 
 ```powershell
 # Full suite (gmsh/gdstk/Palace verification all run here):
