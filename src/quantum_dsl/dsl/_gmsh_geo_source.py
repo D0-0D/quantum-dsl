@@ -537,18 +537,20 @@ def ensure_dielectric_substrates(geo_surfaces: list[GeoSurface],
             continue
         missing[layer] = spec
     if missing:
-        # Drop the auto-substrate top by a TINY ε below the carved metal/ground
-        # bottom (z=0) when a metal ground is carved. ε must be:
-        #   - large enough to keep the metal/ground void bottom a FREE face (not
-        #     coplanar-coincident with the substrate top) — exact coplanarity
-        #     makes resolve_conductor_faces mis-key a centered terminal vs the
-        #     ground annulus, and tetgen choke on the coincident footprint;
-        #   - small enough to be ~physically negligible. The OLD value was 1 µm,
-        #     which depressed every capacitance ~30% (the near-surface coplanar
-        #     coupling field sees the vacuum gap). 0.1 µm cuts that error ~10×
-        #     while keeping the faces cleanly separated.
-        # (fragment_everything scales back to µm + generate_mesh falls back to
-        # HXT, so this small gap fragments and meshes robustly.)
+        # Drop the auto-substrate top by ε below the carved metal/ground bottom
+        # (z=0) when a metal ground is carved. ε keeps the metal/ground void
+        # bottom a FREE face (not coplanar-coincident with the substrate top) —
+        # exact coplanarity makes resolve_conductor_faces mis-key a centered
+        # terminal vs the ground annulus, and tetgen choke on the coincident
+        # footprint.
+        # ε is NOT physically free: a vacuum gap under the metal depresses every
+        # capacitance (~30% at the 1 µm default). The fix is NOT a smaller ε but
+        # ε = 0: set ``simulation.gmsh.substrate_gap_um: 0`` for a physically
+        # exact coplanar metal-on-substrate stack (qm4q does). The default stays
+        # 1 µm only for backward compatibility with the fixtures that mis-resolve
+        # under exact coplanarity — see CARVED_GROUND_SUBSTRATE_GAP_SI.
+        # (fragment_everything scales the model for occ.fragment + generate_mesh
+        # falls back to HXT, so ε=0 fragments and meshes robustly.)
         if tracker.ground_solids and substrate_gap_si:
             missing = {
                 layer: {**spec, "z": float(spec.get("z", 0.0)) - substrate_gap_si}
