@@ -1,12 +1,74 @@
 # =====================================================================
 # sung_2021_device.meta.yaml
-# Metadata binding for the 3-body interacting system.
+# Layer-1 (physics metadata) sidecar for sung_2021_device.geo — a SIMPLIFIED
+# reproduction of the 3-body tunable-coupler device of
+#   Y. Sung et al., "Realization of High-Fidelity CZ and ZZ-Free iSWAP Gates
+#   with a Tunable Coupler", Phys. Rev. X 11, 021058 (2021), arXiv:2011.01261.
 #
-# Extracted Hamiltonian Parameters (Ref: Fig 7 caption):
-# QB1: E_J = 12.2 GHz
-# CPLR: E_J1 = 46 GHz, E_J2 = 25 GHz (Total E_J = 71 GHz max)
-# QB2: E_J1 = 13 GHz, E_J2 = 2.8 GHz (Total E_J = 15.8 GHz max)
-# =====================================================================
+# ---------------------------------------------------------------------
+# What the paper reports.  All of these live in the arXiv SUPPLEMENTARY
+# material — the main text has only Figs. 1–5, there is no "Fig. 7".
+# ---------------------------------------------------------------------
+# supp. fig. caption `suppfig:qubit_spectroscopy` — Josephson + charging energy:
+#   QB1   E_J/h = 12.2 GHz        (single junction)
+#   CPLR  E_J/h = 46 + 25 GHz     (asymmetric SQUID — PER JUNCTION)
+#   QB2   E_J/h = 13 + 2.8 GHz    (asymmetric SQUID — PER JUNCTION)
+#   E_C/h = 0.195 (QB1) / 0.085 (CPLR) / 0.190 (QB2) GHz
+#           => C_Σ = e²/2h/E_C = 99.3 / 227.9 / 101.9 fF
+#   The single `E_J:` in circuit_model below is the ZERO-FLUX MAXIMUM
+#   E_J1 + E_J2 (71 GHz for CPLR, 15.8 GHz for QB2); circuit_model has no flux
+#   knob, so it always evaluates the upper sweet spot of the tuning range.
+# supp. capacitance table:
+#   C_1 = 95, C_c = 228, C_2 = 98, C_1c = C_2c = 5.36, C_12 = 0.125 fF
+#           => dimensionless C_g/√(C_i·C_j) = 0.0364 (qubit–coupler)
+#                                             0.0013 (qubit–qubit)
+# supp. device-parameter table:
+#   ω/2π = 4.16 / 5.45 / 4.00 GHz   (QB1 fixed; CPLR 3.7–6.7, QB2 3.7–4.7 tunable)
+#   η/2π = −220 / −90 / −210 MHz
+#   g_1c/2π = 72.5, g_2c/2π = 71.5, g_12/2π = 5.0 MHz
+# Consistency check of the E_J above: f01 = √(8 E_C E_J) − E_C with the paper's
+#   own E_C gives 4.17 / 6.86 / 4.71 GHz — matching the measured 4.16 GHz and the
+#   tops of both tuning ranges.  So the E_J values are right, and the .geo is
+#   dimensioned to land on the paper's E_C; what stays approximate is the LAYOUT
+#   (plain rectangular pads, no direct qubit–qubit path — see below).
+#
+# ---------------------------------------------------------------------
+# What THIS .geo actually reproduces — MEASURED, not aspirational.
+# Method: the same layout rebuilt in qiskit-metal 0.7.6 (MultiPlanar +
+# 3 × TransmonPocket, identical layer stack), capacitance matrix from
+# Gmsh + ElmerFEM 9.0 StatElecSolve (min 2 / max 30 µm, 6.87 M tets), reduced by
+# this repo's `circuit_model` in junction-branch coordinates with the two-island
+# declaration below.  C_Σ comes out +6…7 % higher on a min 4 / max 40 µm mesh, so
+# treat the last digit as mesh noise, not geometry.
+#
+#   quantity                    this .geo               paper            ratio
+#   C_Σ (fF)            102.1 / 232.8 / 102.1  99.3 / 227.9 / 101.9  1.03/1.02/1.00
+#   E_C/h (GHz)         0.190 / 0.083 / 0.190  0.195 / 0.085 / 0.190 0.97/0.98/1.00
+#   f01 zero-flux (GHz)  4.11 / 6.79 / 4.71    4.16 / ≤6.7 / ≤4.7    ≈1
+#   α = −E_C (MHz)       −190 / −83 / −190     −220 / −90 / −210     0.86/0.92/0.90
+#   C_1c = C_2c (fF)          6.01                   5.36              1.12
+#   C_g/√(C_i C_j) q–c        0.0390                 0.0364            1.07
+#   C_12 (fF)                 0.0030                 0.125             0.02  ✗
+#   C_g/√(C_i C_j) q–q        0.00003                0.0013            0.02  ✗
+#   g_1c / g_2c (MHz)      102.8 / 110.1          72.5 / 71.5        1.42 / 1.54
+#
+# The g's run high mostly because there is no flux knob: the paper quotes g at the
+# ω_c/2π = 5.45 GHz operating point while this model sits at the coupler's
+# zero-flux 6.79 GHz, and g ∝ √(f_i f_j) on top of the +7 % dimensionless coupling.
+#
+# The one target this layout misses is the DIRECT qubit–qubit capacitance. At
+# 780 µm pad-to-pad, with the 720 µm-wide coupler island and the ground plane in
+# between, the differential–differential term ¼|c_tt + c_bb − c_tb − c_bt| is
+# ~50× below the paper's 0.125 fF: the two pads of each dipole contribute nearly
+# equal and opposite far fields, so what survives is a difference of four ~0.19 fF
+# numbers.  The real device has a direct qubit–qubit coupling path that these
+# three plain rectangular-pad transmons do not draw.
+#   Beware the `g_12` circuit_model reports for this device (3.4 MHz, close to the
+#   paper's 5.0 MHz by accident): g comes from [C'⁻¹]₁₃, which here is dominated
+#   by the coupler-mediated C_1c·C_2c path, not by the direct C_12 above.
+# Also simplified away: readout resonators, flux-bias lines, and the SQUID loops
+# (a single E_J = zero-flux maximum, so there is no tuning axis).
+# ---------------------------------------------------------------------
 
 schema: qiskit-metal/design-dsl/3
 
@@ -15,15 +77,18 @@ geo: sung_2021_device.geo
 vars: {}
 
 circuit_model:
+  # All three are FLOATING (differential) transmons: the junction bridges the
+  # two pads, neither of which touches ground.  Declaring one island instead
+  # silently grounds the other pad — 1.70× on C_Σ / E_C for this device.
   qubits:
     - name: QB1
-      island: metal::1::QB1::pad_top
+      islands: [metal::1::QB1::pad_top, metal::1::QB1::pad_bot]
       E_J: 12.2GHz
     - name: CPLR
-      island: metal::1::CPLR::pad_top
+      islands: [metal::1::CPLR::pad_top, metal::1::CPLR::pad_bot]
       E_J: 71GHz
     - name: QB2
-      island: metal::1::QB2::pad_top
+      islands: [metal::1::QB2::pad_top, metal::1::QB2::pad_bot]
       E_J: 15.8GHz
 
 simulation:
@@ -49,10 +114,12 @@ simulation:
       side_buffer: 200
 
     # ---- Mesh Sizing (µm) -------------------------------------------
+    # No `max_size_jj`: on the native-geo path the jj:: surfaces are removed as
+    # lumped elements (populate_tracker_from_geo), so a jj size field is never
+    # built and the key is inert.
     mesh:
       max_size: 80
       min_size: 2
-      max_size_jj: 0.5
       conductor_refine:
         min_dist: 2
         max_dist: 40
