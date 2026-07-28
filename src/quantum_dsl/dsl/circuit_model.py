@@ -7,20 +7,38 @@
 只用 ``math`` (标准库) + ``CapacitanceResult``/``TerminalBinding`` 数据类, **不**
 import gmsh / gdstk / numpy / scipy, 因此在任何环境 (含 metal-env-old) 下可单测。
 
-物理 (lumped-oscillator inverse-capacitance method):
-    对一组「量子比特节点」(各引用一个导体岛 island = 一个 Terminal), 取 Maxwell
-    矩阵在这些节点上的子矩阵 ``C`` (SI 法拉), 求逆 ``C⁻¹``, 则
-        E_C,i  = (e²/2) · [C⁻¹]_ii                         (充电能, 焦耳)
-        C_Σ,i  = 1 / [C⁻¹]_ii                              (等效节点电容, 法拉)
-        E_J,i  = (ħ/2e)² / L_J,i   (或直接给定)            (约瑟夫森能, 焦耳)
-        f01,i  = (√(8 E_C E_J) − E_C) / h                  (跃迁频率, Hz)
-        α_i    = −E_C,i / h                                (非简谐性, Hz)
-        g_ij/2π = ½ · |[C⁻¹]_ij| / √([C⁻¹]_ii·[C⁻¹]_jj) · √(f_i·f_j)   (电荷耦合, Hz)
+物理 (lumped-oscillator inverse-capacitance method, 结支坐标形式):
+    取 Maxwell 矩阵在 **所有被 qubit 引用的岛** 上的子矩阵 ``C_S`` (SI 法拉), 动能
+    ``T = ½ φ̇ᵀ C_S φ̇`` (φ = 节点磁通)。每个 qubit k 的约瑟夫森元件定义一个 **支路
+    坐标** (junction branch coordinate):
 
-    对「孤立单岛」(1×1 子矩阵) 该法 **精确退化** 为 E_C = e²/(2 C_ii); 对 N=2 退化为
-    g = ½(C_g/√(C_Σi C_Σj))√(f_i f_j); 但对 N≥3 仍是严格解 (朴素对角线/单 offdiag 公式
-    在 N≥3 会因忽略间接电容路径而漂移)。其它 (未被任何 qubit 引用的) Terminal 被视作
-    接地电极 (固定电势) —— 故不进入子矩阵, 其电容已折进 qubit 对角线。
+    * **接地单岛** (``islands=(a,)``): θ_k = φ_a —— 结跨在岛与地之间。
+    * **浮动/差分双岛** (``islands=(a, b)``): θ_k = φ_a − φ_b (结跨两焊盘),
+      再补一个正交的共模坐标 σ_k = (φ_a + φ_b)/2。
+
+    组成变换 ``φ = B ξ``, ``ξ = (θ…, σ…)``, 换基后
+        C' = Bᵀ C_S B
+        E_C,k  = (e²/2) · [C'⁻¹]_θθ,kk                     (充电能, 焦耳)
+        C_Σ,k  = 1 / [C'⁻¹]_θθ,kk                          (等效节点电容, 法拉)
+        E_J,k  = (ħ/2e)² / L_J,k   (或直接给定)            (约瑟夫森能, 焦耳)
+        f01,k  = (√(8 E_C E_J) − E_C) / h                  (跃迁频率, Hz)
+        α_k    = −E_C,k / h                                (非简谐性, Hz)
+        g_ij/2π = ½ · |[C'⁻¹]_ij| / √([C'⁻¹]_ii·[C'⁻¹]_jj) · √(f_i·f_j)  (电荷耦合, Hz)
+
+    **必须求整个 C' 的逆再取 θθ 块**: 共模 σ 的电荷是守恒的 c-number (浮动岛对没有
+    到地的约瑟夫森/电感元件), 令其电荷为零正是正确的约化, 而这一约化只在完整逆里才
+    体现 (θθ 块的逆 ≠ 逆的 θθ 块)。
+
+    退化情形: 全为接地单岛时 B 退化成选择矩阵, 上式 **逐位** 等于旧的
+    ``E_C = (e²/2)[C_S⁻¹]_ii``; 单个孤立岛 (1×1) 再退化为 E_C = e²/(2 C_ii);
+    N=2 退化为 g = ½(C_g/√(C_Σi C_Σj))√(f_i f_j)。对称双焊盘浮动 qubit
+    ``C_S = [[g+m, −m], [−m, g+m]]`` 手算给 C' = diag(g/2+m, 2g), 即
+    C_Σ = m + g/2 = c_tb + c_t0∥c_b0 (经典串联结果)。
+
+    **未被任何 qubit 引用的 Terminal 一律视作接地电极** (固定电势) —— 不进入 C_S,
+    其电容已折进被引用岛的对角线。已知局限: 一条 **浮动耦合总线** (galvanic 隔离、
+    但物理上不该接地的导体) 同样会被接地, 正确处理需要对该节点做 Schur 补消元
+    (而不是像 σ 那样简单丢弃), 目前不支持。
 
 约定: 充电能/约瑟夫森能内部一律用 **焦耳**; 仅在写进结果数据类时转 GHz/MHz。
 公式按 transmon 微扰展开 (leading order in E_C/E_J), 在 E_J/E_C ≫ 1 时有效 (典型 >~50
@@ -76,8 +94,9 @@ class JunctionInput:
     Fields:
         name:    量子比特名 (结果里 qubit 的标识)。
         islands: 引用的导体岛 = ``capacitance.terminals[].group`` 组名 (已 sanitize 的
-                 ``{component}_{primitive}_sfs``)。M6 仅支持 **单岛接地 transmon**
-                 (len==1); 多岛 (浮动/差分) schema 预留但求解时报错。
+                 ``{component}_{primitive}_sfs``)。1 个岛 = **接地 transmon** (结跨岛
+                 与地); 2 个岛 = **浮动/差分 transmon** (结跨两焊盘, 顺序 (a, b) 定义
+                 θ = φ_a − φ_b, 符号不影响任何输出量)。>2 个岛需要多个结, 不支持。
         L_J:     约瑟夫森电感, **亨利 (SI)**; 与 E_J 二选一。
         E_J:     约瑟夫森能, **焦耳 (SI)**; 与 L_J 二选一。
     """
@@ -116,7 +135,7 @@ class QubitResult:
 
     name: str
     islands: tuple[str, ...]
-    C_sigma_fF: float        # 等效节点电容 1/[C⁻¹]_ii (fF)
+    C_sigma_fF: float        # 等效结电容 1/[C'⁻¹]_θθ,kk (fF)
     E_C_GHz: float           # 充电能 / h (GHz)
     E_J_GHz: float           # 约瑟夫森能 / h (GHz)
     f01_GHz: float           # 0→1 跃迁频率 (GHz)
@@ -130,7 +149,9 @@ class CouplingResult:
 
     qubit_a: str
     qubit_b: str
-    C_g_fF: float            # 物理耦合电容 |Maxwell offdiag| (fF)
+    # 支路坐标间的耦合电容 |C'_θiθj| (fF): 两个接地单岛 → |Maxwell offdiag|;
+    # 两个差分 qubit → ¼|c_aiaj + c_bibj − c_aibj − c_biaj| (差分-差分电容)。
+    C_g_fF: float
     g_MHz: float             # g/2π (MHz, 取正)
 
 
@@ -143,7 +164,10 @@ class CircuitModelResult:
     method: str = "lumped_oscillator_inverse_cap"
     validity: str = (
         "perturbative transmon (leading order in E_C/E_J, valid E_J/E_C >> 1); "
-        "charge coupling in RWA (harmonic islands), valid in the dispersive regime"
+        "charge coupling in RWA (harmonic islands), valid in the dispersive regime; "
+        "junction-branch coordinates (2-island qubits are solved as floating/"
+        "differential, common mode charge = 0); capacitance terminals not "
+        "referenced by any qubit are treated as grounded electrodes"
     )
     units: dict[str, str] = field(default_factory=lambda: {
         "capacitance": "fF",
@@ -208,7 +232,9 @@ def _invert_matrix(mat: Sequence[Sequence[float]]) -> list[list[float]]:
                 f"capacitance submatrix is singular or ill-conditioned — "
                 f"cannot invert (pivot {abs(aug[pivot][col]):.3e} ≤ tol "
                 f"{sing_tol:.3e}); check that the qubit islands are distinct, "
-                f"well-separated conductors")
+                f"well-separated conductors (for a floating/differential qubit "
+                f"the island pair also needs some capacitance to ground — an "
+                f"otherwise isolated pair has a zero common-mode capacitance)")
         aug[col], aug[pivot] = aug[pivot], aug[col]
         diag = aug[col][col]
         aug[col] = [v / diag for v in aug[col]]
@@ -218,6 +244,20 @@ def _invert_matrix(mat: Sequence[Sequence[float]]) -> list[list[float]]:
                 if factor != 0.0:
                     aug[r] = [a - factor * b for a, b in zip(aug[r], aug[col])]
     return [row[n:] for row in aug]
+
+
+def _congruence(mat: Sequence[Sequence[float]],
+                b: Sequence[Sequence[float]]) -> list[list[float]]:
+    """``Bᵀ M B`` (naive triple loop — matrices here are ≤ ~10×10).
+
+    For ``B`` = a selection matrix (all-grounded case) this is bit-exact with
+    the corresponding sub-block of ``M``: the extra terms are exact ``0.0``.
+    """
+    n = len(mat)
+    ncol = len(b[0]) if b else 0
+    return [[sum(b[p][i] * mat[p][q] * b[q][j]
+                 for p in range(n) for q in range(n))
+             for j in range(ncol)] for i in range(ncol)]
 
 
 # ---------------------------------------------------------------------------
@@ -230,16 +270,31 @@ def solve_circuit_model(
 ) -> CircuitModelResult:
     """Maxwell 电容矩阵 + 约瑟夫森输入 → transmon Hamiltonian 参数 + 成对耦合。
 
+    在被引用岛的节点子矩阵 ``C_S`` 上换到 **结支路坐标** 求解 (推导见模块 docstring):
+
+    * ``islands=(a,)`` → **接地 transmon**, θ = φ_a;
+    * ``islands=(a, b)`` → **浮动/差分 transmon**, θ = φ_a − φ_b 外加共模
+      σ = (φ_a + φ_b)/2 (σ 电荷守恒 = 0, 但必须进 ``C' = Bᵀ C_S B`` 一起求逆, 再取
+      θθ 块 —— 只把 σ 行列删掉是错的)。
+
+    单岛写法把浮动 transmon 的另一个焊盘 **静默接地**, 在真实器件上是 ~1.8× 的
+    C_Σ 误差; 差分器件务必声明两个岛。
+
+    **未被任何 qubit 引用的 Terminal 视作接地电极** (固定电势, 不进 ``C_S``, 其电容
+    已折进被引用岛的对角线)。已知局限: 浮动耦合总线 (不该接地的孤立导体) 也会被
+    接地 —— 那需要 Schur 补消元, 不在本函数范围内。
+
     Args:
         cap_result: 已解析的电容结果 (须含非空 ``maxwell`` 矩阵 + ``terminals`` 绑定)。
-        qubits:     量子比特输入列表 (每个引用一个岛组名 + L_J/E_J)。
+        qubits:     量子比特输入列表 (每个引用 1 或 2 个岛组名 + L_J/E_J)。
 
     Returns:
         ``CircuitModelResult`` (qubits 派生参数 + 每个无序对的耦合 g)。
 
     Raises:
-        DesignDslError: 无 Maxwell 矩阵 / 岛不是已知 Terminal / 多岛 (M6 未支持) /
-            qubit 列表为空 / 子矩阵奇异。
+        DesignDslError: 无 Maxwell 矩阵 / 岛不是已知 Terminal / 一个 qubit 引用 >2 个岛 /
+            两处引用同一个 Terminal / qubit 列表为空 / 变换后矩阵奇异 /
+            ``[C'⁻¹]_θθ,kk ≤ 0`` / 非 transmon 区 (f01 ≤ 0)。
     """
     if not qubits:
         raise DesignDslError("solve_circuit_model needs >=1 qubit")
@@ -259,31 +314,63 @@ def solve_circuit_model(
             "qubit islands to matrix rows")
     available = ", ".join(sorted(group_to_idx)) or "<none>"
 
-    node_idx: list[int] = []
+    node_idx: list[int] = []          # 子矩阵行 → Maxwell 行
+    seen: dict[int, str] = {}         # Maxwell 行 → 已占用它的岛名
     for q in qubits:
-        if len(q.islands) != 1:
+        if len(q.islands) > 2:
             raise DesignDslError(
-                f"qubit {q.name!r}: multi-island (floating/differential) qubits "
-                f"are not supported yet (M6 = grounded single-island transmons); "
-                f"got islands={list(q.islands)}")
-        island = q.islands[0]
-        if island not in group_to_idx:
-            raise DesignDslError(
-                f"qubit {q.name!r}: island {island!r} is not a capacitance "
-                f"terminal (have: {available})")
-        node_idx.append(group_to_idx[island])
+                f"qubit {q.name!r}: {len(q.islands)} islands "
+                f"({list(q.islands)}) — only 1 island (grounded transmon, "
+                f"junction island↔ground) or 2 islands (floating/differential "
+                f"transmon, junction across the two pads) are supported; a "
+                f">2-island network needs one Josephson element per branch, "
+                f"which a single L_J/E_J cannot express — split it into "
+                f"several qubit entries or model it externally")
+        for island in q.islands:
+            if island not in group_to_idx:
+                raise DesignDslError(
+                    f"qubit {q.name!r}: island {island!r} is not a capacitance "
+                    f"terminal (have: {available})")
+            idx = group_to_idx[island]
+            if idx in seen:
+                raise DesignDslError(
+                    f"qubit {q.name!r}: island {island!r} and {seen[idx]!r} are "
+                    f"the same capacitance terminal (row {idx + 1}) — every "
+                    f"qubit island must be a distinct conductor")
+            seen[idx] = island
+            node_idx.append(idx)
 
-    if len(set(node_idx)) != len(node_idx):
-        raise DesignDslError(
-            "two qubits reference the same capacitance terminal (island)")
+    # 被引用岛的节点子矩阵 C_S (fF, 与输入同单位); 未引用的 Terminal 视作接地 →
+    # 不入子矩阵。
+    sub = [[maxwell[a][b] for b in node_idx] for a in node_idx]
 
-    # 量子比特节点子矩阵 (SI 法拉); 未引用的 Terminal 视作接地 → 不入子矩阵。
-    sub = [[maxwell[a][b] * _F_PER_FF for b in node_idx] for a in node_idx]
-    cinv = _invert_matrix(sub)  # 法拉⁻¹
+    # φ = B ξ, ξ = (θ_0..θ_{nq-1}, σ…): 前 nq 列 = 每个 qubit 的结支路坐标,
+    # 之后每个浮动 qubit 追加一个共模列。接地单岛 → B 该行退化为选择行 (=1.0),
+    # 全接地时 B = 单位矩阵 → C' 与 C_S 逐位相同 (向后兼容金值)。
+    n_theta = len(qubits)
+    n_cols = n_theta + sum(1 for q in qubits if len(q.islands) == 2)
+    b_mat = [[0.0] * n_cols for _ in node_idx]
+    row = 0
+    sigma_col = n_theta
+    for k, q in enumerate(qubits):
+        if len(q.islands) == 1:
+            b_mat[row][k] = 1.0                 # φ_a = θ_k
+            row += 1
+        else:
+            b_mat[row][k] = 0.5                 # φ_a = σ_k + θ_k/2
+            b_mat[row][sigma_col] = 1.0
+            b_mat[row + 1][k] = -0.5            # φ_b = σ_k − θ_k/2
+            b_mat[row + 1][sigma_col] = 1.0
+            row += 2
+            sigma_col += 1
+
+    cprime = _congruence(sub, b_mat)                        # fF
+    cinv = _invert_matrix(                                  # 法拉⁻¹, 含 σ 块
+        [[v * _F_PER_FF for v in r] for r in cprime])
 
     qubit_results: list[QubitResult] = []
     for k, q in enumerate(qubits):
-        cinv_kk = cinv[k][k]
+        cinv_kk = cinv[k][k]   # θθ 块的对角 (θ 列排在最前, 故下标就是 k)
         if cinv_kk <= 0:
             raise DesignDslError(
                 f"qubit {q.name!r}: non-physical inverse capacitance "
@@ -323,7 +410,9 @@ def solve_circuit_model(
             f_i = qubit_results[i].f01_GHz * 1e9
             f_j = qubit_results[j].f01_GHz * 1e9
             g_hz = 0.5 * prefactor * math.sqrt(f_i * f_j)
-            c_g_ff = abs(maxwell[node_idx[i]][node_idx[j]])
+            # 支路坐标间的耦合电容: 两个接地单岛时 == |Maxwell offdiag| (逐位),
+            # 差分-差分时 == ¼|c_aa + c_bb − c_ab − c_ba|。
+            c_g_ff = abs(cprime[i][j])
             couplings.append(CouplingResult(
                 qubit_a=qubits[i].name,
                 qubit_b=qubits[j].name,

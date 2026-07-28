@@ -209,6 +209,220 @@ def test_couplings_are_unordered_pairs_no_self():
 
 
 # ---------------------------------------------------------------------------
+# (1) floating / differential (multi-island) transmons — GH #20
+#
+# theta_k = phi_a - phi_b (junction branch), sigma_k = (phi_a + phi_b)/2;
+# phi = B xi,  C' = B^T C_S B,  E_C = (e^2/2)[C'^-1]_{theta theta,kk}.
+# ---------------------------------------------------------------------------
+
+def _floating_pair(g: float, m: float) -> CapacitanceResult:
+    """Symmetric 2-pad floating qubit: C_S = [[g+m, -m], [-m, g+m]] with
+    g = pad-to-ground capacitance and m = pad-to-pad capacitance (fF)."""
+    return CapacitanceResult(
+        postpro_dir=Path("."), available=True,
+        terminals=(TerminalBinding(1, "Q_top_sfs", 11),
+                   TerminalBinding(2, "Q_bot_sfs", 12)),
+        maxwell=[[g + m, -m], [-m, g + m]])
+
+
+def test_symmetric_floating_pair_matches_hand_derivation():
+    """Hand derivation, concrete numbers g=30 fF, m=5 fF:
+
+        C_S = [[35, -5], [-5, 35]],  B = [[.5, 1], [-.5, 1]]
+        C' = B^T C_S B = [[g/2 + m, 0], [0, 2g]] = [[20, 0], [0, 60]]
+
+    C' is block diagonal (theta and sigma decouple by symmetry), so
+        C_Sigma = 1/[C'^-1]_{theta theta} = C'_{theta theta} = g/2 + m = 20 fF
+                = c_tb + (c_t0 || c_b0) = 5 + 30/2.
+    A wrong single-island read of the same device would give the raw Maxwell
+    diagonal 35 fF (the other pad silently grounded) — 1.75x too large.
+    """
+    g, m = 30.0, 5.0
+    q = solve_circuit_model(
+        _floating_pair(g, m),
+        [JunctionInput("Q", ("Q_top_sfs", "Q_bot_sfs"), L_J=10e-9)]).qubits[0]
+    assert q.C_sigma_fF == pytest.approx(g / 2.0 + m, rel=1e-12)   # == 20.0
+    assert q.C_sigma_fF == pytest.approx(m + 1.0 / (1.0 / g + 1.0 / g), rel=1e-12)
+    assert q.E_C_GHz == pytest.approx(
+        charging_energy_joule(20.0e-15) / H_PLANCK / 1e9, rel=1e-12)
+    # and explicitly NOT the single-island (other pad grounded) answer:
+    grounded = solve_circuit_model(
+        _floating_pair(g, m),
+        [JunctionInput("Q", ("Q_top_sfs",), L_J=10e-9)]).qubits[0]
+    assert grounded.C_sigma_fF == pytest.approx(g + m, rel=1e-12)   # 35 fF
+    assert grounded.C_sigma_fF / q.C_sigma_fF == pytest.approx(1.75, rel=1e-12)
+
+
+def test_floating_island_order_does_not_change_results():
+    """theta -> -theta under (a, b) -> (b, a): every observable is invariant."""
+    fwd = solve_circuit_model(
+        _floating_pair(30.0, 5.0),
+        [JunctionInput("Q", ("Q_top_sfs", "Q_bot_sfs"), L_J=10e-9)]).qubits[0]
+    rev = solve_circuit_model(
+        _floating_pair(30.0, 5.0),
+        [JunctionInput("Q", ("Q_bot_sfs", "Q_top_sfs"), L_J=10e-9)]).qubits[0]
+    assert rev.C_sigma_fF == pytest.approx(fwd.C_sigma_fF, rel=1e-12)
+    assert rev.f01_GHz == pytest.approx(fwd.f01_GHz, rel=1e-12)
+
+
+def test_asymmetric_floating_pair_full_inverse_not_theta_block_only():
+    """When the pads are asymmetric, theta/sigma do NOT decouple; the answer must
+    come from inverting the FULL C' and taking the theta-theta element (which
+    differs from 1/C'_{theta theta}, i.e. from just dropping the sigma row/col)."""
+    cap = CapacitanceResult(
+        postpro_dir=Path("."), available=True,
+        terminals=(TerminalBinding(1, "Q_top_sfs", 11),
+                   TerminalBinding(2, "Q_bot_sfs", 12)),
+        # g_top = 20, g_bot = 60, m = 5
+        maxwell=[[25.0, -5.0], [-5.0, 65.0]])
+    q = solve_circuit_model(cap, [JunctionInput(
+        "Q", ("Q_top_sfs", "Q_bot_sfs"), L_J=10e-9)]).qubits[0]
+    # closed form: C' = [[(g_t+g_b)/4 + m, (g_t-g_b)/2], [(g_t-g_b)/2, g_t+g_b]]
+    g_t, g_b, m = 20.0, 60.0, 5.0
+    c_tt = 0.25 * (g_t + g_b) + m
+    c_ts = 0.5 * (g_t - g_b)
+    c_ss = g_t + g_b
+    det = c_tt * c_ss - c_ts * c_ts
+    expect = det / c_ss                     # 1/[C'^-1]_tt (Schur complement)
+    assert q.C_sigma_fF == pytest.approx(expect, rel=1e-12)
+    assert expect == pytest.approx(m + 1.0 / (1.0 / g_t + 1.0 / g_b), rel=1e-12)
+    # dropping the sigma row/col instead of inverting would give c_tt = 25 fF
+    assert q.C_sigma_fF != pytest.approx(c_tt, rel=1e-6)
+
+
+def test_all_single_island_is_bit_identical_to_selection_matrix():
+    """Backwards compatibility: for grounded qubits B degenerates to a selection
+    matrix, so C' == C_S and the numbers are the pre-#20 ones EXACTLY."""
+    r = solve_circuit_model(_two_pads(),
+                            [JunctionInput("A", ("A_pad_sfs",), L_J=10e-9),
+                             JunctionInput("B", ("B_pad_sfs",), L_J=10e-9)])
+    assert r.qubits[0].C_sigma_fF == 24.57140776699029
+    assert r.qubits[1].C_sigma_fF == 24.561471896482004
+    assert r.couplings[0].C_g_fF == 1.98      # bit-exact |Maxwell offdiag|
+
+
+def test_mixed_grounded_and_floating_qubits():
+    """One grounded + one floating qubit in the same solve (B has one selection
+    row and one theta/sigma pair); the grounded one keeps its 1-island answer."""
+    cap = CapacitanceResult(
+        postpro_dir=Path("."), available=True,
+        terminals=(TerminalBinding(1, "G_pad_sfs", 11),
+                   TerminalBinding(2, "F_top_sfs", 12),
+                   TerminalBinding(3, "F_bot_sfs", 13)),
+        maxwell=[[35.0, -0.5, -0.1],
+                 [-0.5, 35.0, -5.0],
+                 [-0.1, -5.0, 35.0]])
+    r = solve_circuit_model(cap, [
+        JunctionInput("G", ("G_pad_sfs",), L_J=10e-9),
+        JunctionInput("F", ("F_top_sfs", "F_bot_sfs"), L_J=10e-9)])
+    grounded, floating = r.qubits
+    assert grounded.islands == ("G_pad_sfs",)
+    assert floating.islands == ("F_top_sfs", "F_bot_sfs")
+    # floating: pads have g = 35 - 5 - (0.5|0.1) to ground, so C_Sigma ~ g/2 + m
+    assert floating.C_sigma_fF == pytest.approx(19.9, abs=0.2)
+    assert grounded.C_sigma_fF == pytest.approx(35.0, abs=0.05)
+    assert len(r.couplings) == 1
+    # differential-to-single coupling = (c_ga - c_gb)/2 = (-0.5 + 0.1)/2
+    assert r.couplings[0].C_g_fF == pytest.approx(0.2, rel=1e-12)
+
+
+# --- golden fixture: the real sung_2021_device 6-terminal Maxwell matrix -----
+# Gmsh + ElmerFEM on the reproduced device (mesh min 2 um / max 30 um), fF.
+# Row/col order: QB1_top, QB1_bot, CPLR_top, CPLR_bot, QB2_top, QB2_bot.
+_SUNG_MAXWELL = [
+    [38.3635, -6.8074, -0.5407, -0.4427, -0.0628, -0.0615],
+    [-6.8074, 38.3940, -0.4435, -0.5403, -0.0615, -0.0629],
+    [-0.5407, -0.4435, 57.3523, -10.9032, -0.5404, -0.4436],
+    [-0.4427, -0.5403, -10.9032, 57.3349, -0.4432, -0.5413],
+    [-0.0628, -0.0615, -0.5404, -0.4432, 38.3767, -6.8111],
+    [-0.0615, -0.0629, -0.4436, -0.5413, -6.8111, 38.4087],
+]
+_SUNG_PADS = ["QB1_pad_top_sfs", "QB1_pad_bot_sfs", "CPLR_pad_top_sfs",
+              "CPLR_pad_bot_sfs", "QB2_pad_top_sfs", "QB2_pad_bot_sfs"]
+_SUNG_EJ_GHZ = {"QB1": 12.2, "CPLR": 71.0, "QB2": 15.8}
+
+
+def _sung_cap() -> CapacitanceResult:
+    return CapacitanceResult(
+        postpro_dir=Path("."), available=True,
+        terminals=tuple(TerminalBinding(i + 1, g, 11 + i)
+                        for i, g in enumerate(_SUNG_PADS)),
+        maxwell=_SUNG_MAXWELL)
+
+
+def _sung_qubits(differential: bool) -> list[JunctionInput]:
+    out = []
+    for k, name in enumerate(("QB1", "CPLR", "QB2")):
+        pads = (_SUNG_PADS[2 * k], _SUNG_PADS[2 * k + 1])
+        out.append(JunctionInput(name, pads if differential else pads[:1],
+                                 E_J=_SUNG_EJ_GHZ[name] * 1e9 * H_PLANCK))
+    return out
+
+
+def test_sung_device_differential_matches_lom2():
+    """Golden: three FLOATING transmons on the measured 6x6 Maxwell matrix.
+
+    Cross-check targets (session log 2607280204 §3):
+      * qiskit-metal LOM 2.0 (CompositeSystem/CircuitGraph, junction across both
+        pads = the same change of variables, but via a full network reduction):
+        E_C = 857.4 / 567.7 / 857.0 MHz  -> we must agree to well under 5%;
+      * the hand series estimate c_tb + c_t0||c_b0 = 22.04 / 33.14 / 22.05 fF,
+        which neglects the ~1 fF of stray capacitance to the *other* qubits'
+        pads and so runs ~2.5% low.
+    """
+    r = solve_circuit_model(_sung_cap(), _sung_qubits(differential=True))
+    got_c = [q.C_sigma_fF for q in r.qubits]
+    got_ec = [q.E_C_GHz for q in r.qubits]
+    # exact values of the implemented transformation
+    assert got_c == pytest.approx([22.593002, 34.123189, 22.601826], rel=1e-6)
+    assert got_ec == pytest.approx([0.8573554, 0.5676558, 0.8570206], rel=1e-6)
+    # vs LOM 2.0 (MHz) — the same transformation, independent implementation
+    assert [e * 1e3 for e in got_ec] == pytest.approx([857.4, 567.7, 857.0],
+                                                      rel=0.001)
+    # vs the hand series estimate (documented ~2.5% low)
+    assert got_c == pytest.approx([22.04, 33.14, 22.05], rel=0.03)
+    # The single-island reading of the SAME device (bottom pads silently
+    # grounded) is the #20 bug: 1.70x on C_Sigma here.  (The session log quotes
+    # 40.88 fF / 1.85x — that used the coarser setting-A mesh matrix, not this
+    # setting-C one; the *differential* 22.0 fF there is the setting-C number.)
+    wrong = solve_circuit_model(_sung_cap(), _sung_qubits(differential=False))
+    assert wrong.qubits[0].C_sigma_fF == pytest.approx(38.358282, rel=1e-6)
+    assert wrong.qubits[0].E_C_GHz == pytest.approx(0.5049817, rel=1e-6)
+    assert (wrong.qubits[0].C_sigma_fF
+            / r.qubits[0].C_sigma_fF) == pytest.approx(1.698, rel=0.01)
+
+
+def test_sung_device_differential_coupling_capacitance():
+    """C_g of two differential qubits = 1/4|c_aa + c_bb - c_ab - c_ba|."""
+    r = solve_circuit_model(_sung_cap(), _sung_qubits(differential=True))
+    by_pair = {(c.qubit_a, c.qubit_b): c for c in r.couplings}
+    assert set(by_pair) == {("QB1", "CPLR"), ("QB1", "QB2"), ("CPLR", "QB2")}
+
+    def diff_diff(i: int, j: int) -> float:
+        a_i, b_i, a_j, b_j = 2 * i, 2 * i + 1, 2 * j, 2 * j + 1
+        return abs(0.25 * (_SUNG_MAXWELL[a_i][a_j] + _SUNG_MAXWELL[b_i][b_j]
+                           - _SUNG_MAXWELL[a_i][b_j] - _SUNG_MAXWELL[b_i][a_j]))
+
+    assert by_pair[("QB1", "CPLR")].C_g_fF == pytest.approx(diff_diff(0, 1),
+                                                            rel=1e-12)
+    assert by_pair[("CPLR", "QB2")].C_g_fF == pytest.approx(diff_diff(1, 2),
+                                                            rel=1e-12)
+    assert by_pair[("QB1", "QB2")].C_g_fF == pytest.approx(diff_diff(0, 2),
+                                                           rel=1e-12)
+    # concrete numbers (fF)
+    assert by_pair[("QB1", "CPLR")].C_g_fF == pytest.approx(0.0487, rel=1e-3)
+    assert by_pair[("CPLR", "QB2")].C_g_fF == pytest.approx(0.0487, rel=1e-3)
+    assert by_pair[("QB1", "QB2")].C_g_fF == pytest.approx(0.000675, rel=1e-3)
+    # ...and NOT the raw node-node value (which is ~11x larger for QB1-QB2)
+    assert by_pair[("QB1", "QB2")].C_g_fF != pytest.approx(
+        abs(_SUNG_MAXWELL[0][4]), rel=0.1)
+    # g is computed from [C'^-1] of the branch coordinates, same order as
+    # LOM 2.0's compute_gs (9.79 / 9.79 / 0.216 MHz).
+    assert by_pair[("QB1", "CPLR")].g_MHz == pytest.approx(10.53, rel=0.01)
+    assert by_pair[("QB1", "QB2")].g_MHz == pytest.approx(0.1466, rel=0.01)
+
+
+# ---------------------------------------------------------------------------
 # (1) solver error handling
 # ---------------------------------------------------------------------------
 
@@ -226,10 +440,17 @@ def test_island_not_a_terminal_lists_available():
                             [JunctionInput("X", ("ZZ_sfs",), L_J=10e-9)])
 
 
-def test_multi_island_qubit_deferred():
-    with pytest.raises(DesignDslError, match="multi-island"):
-        solve_circuit_model(_two_pads(),
-                            [JunctionInput("AB", ("A_pad_sfs", "B_pad_sfs"), L_J=10e-9)])
+def test_more_than_two_islands_rejected():
+    """3+ islands = 2+ junctions, which one L_J/E_J cannot express -> raise."""
+    cap = CapacitanceResult(
+        postpro_dir=Path("."), available=True,
+        terminals=(TerminalBinding(1, "A_pad_sfs", 11),
+                   TerminalBinding(2, "B_pad_sfs", 12),
+                   TerminalBinding(3, "C_pad_sfs", 13)),
+        maxwell=[[30.0, -2.0, -1.0], [-2.0, 31.0, -1.5], [-1.0, -1.5, 29.0]])
+    with pytest.raises(DesignDslError, match="only 1 island .* or 2 islands"):
+        solve_circuit_model(cap, [JunctionInput(
+            "ABC", ("A_pad_sfs", "B_pad_sfs", "C_pad_sfs"), L_J=10e-9)])
 
 
 def test_two_qubits_same_island_rejected():
@@ -237,6 +458,26 @@ def test_two_qubits_same_island_rejected():
         solve_circuit_model(_two_pads(),
                             [JunctionInput("A", ("A_pad_sfs",), L_J=10e-9),
                              JunctionInput("A2", ("A_pad_sfs",), L_J=10e-9)])
+
+
+def test_one_qubit_repeating_an_island_rejected():
+    """islands=(a, a) would give theta = 0 (a singular transformation)."""
+    with pytest.raises(DesignDslError, match="same capacitance terminal"):
+        solve_circuit_model(_two_pads(), [JunctionInput(
+            "AA", ("A_pad_sfs", "A_pad_sfs"), L_J=10e-9)])
+
+
+def test_isolated_floating_pair_is_rejected_as_singular():
+    """A floating island pair with NO capacitance to ground has a zero
+    common-mode capacitance -> C' is singular, must raise (not invert to junk)."""
+    cap = CapacitanceResult(
+        postpro_dir=Path("."), available=True,
+        terminals=(TerminalBinding(1, "A_pad_sfs", 11),
+                   TerminalBinding(2, "B_pad_sfs", 12)),
+        maxwell=[[8.0, -8.0], [-8.0, 8.0]])   # only pad-pad, nothing to ground
+    with pytest.raises(DesignDslError, match="singular or ill-conditioned"):
+        solve_circuit_model(cap, [JunctionInput(
+            "AB", ("A_pad_sfs", "B_pad_sfs"), L_J=10e-9)])
 
 
 def test_empty_qubits_rejected():
@@ -348,6 +589,26 @@ def test_circuit_block_parses_and_scales_units(tmp_path):
     assert qs[1]["islands"] == ("B_pad_sfs",)
     assert qs[1]["E_J"] == pytest.approx(16e9 * H_PLANCK)  # 16GHz -> Joule (×h)
     assert qs[1]["L_J"] is None
+
+
+def test_shipped_two_pads_sidecar_wires_islands_and_lj(tmp_path):
+    """GH #20 (stale half): the shipped fixture authors the SCALAR ``island:`` key
+    and ``L_J: 10nH``; the parser must hand ``geo_build``/``JunctionInput`` an
+    ``islands`` TUPLE and L_J in Henry (not the literal string).  Exercises the
+    real fixture + the exact geo_build wiring, so the fix stays fixed."""
+    meta = parse_geo_meta_sidecar(Path(__file__).parent / "fixtures"
+                                  / "two_pads.meta.yaml")
+    qs = meta["circuit_model"]["qubits"]
+    assert [q["islands"] for q in qs] == [("A_pad_sfs",), ("B_pad_sfs",)]
+    assert [q["L_J"] for q in qs] == [pytest.approx(10e-9), pytest.approx(10e-9)]
+    assert all(q["E_J"] is None for q in qs)
+    # ...and the geo_build wiring block, verbatim, then a real solve:
+    junctions = [JunctionInput(name=q["name"], islands=tuple(q["islands"]),
+                               L_J=q.get("L_J"), E_J=q.get("E_J")) for q in qs]
+    r = solve_circuit_model(_two_pads(), junctions)
+    assert [q.name for q in r.qubits] == ["A", "B"]
+    assert r.qubits[0].E_J_GHz == pytest.approx(
+        josephson_energy_joule(10e-9) / H_PLANCK / 1e9, rel=1e-12)
 
 
 def test_circuit_block_absent_yields_none(tmp_path):
