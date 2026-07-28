@@ -31,8 +31,18 @@ after `fragment`, so output names are byte-identical to the legacy path (Palace 
 
 ## Commands
 
-Tests are **not** runnable from the default python — use conda **`metal-env`** (has qiskit_metal +
-gmsh 4.15.2 + gdstk 0.9.62 + shapely). `quantum_dsl` is not pip-installed, so set `PYTHONPATH`.
+Tests are **not** runnable from the default python — use conda **`metal-env`** (has qiskit_metal 0.5.1 +
+gmsh **4.11.1** + gdstk 0.9.62 + shapely). `quantum_dsl` is not pip-installed, so set `PYTHONPATH`.
+The **reference** env `quantum-metal` has quantum-metal 0.7.6 (editable, from `~/metal/qiskit-metal`) +
+gmsh 4.15.2 + ElmerFEM 9.0 (`~/opt/elmer/bin` — build it onto `PATH`); use it only for cross-checks
+against qiskit-metal, never to run this suite.
+
+> ⚠ **Do NOT run the suite with `QDSL_MESH_ALGO3D` exported** — the two `generate_mesh`
+> fallback tests exercise the path that variable deliberately bypasses. The demo command below
+> needs it; the suite must not have it. (They now `delenv` it defensively, so this is belt-and-braces.)
+> ⚠ **`mpirun` is currently wedged on the WSL host** (`orte_init` hangs, no output) → Palace cannot
+> run at all, so add `--deselect tests/test_geo_pipeline.py::test_two_pads_live_capacitance_matrix`
+> or the suite blocks for ~50 min. See `.claude/session/2607280204.md` for the diagnosis.
 
 ```powershell
 # Full suite (gmsh/gdstk/Palace verification all run here):

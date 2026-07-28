@@ -452,6 +452,10 @@ def test_generate_mesh_silent_empty_falls_back_to_hxt(monkeypatch):
     (regression: qm4q silently wrote a 533-byte 0-element chip.msh)."""
     from quantum_dsl.dsl._gmsh_mesh import generate_mesh
 
+    # This test exercises the FALLBACK path, which the QDSL_MESH_ALGO3D override
+    # deliberately skips — and the documented demo command exports that var, so a
+    # developer running the suite in the same shell would see a spurious failure.
+    monkeypatch.delenv("QDSL_MESH_ALGO3D", raising=False)
     gmsh.initialize()
     gmsh.option.setNumber("General.Terminal", 0)
     gmsh.model.add("silent_empty")
@@ -481,6 +485,9 @@ def test_generate_mesh_raises_when_hxt_also_empty(monkeypatch):
     instead of letting the caller write an empty (unsolvable) mesh."""
     from quantum_dsl.dsl._gmsh_mesh import generate_mesh
 
+    # Same reason as the sibling test: the override path skips the fallback.
+    # (Its own empty-mesh guard is covered by tests/test_geo_mesh_guards.py.)
+    monkeypatch.delenv("QDSL_MESH_ALGO3D", raising=False)
     gmsh.initialize()
     gmsh.option.setNumber("General.Terminal", 0)
     gmsh.model.add("always_empty")

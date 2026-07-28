@@ -300,3 +300,20 @@ Single metal layer + dielectric substrate is the scope; defer until a multi-laye
   raise)+2 回归测试(**12 passed, 1 skipped**);实测演示命令须带 `QDSL_MESH_ALGO3D=10`(两 env 均稳)。
   端到端重验:`build/qm4q_demo` 新解 pad_top 103.5 fF,与 6/27 基线 <2%。新文档
   `docs/report/qm4q_talk_script.md`(对着念/操作的分幕汇报稿,含行号指引 + 保底预案)。
+- [`session/2607280204.md`](session/2607280204.md) — 2026-07-28 · **review `5737011`
+  (sung_2021_device 例子) + 库正确性 + qiskit-metal/Elmer 交叉验算**(无代码改动)。
+  例子 **跑不起来**(5 种 Algorithm3D × 3 种 min_size × 2 种 substrate_gap × 7 种几何变体全失败;
+  对照 `qm4q` 与 qiskit-metal 自己的 QGmshRenderer 都能出网格 → 是 carve/fragment 的几何相关脆弱性)。
+  取证发现 **silent-wrong-result 级库缺陷**: `substrate_gap_um: 0` 下 fragment 静默产出损坏模型
+  (衬底体被复制 / 负面积 face / 整张 z=0 界面被 `resolve_conductor_faces` 误标成 `gnd_layer1_sfs`),
+  fragment 后无任何拓扑不变量检查; 且 `generate_mesh` 的 `QDSL_MESH_ALGO3D` 分支绕过了空网格守卫。
+  **本机从源码装好 ElmerFEM 9.0** (`~/opt/elmer`) 并在 qiskit-metal 0.7.6 里 1:1 重建该器件 →
+  Elmer 电容 + LOM 2.0 + Hcpb 实测: E_C 比论文大 4.4–6.7×、无量纲耦合小 20×/~40× → 几何未按论文标定;
+  例子的单岛 `circuit_model` 写法在同一张网格上有 1.70× 误差。
+  **同 session 内 4-agent 编排修复全部落地** (`8e45507` `d07b087` `ab94a13` `e61f324` `6db8134`):
+  fragment 的 dilate 往返被查明是**意外 shape-heal**(非单位换算) → 改 `FRAGMENT_SCALE_LADDER=(1.0,1e2)`;
+  fragment 后拓扑不变量 + `resolve_conductor_faces` 收紧; 浮动/差分多岛 transmon(与 LOM 2.0 吻合 <0.1%);
+  `ground_faces` 细化 + env-override 空网格守卫。全套 `8 failed/313 passed/2 errors` → **`349 passed,
+  3 skipped, 1 deselected, 0 failed`**。例子端到端跑通且按论文标定 (C_Σ 比值 1.03/1.02/1.00,
+  q–c 耦合 1.07×; 唯一未达标 C_12 低 ~50×, 已如实写进 header)。
+  🔴 遗留: 本机 MPI 挂死 → 全程**无实解覆盖**, 修好后必须补 two_pads / sung 的 Palace 回归。
