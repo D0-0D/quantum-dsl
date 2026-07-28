@@ -1,5 +1,6 @@
 // =====================================================================
 // sung_2021_device.geo
+<<<<<<< Updated upstream
 // Native Gmsh .geo — simplified reproduction of the 3-body tunable-coupler
 // device of Sung et al., Phys. Rev. X 11, 021058 (2021) / arXiv:2011.01261.
 // Paper reference values + what this layout actually measures: see the header
@@ -26,11 +27,21 @@
 // clean, overlap 10 µm (dx=50, m_x=30) and no overlap at all (dx=100) both die
 // in occ.fragment with "Boolean fragments failed" — at every scale in
 // {1, 1e2, 1e3}, so it is the near-degenerate boolean, not the conditioning.
+=======
+// Paper-inspired native Gmsh .geo for the 3-body tunable coupler device
+// from Sung et al., Phys. Rev. X 11, 021058 (2021).
+//
+// The published device is a coplanar three-body layout: QB1 and QB2 are
+// transmon-like islands, and the center element is a larger tunable coupler.
+// This example keeps that overall arrangement but uses the repo's proven
+// mesher-safe pocketed-island construction rather than photo-accurate meanders.
+>>>>>>> Stashed changes
 // =====================================================================
 
 SetFactory("OpenCASCADE");
 Include "qlib.geo";
 
+<<<<<<< Updated upstream
 // ---- Device geometry parameters (µm) --------------------------------
 // Qubit transmons (QB1, QB2)
 q_pad_w  = 360;   // pad width
@@ -45,6 +56,24 @@ c_pad_h  = 360;
 c_pad_sep= 8;
 c_mx     = 30;
 c_my     = 8;
+=======
+// ---- Device Geometry Parameters (µm) --------------------------------
+q1_cx   = -320;   // QB1 center X
+c_cx    = 0;      // CPLR center X
+q2_cx   = 320;    // QB2 center X
+q_cy    = 0;      // Global center Y
+
+// Transmon dimensions (paper-inspired coplanar approximation)
+pad_w   = 120;    // QB pad width
+pad_h   = 80;     // QB pad height
+c_pad_w = 160;    // Coupler pad width (larger than qubits)
+c_pad_h = 120;    // Coupler pad height
+pad_sep = 30;     // Gap between top and bottom pads
+jj_w    = 2;      // JJ width
+
+// Ground isolation
+pkt_gap = 25;     // Vacuum gap surrounding the islands
+>>>>>>> Stashed changes
 
 dx       = 30;    // qubit pad ↔ coupler pad gap (sets C_1c / C_2c)
 jj_w     = 2;     // JJ width (lumped element: GDS layer 20, not meshed)
@@ -97,7 +126,16 @@ width = jj_w;
 Call JUNCTION;
 Physical Surface("jj::1::QB2::jj") = { sret };
 
+<<<<<<< Updated upstream
 // ---- 4) Ground sheet with one merged vacuum pocket -------------------
+=======
+// ---- 4) Ground Sheet with Vacuum Pockets ----------------------------
+// The real paper device is a coplanar layout: the coupling is through vacuum
+// gaps between the three islands, not through a direct metal bridge. We keep
+// that by carving one pocket around each island and leaving the inter-island
+// separation open.
+g_x0 = -760; g_y0 = -360; g_w = 1520; g_h = 720;
+>>>>>>> Stashed changes
 gs = news;
 Rectangle(gs) = { g_x0, g_y0, 0, g_w, g_h };
 sground = gs;
@@ -120,4 +158,8 @@ pkt_w = q_pad_w + 2*q_mx; pkt_h = 2*q_pad_h + q_pad_sep + 2*q_my;
 Call GROUND_POCKET;
 sground = sret;
 
+<<<<<<< Updated upstream
 Physical Surface("ground::1::chip::gnd") = { sground };
+=======
+Physical Surface("ground::1::chip::gnd") = { sret };
+>>>>>>> Stashed changes
