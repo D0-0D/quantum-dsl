@@ -1,0 +1,8 @@
+# 逐字节原样归档的第三方参考数据 —— **不许**做行尾转换。
+#
+# tests/fixtures/lom405/*.txt 是 qiskit-metal tutorial 4.05 的 Q3D 电容矩阵导出件
+# (Apache-2.0, 出处见该目录的 SOURCE.md), 原文是 **CRLF + 制表符**。SOURCE.md 里记了
+# 它们的 sha256 当溯源凭据; 若 git 在 commit/checkout 时把 CRLF 归一成 LF, 那个 sha256
+# 在新 clone 上就对不上了 —— 一个自称「verbatim」的 fixture 悄悄变了内容, 正是 spec
+# §11 R4 要防的溯源污染。`-text` 关掉全部转换。
+tests/fixtures/lom405/*.txt -text
