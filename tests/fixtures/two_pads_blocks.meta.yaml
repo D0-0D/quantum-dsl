@@ -1,0 +1,91 @@
+# =====================================================================
+# two_pads_blocks.meta.yaml — the SAME geometry as two_pads.meta.yaml, but
+# extracted as TWO separate blocks (M8 / P0-A + P0-B).
+#
+# 它存在的唯一目的是 spec §7 的第一行验收: **分块 vs 整片, 对角 < 2%**。
+# 两个 sidecar 共用同一份 `two_pads.geo`, 同一层栈 / airbox / 网格 / solver 设置 ——
+# 唯一的差别就是这里多了 `extract:` / `assemble:` / `subsystems:`。所以
+#
+#     build_geo(two_pads.meta.yaml)         → 一次整片解, 2×2 矩阵
+#     build_geo(two_pads_blocks.meta.yaml)  → 两次独立解, 各 1×1, 再拼装
+#
+# 是一个干净的 A/B 对照。
+#
+# ⚠ 这个算例故意是「分块的最坏情形」: A 与 B 之间**没有**共享节点, 所以拼装后
+# 的矩阵是块对角的 —— 整片解里那个 −1.98 fF 的互电容在分块模型里**必然为零**。
+# 这不是 bug, 是「切割面只能落在 component 边界」的直接代价 (spec §3.2 / 风险 R7):
+# 跨块的耦合只能靠**共享节点名**表达, 而两块分离的焊盘之间没有共享导体。
+# 所以对照的判据只针对**对角** (自电容), 不针对非对角。
+#
+# 顺带: 每块的 ground sheet extent 与 airbox 都按该块自己的 bbox 重算 (S3/S4),
+# 这是分块省算力的主要来源 —— 见 block_A.geo / block_B.geo 里的显式几何。
+# =====================================================================
+
+schema: qiskit-metal/design-dsl/3
+
+geo: two_pads.geo
+
+vars: {}
+
+extract:
+  blocks:
+    - name: A
+      components: [A]
+      junctions:
+        - name: jA
+          # 单端 between = 结跨「该节点 ↔ 地」= 接地单岛 transmon,
+          # 与 two_pads.meta.yaml 的 `island: A_pad_sfs` 逐位同义。
+          between: [metal::1::A::pad]
+          L_J: 10nH
+    - name: B
+      components: [B]
+      junctions:
+        - name: jB
+          between: [metal::1::B::pad]
+          L_J: 10nH
+
+assemble:
+  # two_pads.geo 没有 `ground::` 面 —— 参考地退化成真空外边界 (vacuum_outer),
+  # 所以这里不声明 ground_node。每块的 1×1 Maxwell 对角就是该焊盘的对地电容。
+  nodes_force_keep: []
+
+subsystems:
+  - {name: A, type: transmon, junction: jA}
+  - {name: B, type: transmon, junction: jB}
+
+simulation:
+  gmsh:
+    layer_stack:
+      1:
+        kind: metal
+        thickness: 2
+        z: 0
+        material: pec
+      3:
+        kind: dielectric
+        thickness: -100
+        z: 0
+        material: silicon
+        eps_r: 11.45
+
+    airbox:
+      top: 120
+      bottom: 120
+      side_buffer: 80
+
+    mesh:
+      max_size: 40
+      min_size: 4
+
+    gds:
+      lib_name: two_pads
+      top_cell: two_pads
+      unit: 1.0e-6
+      precision: 1.0e-9
+      by_role:
+        metal: {layer: 1, datatype: 0}
+
+    solver:
+      type: Electrostatic
+      order: 2
+      l0: 1.0

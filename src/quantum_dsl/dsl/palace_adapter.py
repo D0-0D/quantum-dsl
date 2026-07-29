@@ -1028,7 +1028,7 @@ def _circuit_model_doc(circuit_model: Any) -> dict[str, Any]:
     Duck-typed (不 import circuit_model, 避免 circuit_model→palace_adapter 的循环
     导入)。tuple → list 以便 ``yaml.safe_dump`` (它不能表示 Python tuple)。
     """
-    return {
+    doc = {
         "method": circuit_model.method,
         "validity": circuit_model.validity,
         "units": dict(circuit_model.units),
@@ -1037,6 +1037,11 @@ def _circuit_model_doc(circuit_model: Any) -> dict[str, Any]:
                 "name": q.name,
                 "islands": list(q.islands),
                 "C_sigma_fF": q.C_sigma_fF,
+                # 几何值 (不折结电容 C_j) —— 只在与 C_sigma_fF 不同时才写, 免得给
+                # 每一份既有产物凭空加一行。
+                **({"C_sigma_geometric_fF": q.C_sigma_geometric_fF}
+                   if getattr(q, "C_sigma_geometric_fF", 0.0)
+                   and q.C_sigma_geometric_fF != q.C_sigma_fF else {}),
                 "E_C_GHz": q.E_C_GHz,
                 "E_J_GHz": q.E_J_GHz,
                 "f01_GHz": q.f01_GHz,
@@ -1055,6 +1060,38 @@ def _circuit_model_doc(circuit_model: Any) -> dict[str, Any]:
             for c in circuit_model.couplings
         ],
     }
+    # M8 / P0-D: TL 谐振器子系统 + 色散位移 χ。仍是 duck-typed, 且**只在非空时**才加
+    # 键 —— 不带谐振器的既有产物逐字节不变。
+    resonators = getattr(circuit_model, "resonators", ())
+    if resonators:
+        doc["resonators"] = [
+            {
+                "name": r.name,
+                "node": r.node,
+                "f_bare_GHz": r.f_bare_GHz,
+                "f_loaded_GHz": r.f_loaded_GHz,
+                "Cr_fF": r.Cr_fF,
+                "Lr_nH": r.Lr_nH,
+                "Z0_ohm": r.Z0_ohm,
+                "mode": r.mode,
+            }
+            for r in resonators
+        ]
+    couplings = getattr(circuit_model, "resonator_couplings", ())
+    if couplings:
+        doc["resonator_couplings"] = [
+            {
+                "qubit": c.qubit,
+                "resonator": c.resonator,
+                "g_MHz": c.g_MHz,
+                "chi_MHz": c.chi_MHz,
+                # χ 是二阶微扰的解析式 (Koch 2007 eq. 3.10), 近共振/强耦合失效 ——
+                # 消费端必须能看到它是哪种方法算的 (风险 R6)。
+                "chi_method": c.chi_method,
+            }
+            for c in couplings
+        ]
+    return doc
 
 
 def write_results_sidecar(

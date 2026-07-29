@@ -1,0 +1,129 @@
+# =====================================================================
+# sung_2021_device_blocks.meta.yaml — 与 sung_2021_device.meta.yaml **同一份
+# 几何**, 但按 component 边界分成 3 个块分别提取, 再拼装 (M8 / P0-A + P0-B)。
+#
+#     build_geo(sung_2021_device.meta.yaml)         → 1 次整片解, 6×6 矩阵
+#     build_geo(sung_2021_device_blocks.meta.yaml)  → 3 次独立解 (各 2×2), 再拼装
+#
+# 两份 sidecar 的层栈 / airbox / 网格 / solver 设置逐字相同, 唯一差别就是这里多了
+# `extract:` / `assemble:` / `subsystems:`, 所以是一个干净的 A/B 对照 (spec §7)。
+# 器件本身与论文对标的全部说明见 sung_2021_device.meta.yaml 的长头, 这里不重复。
+#
+# ---------------------------------------------------------------------
+# ⚠ 这个分块**故意**只保 C_Σ, 不保 qubit↔coupler 耦合 —— 读数前先看懂这条
+# ---------------------------------------------------------------------
+# 跨块的连通在 New LOM 里只有一条机制: **共享节点名** (spec §1.2 / §6)。共享节点
+# 表达的是「同一个导体被两块各画了一半」, 电容在那里叠加。
+#
+# 而这个器件的 qubit↔coupler 耦合是**两块分离焊盘隔着真空缝的互电容** —— 不是同
+# 一个导体。所以任何落在 component 边界上的切割面都会把它切掉: 分块模型里
+# C_1c / C_2c 必然为 0, g_1c / g_2c 必然为 0。这不是 bug, 是 spec §3.2「切割面只
+# 能落在 component 边界」的直接代价 (风险 R7)。
+#
+# 换句话说: **想在哪保耦合, 就把那两个导体放进同一个块**。若要保 q–c 耦合, 就写
+# `components: [QB1, CPLR]`; 若要保全部三体耦合, 那就是整片解 —— 用另一份 sidecar。
+# 本文件的定位是「自电容 C_Σ 的分块对照 + 省算力」, 不是「整片解的替代品」。
+#
+# 对照靶子 (来源: .claude/session/2607280204.md §3/§7):
+#   Elmer  min2/max30, 6.87 M tets  : C_Σ = 102.1 / 232.8 / 102.1 fF   ← 最细网格, 基准
+#   Palace 整片 order1 / 8 rank     : C_Σ = 110.69 / 252.80 / 111.03 fF (Palace/Elmer 1.084~1.087)
+#   论文 (= e²/2h/E_C)              : C_Σ =  99.3 / 227.9 / 101.9 fF
+# 判据 (spec §7): 分块对 Elmer **< 5%**。⚠ 注意 Palace 整片本身就比 Elmer 高 8.5%
+# (网格收敛不确定度, status.md 已记), 所以分块要对的其实是「与 Palace 整片一致」——
+# 与 Elmer 的差里有一份不属于分块。
+#
+# ⚠ spec §7 写的「sung 首次解得完」这条动机已经**过期**: 整片解在
+# 2607280204 §7 就已经跑完 (order 1 / 8 rank / 50.9 s)。分块的实际收益是
+# 每块的未知量少一个量级, 于是 order 2 才跑得起 (整片 order 2 是 issue #22)。
+# =====================================================================
+
+schema: qiskit-metal/design-dsl/3
+
+geo: sung_2021_device.geo
+
+vars: {}
+
+extract:
+  blocks:
+    # 三个块各含一个 component。没有共享节点 → 见上面那段: 块间无耦合。
+    - name: qb1
+      components: [QB1]
+      junctions:
+        - name: j1
+          between: [metal::1::QB1::pad_top, metal::1::QB1::pad_bot]
+          E_J: 12.2GHz          # 单结
+    - name: cplr
+      components: [CPLR]
+      junctions:
+        - name: jc
+          between: [metal::1::CPLR::pad_top, metal::1::CPLR::pad_bot]
+          E_J: 71GHz            # 非对称 SQUID 的零磁通最大值 46+25 GHz
+    - name: qb2
+      components: [QB2]
+      junctions:
+        - name: j2
+          between: [metal::1::QB2::pad_top, metal::1::QB2::pad_bot]
+          E_J: 15.8GHz          # 非对称 SQUID 的零磁通最大值 13+2.8 GHz
+
+assemble:
+  # 金属地是接地电极, 不是一个 Terminal (_conductor_groups 排除 gnd_*) —— 声明它
+  # 只是把「参考地是谁」写进溯源, 它本来就不在任何 Maxwell 矩阵的行列里。
+  ground_node: ground::1::chip::gnd
+  # 没有需要强留的非动力学节点: 每块的两个焊盘都被结引用 → 都是动力学自由度,
+  # Schur 无事可做 (eliminated 应为空)。
+  nodes_force_keep: []
+
+subsystems:
+  # 三个都是**浮动/差分** transmon (结跨两焊盘, 都不接地) —— 单岛写法会把另一个
+  # 焊盘静默接地, 在这个器件上是 1.70× 的 C_Σ 误差。
+  - {name: QB1,  type: transmon, junction: j1}
+  - {name: CPLR, type: transmon, junction: jc}
+  - {name: QB2,  type: transmon, junction: j2}
+
+simulation:
+  gmsh:
+    layer_stack:
+      1:
+        kind: metal
+        thickness: 2
+        z: 0
+        material: pec
+      3:
+        kind: dielectric
+        thickness: -750
+        z: 0
+        material: silicon
+        eps_r: 11.45
+
+    airbox:
+      top: 890
+      bottom: 1650
+      side_buffer: 200
+
+    mesh:
+      max_size: 80
+      min_size: 2
+      conductor_refine:
+        min_dist: 2
+        max_dist: 40
+
+    gds:
+      lib_name: sung_device
+      top_cell: sung_device
+      unit: 1.0e-6
+      precision: 1.0e-9
+      arc_tol_um: 0.01
+      union_same_layer: true
+      default_datatype: 0
+      by_role:
+        metal:  {layer: 1,  datatype: 0}
+        ground: {layer: 1,  datatype: 0}
+        jj:     {layer: 20, datatype: 0}
+
+    substrate_gap_um: 0
+
+    solver:
+      type: Electrostatic
+      order: 2
+      l0: 1.0
+      outer_boundary: open

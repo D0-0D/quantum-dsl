@@ -74,6 +74,10 @@ __all__ = [
     "solve_circuit_model",
     "CircuitModelResult",
     "JunctionInput",
+    "ResonatorInput",
+    "emit_block_geo",
+    "lumped_cpw",
+    "guided_wavelength",
     "preview_gds",
     "GdsPreview",
     "to_gdsfactory_component",
@@ -98,6 +102,17 @@ _LAZY_EXPORTS = {
     "solve_circuit_model": ("circuit_model", "solve_circuit_model"),
     "CircuitModelResult": ("circuit_model", "CircuitModelResult"),
     "JunctionInput": ("circuit_model", "JunctionInput"),
+    "ResonatorInput": ("circuit_model", "ResonatorInput"),
+    # M8 / P0-A: 块几何 emitter。``geo_emit`` 本体只需 shapely, 但 ``emit_block_geo``
+    # 另需 gmsh 读源几何 —— 所以它也必须走这条 lazy 路径。
+    "emit_block_geo": ("geo_emit", "emit_block_geo"),
+    # M8 / P0-F: CPW 解析集总 (纯 math)。
+    "lumped_cpw": ("cpw_analytic", "lumped_cpw"),
+    "guided_wavelength": ("cpw_analytic", "guided_wavelength"),
+    # M8 / P0-B: 拼装层刻意 **不** 在这里导出 —— 子模块 ``quantum_dsl.dsl.assemble``
+    # 与函数 ``assemble`` 同名, 一旦子模块被 import, 属性查找就命中模块而非函数
+    # (PEP 562 的 __getattr__ 只在正常查找失败时才触发)。用
+    # ``from quantum_dsl.dsl.assemble import assemble, ExtractedCell, ...``, 无歧义。
     "preview_gds": ("gds_viz", "preview_gds"),
     "GdsPreview": ("gds_viz", "GdsPreview"),
     "to_gdsfactory_component": ("gds_viz", "to_gdsfactory_component"),
