@@ -24,8 +24,16 @@ commits, test-count changes)._
 - **Status**: **current phase COMPLETE** — R1–R5 + R+ all met; PR #14 (`feat/native-geo-dsl` →
   `main`) **merged** (`931b8ec`). Post-merge (2606080906): docs/examples cleaned up for the native
   path (see below).
-- **Tests** (2607290110): full suite **368 passed, 3 skipped — 0 failed, 0 errors, 0 deselected**
-  in conda `metal-env` (2 min 30 s). Run it as
+- **M8 P0 `[x]`** (2607290329) — `.claude/lom-parity-spec.md` 的 **P0-A…F 全部落地**
+  (= 里程碑 M8a–M8d)，架构照抄 qiskit-metal **New LOM (LOM 2.0)**。6 个并行 subagent
+  (同一主工作树、文件域分开) + 主控做契约/编排/验证。新模块 `dsl/assemble.py`
+  (电容图累加 + **Schur 消元**) 与 `dsl/cpw_analytic.py` (CPW 解析集总，含动力学电感);
+  `emit_block_geo` 派生并**落盘** `block_<name>.geo`; sidecar 新增 `extract:` /
+  `assemble:` / `subsystems:`; `C_j` / `TL_RESONATOR` / χ / 文件+inline 矩阵注入。
+  详见 `session/2607290329.md`。
+- **Tests** (2607290329): full suite **619 passed, 3 skipped — 0 failed, 0 errors, 0 deselected**
+  in conda `metal-env` (2 min 25 s)。3 个 skip 仍是 2 × viz + 1 × gated live Palace。
+  _(2607290110 时是 368 passed, 3 skipped; M8 P0 加了 +251 个测试。)_ Run it as
   `PYTHONPATH=src python -m pytest tests/ -q`
   and **without** `QDSL_MESH_ALGO3D` exported — see the ⚠ notes in `CLAUDE.md`.
   - The `--deselect` ritual is **gone**: the live-Palace `skipif` marker had drifted onto
@@ -54,6 +62,41 @@ R3 circuit solve ✅, R4 read QDA ✅, R5 GDSFactory) + verbal "电容矩阵就�
 - M5a impl (emit_geo bridge, carved ground): see `session/2606080338.md`.
 
 ## Recent notable commits
+- _(branch `main` — 2607290329, **未提交**)_ **M8 P0 落地**（`.claude/lom-parity-spec.md`
+  的 P0-A…F）。全套 **368 → 619 passed, 3 skipped, 0 failed**。要点：
+  1. **拼装层 `dsl/assemble.py`**（P0-B，核心）：电容图按**共享节点名累加** + **Schur 消元**
+     非动力学节点（eq 7b）。**对 4.05 golden 的 `C_k` 偏差 7.7e-16**（判据 <0.1%）。
+     Schur 在 **node 基**做，结基变换仍由 M6 的 `C' = BᵀC_S B` 承担 → **M6 一行不改**。
+     非动力学节点用**结构判定**（不出现在任何 `between` 里），已对参考的 `get_nodes_keep()`
+     逐项比对（一处不一致已解释：参考的清单在结基里，那两个是残余共模，由下一层消掉）。
+  2. **issue #20 / 缺口 ⑥ 收尾**：Schur vs 硬接地实测 —— 接地把跨 cell 耦合
+     **`g` 25.14 MHz → 0.00**（不是扰动，是整条删掉），块内 `C_Σ` 只错 **+0.9%**
+     （后者才是会静默出货的那部分）。
+  3. **分块提取 `emit_block_geo`**（P0-A，G1）：`block_<name>.geo` **落盘** + 进 manifest 带
+     sha256 + physical 名逐字相同 + 块 mesh 的 group 名是整片的子集。S2（pocket 保留）改成
+     **shapely 求交**而非按 component 过滤 → 结构上写不错。S4（airbox 收缩）**零代码**。
+  4. **`two_pads` 分块 vs 整片**（干净对照，同 order/同网格）：对角 **+1.03% / +1.06%**
+     （判据 <2% ✓）；非对角 −1.976 fF → **0**（跨块耦合只能靠共享节点名，结构必然）。
+  5. **`sung` 三块 order 2 实解**：C_Σ **98.856 / 226.160 / 98.835 fF**，对 Elmer
+     **−3.2% / −2.9% / −3.2%**（判据 <5% ✓），对论文 0.995/0.992/0.970。
+     ⚠ **但这是两个大误差反向抵消** —— 补的 order-1 对照显示：同 order 下**分块本身
+     抬高 C_Σ +12~15%（超判据）**，order 1→2 又压低 ~21%。sung 上**无法干净分离**
+     （整片 order 2 = #22 解不出来，order 1 离收敛差 ~20%）→ 可信的分块误差是
+     `two_pads` 的 +1.03%。
+  6. **R8「分块后总墙钟没降」成立**：分块 3 块合计 **2.19 M 未知量 / 132.1 s**
+     ≈ 整片 order 2 的 2.24 M（每块重划自己的衬底+airbox，抵消了 S3/S4 的节省）。
+     真实收益是**单次求解 2.24M → 0.6~1.0M，于是 order 2 才跑得起**（整片 order 2 = #22）。
+  7. P0-C 文件/inline 注入：**Q3D 解析对参考 `load_q3d_capacitance_matrix` 逐位一致**；
+     `_SUNG_MAXWELL` 往返恒等逐位。P0-D `TL_RESONATOR` + χ（Koch 3.10，`f_bare`/`f_loaded`
+     都输出）：**χ 对老 LOM −16.1%，未达 5%，已如实记录并分解成两个已知定义差**
+     （g 定义 −8.50% + 数值 CPB 谱 −8.33%，乘积 0.8388 ≈ 实测 0.8392；公式本身逐位一致）。
+     P0-E `C_j` **只在 `circuit_model`、结基对角、求逆之前**（spec 那式是老 LOM 标量加法，
+     对耦合系统错；已在真实耦合矩阵上实证与 New LOM 的 node 基折入 `==` 逐位）。
+     P0-F CPW 对参考 **最大偏差 9.2e-16**（判据 1%），窄线 `Lk/Lext = 1.399`。
+  8. 顺带放宽 `build_palace_config` 的 **≥2 Terminal → ≥1**（分块后单导体块合法；0 个仍 raise）。
+  🔴 欠：§7 的 **S2 live Palace 护栏没跑**（需要 pocket 互不相连的设计 —— `chip_layout` 的
+  6 个 pocket 已被 OCC 合成 1 个连通孔，`keep_all_subtractive` 在它上面是 no-op）。
+  See `session/2607290329.md`。
 - _(branch `main` — 2607280204)_ **`5737011` review 的修复落地** (6 个 commit: `8e45507` `d07b087`
   `ab94a13` `e61f324` `6db8134` + 收尾)。全套 `8 failed/313 passed/2 errors` → **`349 passed,
   3 skipped, 1 deselected, 0 failed`**。四条:
@@ -181,9 +224,13 @@ R3 circuit solve ✅, R4 read QDA ✅, R5 GDSFactory) + verbal "电容矩阵就�
     (零厚度面 `fragment` **进**界面, Palace 自己的 CPW 例子与 qiskit-metal 的 Elmer 流程都这么做)
     根本不需要共面布尔, 既是退路, 也是第一次能让两条路的 C 互相对照。→ **#24**。
   - 🔴 ④ 网格收敛扫描 `--converge` → **#26**。
-  - 🔴 ⑥ 浮动 bus 的 Schur 消元 → **#20** 的剩余部分。**不能**用 σ 那套办法: qubit 两焊盘与外界
-    无电荷交换故丢掉 σ 正确, 而浮动 bus 是真正的动力学自由度、同时耦合两个 qubit, 必须正确积掉
-    (消元会重整化 qubit-qubit 耦合)。
+  - ✅ ⑥ **浮动 bus 的 Schur 消元 —— 2607290329 落地** (`dsl/assemble.py`, M8 P0-B)。
+    在 **node 基**做 Schur 补 `C_kk − C_kr C_rr⁻¹ C_rk` (eq 7b), 结基变换仍归 M6 的
+    `C' = BᵀC_S B` (两者可交换, 被消节点不在结坐标张成里) → M6 一行不改。对 4.05 的
+    `C_k` 偏差 **7.7e-16**。实测硬接地的代价: 跨 cell `g` **25.14 MHz → 0.00**,
+    块内 `C_Σ` +0.9%。⚠ 只在 **`extract:` 分块路径**上生效 —— 不带 `extract:` 的整片路径
+    仍然把未被引用的 Terminal 当接地电极 (那条路径没有「哪些节点是动力学的」这个声明)。
+    `chip_layout` 的浮动 bus 若要享受它, 得改写成 `extract.blocks` + `nodes_force_keep`。
   - 🟡 **`run_palace` / Palace config 三处待整理** → **#27**(另含场输出硬编码): `dry_run` 完全吞掉 `num_procs`
     (Palace `--dry-run` 本意就是按 rank 数试划分, 故 `--np 8 --dry-run` 现在验不到 8 路划分);
     native 分支无条件追加 `-np N` 而 WSL 分支只在 `>1` 时前置 `mpirun -np N`。

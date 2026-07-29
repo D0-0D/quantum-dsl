@@ -185,6 +185,68 @@ when `out_png` is given). `read_gds_layers` introspection; `to_gdsfactory_compon
       absent in metal-env, so that path is implemented-but-unverified-here). CLI `--png` verified
       end-to-end (`two_pads` → real 1397×657 PNG). Full suite **314 passed, 3 skipped**, no regressions.
 
+### M8 — LOM parity: 分块提取 + 拼装层（对标 New LOM / LOM 2.0）
+Spec: **`.claude/lom-parity-spec.md`**（v3；对标基线 = `lom_core_analysis.py` + tutorial 4.04/4.05，
+理论 arXiv:2103.10344）。目标是让 `meta.yaml + .geo` 路径具备 qiskit-metal LOM 流程的**基本功能面**。
+Legend 同上。**P0 = M8a–M8d 已全部完成**（`session/2607290329.md`）；P1/P2 切后续 phase。
+
+- [x] **M8a — P0-A 子集提取**：`geo_emit.emit_block_geo()` 从完整 `.geo` 派生并**落盘**
+      `block_<name>.geo`（G1：严格在 `load_geo` 上游，下游一行不改 → Palace 的 physical group 名
+      byte-identical）。**S2 pocket 保留改成 shapely 求交**（`ground_poly ∩ 块窗口` 自动保留窗口内
+      全部孔，与哪个 component 入选无关）→ spec 的头号 silent-wrong 风险 R1 从「要小心」变成
+      「结构上写不错」；`keep_all_subtractive=False` 只作故意错的护栏路径。**S4 airbox 零代码**
+      （由 `compute_chip_bbox_from_geo(块几何)` 派生）。顺带放宽 `build_palace_config` 的
+      ≥2 Terminal → ≥1（单导体块合法；0 个仍 raise）。
+      验收：`two_pads` 分块 vs 整片对角 **+1.03%/+1.06%**（<2% ✓）；`block_*.geo` 落盘+manifest
+      +sha256+名字逐字；S4 bbox 收缩 `chip_layout` −40.5%；S2 护栏 ground 面积 +7.14%/孔 2→1。
+      ⚠ **§7 的 S2 live Palace 护栏未跑** —— 需要 pocket 互不相连的设计。
+- [x] **M8b — P0-C 文件/inline 矩阵注入**：`palace_adapter.capacitance_from_file/​_inline`
+      （Palace CSV + Q3D txt + inline；互容↔Maxwell 显式判定，不用上游那段 pandas 链式赋值）；
+      `CapacitanceResult` 加 `source`/`sha256`（R4）；CLI `--no-solve`。
+      验收：**Q3D 解析对参考 `load_q3d_capacitance_matrix` 逐位一致**；`_SUNG_MAXWELL` 往返恒等逐位。
+- [x] **M8c — P0-B 拼装层**（核心）：新 `dsl/assemble.py`（纯 stdlib）—— 电容图按**共享节点名累加**
+      + **Schur 消元**非动力学节点（eq 7b）+ 审计。**Schur 在 node 基做，不复刻 `S_n`**；结基变换
+      仍归 M6 的 `C' = BᵀC_S B` → **M6 一行不改**。非动力学节点用**结构判定**（spec §12 第 2 项的
+      裁决），已对参考 `get_nodes_keep()` 逐项比对。
+      验收：**对 4.05 golden 的 `C_k` 偏差 7.7e-16**（<0.1% ✓）；`C_n` 累加逐位；
+      **issue #20 / 缺口 ⑥ 收尾** —— 硬接地把跨 cell `g` 25.14 MHz **删成 0.00**，块内 C_Σ +0.9%。
+      fixture `tests/fixtures/lom405/`（4.05 两份矩阵，Apache-2.0 + `SOURCE.md`）。
+- [x] **M8d — P0-D/E/F**：`TL_RESONATOR` 子系统 + χ（Koch 2007 eq.3.10，`chi_method: perturbative`；
+      **`f_bare` 与 `f_loaded` 都输出** —— 裸/dressed 语义陷阱 R5）、`C_j`（**结基对角、求逆之前**，
+      spec §4 P0-E 那个标量式是老 LOM 的、对耦合系统错）、新 `dsl/cpw_analytic.py`
+      （纯 math，AGM 实现的 K 替 `scipy.special.ellipk`，**含动力学电感**）。
+      验收：CPW 对参考**最大偏差 9.2e-16**（<1% ✓）；`C_j=0` 逐位不动 + 与 New LOM 的 node 基
+      折入 `==` 逐位；λ/4 系数方向已从源码确认。
+      ⚠ **χ 对老 LOM −16.1%，未达 §7 的 <5%** —— 已分解成两个已知定义差（g 定义 −8.50% +
+      数值 CPB 谱 −8.33%，乘积 0.8388 ≈ 实测 0.8392；χ 的**公式本身**对参考逐位一致）。
+      关掉谱那一半需要 **P1-H**。
+- [x] **编排 + sidecar**：`schema.py`/`parsers/simulation.py` 新顶层块 `extract:`/`assemble:`/
+      `subsystems:`（**不做** `sweep` —— P2）；`geo_build.py` 块循环 → assemble → circuit_model →
+      系统级 `chip.results.yaml`（provenance 带 `assembly` 段：每 cell 的 source/sha256、被消掉的
+      节点、审计）；**「拼装后每个保留节点必须被某个 subsystem 认领，否则 raise」**（#20 的静默
+      接地守卫放在编排层）。新例子 `examples/dsl/geo/sung_2021_device_blocks.meta.yaml` +
+      `examples/dsl/README.md` 的「想在哪切，就在那里分 component」。
+- [ ] **M8e — P1-G Purcell `T1` + P1-H 精确 CPB 对角化**（`dsl/cpb_numeric.py`，numpy 可选/lazy）。
+      P1-H 是关掉 χ 那 −8.33% 的唯一途径。
+- [ ] **M8f — P2-J 参数扫描**（⚠ 必须遵守 G2/G3：扫描声明写在 sidecar 里，每个值物化一份完整
+      快照 + 一次独立 build，**不能**用命令行改几何参数）+ **P2-K 网格收敛扫描**（= 缺口 ④/#26；
+      sung 的 order 1→2 差 **21%** 说明我们从来不知道离收敛多远，而这直接决定分块误差能不能测
+      → 现在性价比最高的一项）。
+- [ ] **M8g — §8 legacy 路径退役**（`.metal.yaml` 输入 / `build_design` / `export_ir_to_metal` /
+      `gmsh_adapter.build_mesh` slab / `design_dsl.py` 打 UNMAINTAINED 横幅 + 一次性 warning +
+      `@pytest.mark.legacy`；`build_ir`/`PrimitiveIR`/`parsers/` 保留为内部库）+ 文档同步。
+- [ ] **P2-I `FLUXONIUM` 子系统**（schema 已能容纳：`subsystems[].type`）。
+
+> **明确不做**（spec §6，理由已记）：scqubits / qutip `HilbertSpace` 数值对角化（χ 走解析式，
+> 代价是强耦合/近共振精度，results 标 `chi_method: perturbative`）；v1 的 `links:` / `cross` 块
+> （跨 cell 连通只靠**共享节点名**）；新的 OCC 布尔切割；块的并行求解（gmsh 进程级全局状态）。
+>
+> **分块的两条固有代价**（写进 `examples/dsl/README.md`，不是 bug）：① 切割面只能落在 component
+> 边界；② 跨块耦合只能靠共享节点名（= 同一导体被两块各画一半），**两块分离导体之间的互电容
+> 一定丢**。所以「想保哪两个导体的耦合，就把它们放进同一个块」。
+> **R8 成立**：分块总墙钟**没降**（3 块合计 2.19M 未知量 ≈ 整片 order 2 的 2.24M），
+> 降的是**单次**求解规模 2.24M → 0.6~1.0M，于是 order 2 才跑得起。
+
 ---
 
 ## Deferred — out of the current phase (not ruled out)
@@ -330,3 +392,22 @@ Single metal layer + dielectric substrate is the scope; defer until a multi-laye
   全套 **368 passed, 3 skipped, 0 failed/0 errors/0 deselected**。
   MPI 挂死已在上一 session 查明并修好(hwloc `gl` 插件 TCP 探测 X display → `HWLOC_COMPONENTS=-gl`);
   two_pads 实解回归通过(max |rel dev| 0.202%); **sung 的 Palace vs Elmer 对照已移交他人**。
+- [`session/2607290329.md`](session/2607290329.md) — 2026-07-29 · **M8 P0 全部落地**
+  (`.claude/lom-parity-spec.md` 的 P0-A…F = M8a–M8d)。**6 个并行 subagent**(同一主工作树、
+  文件域互不重叠) + 主控做数据契约 / `geo_build` 编排 / 实解验证。§12 四项待确认由主控裁决
+  (不引 scqubits · Schur 用结构判定 · 4.05 矩阵拷入当 fixture · `emit_block_geo` 放 `geo_emit`),
+  另修正 spec 三处机制(S2 改 shapely 求交 · S4 零代码 · Schur 在 node 基 → M6 一行不改)。
+  抓到并收口一处**跨 agent 冲突**: `C_j` 被 `assemble` 与 `circuit_model` 各实现一遍会**双计**
+  → 收到 `circuit_model` 的结基对角、求逆之前(spec §4 P0-E 那个标量式是老 LOM 的、对耦合系统错;
+  已在真实耦合矩阵上实证与 New LOM 的 node 基折入 `==` 逐位)。
+  新模块 `dsl/assemble.py`(累加 + **Schur 消元**, 对 4.05 的 `C_k` **7.7e-16**) 与
+  `dsl/cpw_analytic.py`(对参考 **9.2e-16**); `emit_block_geo` 落盘 `block_*.geo`(G1);
+  sidecar 新增 `extract:`/`assemble:`/`subsystems:`; `C_j` / `TL_RESONATOR` + χ / 文件+inline 注入。
+  **issue #20 / 缺口 ⑥ 收尾**(硬接地把跨 cell `g` 25.14 MHz **删成 0.00**)。
+  实解: `two_pads` 分块对角 **+1.03%/+1.06%**(<2% ✓); `sung` 三块 order 2 对 Elmer
+  **−3.2%/−2.9%/−3.2%**(<5% ✓) —— ⚠ 但 order-1 对照显示这是**两个大误差反向抵消**
+  (同 order 下分块本身 +12~15%, order 1→2 −21%), sung 上无法干净分离(#22 + 网格未收敛),
+  可信数字是 two_pads 的 +1.03%。**R8 成立**: 总墙钟没降(2.19M ≈ 整片 2.24M), 降的是单次规模
+  (→ order 2 才跑得起)。χ 对老 LOM **−16.1% 未达 5%**, 已分解成两个已知定义差(公式本身逐位一致)。
+  全套 **368 → 619 passed, 3 skipped, 0 failed**(+251 测试)。
+  🔴 欠: §7 的 **S2 live Palace 护栏未跑**(需要 pocket 互不相连的设计)。
