@@ -36,6 +36,16 @@ __all__ = [
     "CIRCUIT_MODEL_KEYS",
     "CIRCUIT_QUBIT_KEYS",
     "CIRCUIT_SQUID_KEYS",
+    "EXTRACT_KEYS",
+    "EXTRACT_BLOCK_KEYS",
+    "EXTRACT_SOURCES",
+    "EXTRACT_MATRIX_KEYS",
+    "EXTRACT_JUNCTION_KEYS",
+    "ASSEMBLE_KEYS",
+    "SUBSYSTEM_KEYS",
+    "SUBSYSTEM_TYPES",
+    "CPW_KEYS",
+    "RESONATOR_MODES",
     "DESIGN_KEYS",
     "TRANSFORM_KEYS",
     "COMPONENT_KEYS",
@@ -100,13 +110,16 @@ GEO_ROLES = GEO_SURFACE_ROLES | GEO_MARKER_ROLES
 # (M5a) is an OPTIONAL block that lowers v3 component-template instances → a
 # generated ``<stem>.elaborated.geo`` (the emit_geo bridge); when present, ``geo``
 # is optional (the geometry is generated, not authored).
-GEO_META_ROOT_KEYS = {"schema", "geo", "vars", "simulation", "circuit_model", "cells"}
+GEO_META_ROOT_KEYS = {
+    "schema", "geo", "vars", "simulation", "circuit_model", "cells",
+    "extract", "assemble", "subsystems",
+}
 
 # *.meta.yaml ``circuit_model`` block (M6 junction inputs → circuit_model.py).
 CIRCUIT_MODEL_KEYS = {"qubits"}
 # A single qubit entry: a name, exactly one island ref (``island`` scalar or
 # ``islands`` list), and exactly one of L_J / E_J / squid.
-CIRCUIT_QUBIT_KEYS = {"name", "island", "islands", "L_J", "E_J", "squid"}
+CIRCUIT_QUBIT_KEYS = {"name", "island", "islands", "L_J", "E_J", "squid", "C_j"}
 # The ``squid:`` sub-block of a qubit entry — a flux-tunable, possibly ASYMMETRIC
 # SQUID (two parallel junctions).  ``E_J1``/``E_J2`` take the same unit-bearing
 # strings as ``E_J`` (frequency E_J/h or energy); ``flux`` is a bare float =
@@ -121,6 +134,59 @@ CIRCUIT_SQUID_KEYS = {"E_J1", "E_J2", "flux"}
 # it).  ``x/y/rot/layer`` place the cell (→ template pos_x/pos_y/orientation/layer
 # options); ``params`` overrides any template option.
 CELL_KEYS = {"cell_type", "component", "x", "y", "rot", "layer", "params"}
+
+# ---------------------------------------------------------------------------
+# M8 New-LOM parity: extract: / assemble: / subsystems: (lom-parity-spec §4 P0-B..F)
+#
+# ⚠ 命名冲突已刻意避开 (spec §8.1 / 风险 R10). 两个「cell」是**两个不同概念**:
+#
+#   cells:            M5a 的**几何** cell 实例 —— 一个放置好的 v3 component 模板,
+#                     lower 成 <stem>.elaborated.geo 里的一段几何 (emit_geo bridge).
+#                     单位是「一块金属图形」。
+#   extract.blocks:   本 spec 的**电学** Cell = **一次 EM 提取** —— 一份 Maxwell C
+#                     矩阵 (实解 / 读文件 / inline), 对应 New LOM (tutorial 4.05) 的
+#                     一个 Cell。单位是「一份电容矩阵」。
+#
+# 一个 extract block 可以覆盖多个几何 cell (``components: [QB1, BUS]``), 也可以完全
+# 没有几何 (``from: file`` —— 矩阵直接注入, 不碰 .geo)。所以两者不是一对一, **不能**
+# 共用 ``cells`` 这个键名: 一份 sidecar 里两个 ``cells:`` 会直接撞车 (YAML 层就是同一
+# 个 key), 而且会把「几何子集」与「一次提取」混为一谈 —— 那正是 §4 P0-C「文件来源是
+# 主流程」要区分的东西。名字沿用 New LOM 的语义, 键名沿用 spec §8.1 定下的
+# ``extract.blocks``。
+# ---------------------------------------------------------------------------
+EXTRACT_KEYS = {"blocks"}
+# 一个 extract block: 名字 + 来源 + 节点重命名 + 本块的结。
+# ``from`` = solve|file|inline (见 EXTRACT_SOURCES); ``components`` 只在 solve 时必填
+# (块几何子集, 喂 emit_block_geo); ``path`` 只在 file 时必填; ``matrix`` 只在 inline
+# 时必填; ``units`` 是 file/inline 矩阵的单位 (默认 fF)。
+EXTRACT_BLOCK_KEYS = {
+    "name", "components", "from", "path", "matrix", "units", "nodes", "junctions",
+}
+# C 矩阵来源。solve = 跑 Palace (P0-A); file = 读 Palace CSV / Q3D txt (P0-C);
+# inline = 矩阵直接写在 sidecar 里 (P0-C, 零成本回归)。provenance 必须区分三者 (R4)。
+EXTRACT_SOURCES = {"solve", "file", "inline"}
+EXTRACT_MATRIX_KEYS = {"terminals", "maxwell"}
+# 一个结 (= New LOM 的 jj_dict/ind_dict/cj_dict 条目)。``between`` 是 1 或 2 个节点名
+# (1 = 接地 transmon, 2 = 浮动/差分); 结元件 L_J / E_J / squid 恰选一个 (与
+# CIRCUIT_QUBIT_KEYS 同语义); ``C_j`` 是结电容 (P0-E, 默认 0)。
+EXTRACT_JUNCTION_KEYS = {"name", "between", "L_J", "E_J", "squid", "C_j"}
+
+# assemble: 块 → 整片的拼装参数 (P0-B)。``ground_node`` 是被消去的参考节点;
+# ``nodes_force_keep`` 是不许被 Schur 消元吃掉的节点 (谐振器接入点, 风险 R3 兜底)。
+ASSEMBLE_KEYS = {"ground_node", "nodes_force_keep"}
+
+# subsystems: 拼装后矩阵上的量子子系统 (P0-B/D)。键是两种 type 的**并集** ——
+# 每种 type 各自的允许键在 parsers/simulation.py 里按 type 再收紧一次
+# (transmon 用 ``junction`` 指结名, tl_resonator 用 ``node`` 指节点名)。
+SUBSYSTEM_KEYS = {"name", "type", "junction", "node", "f_res", "Z0", "mode", "cpw"}
+SUBSYSTEM_TYPES = {"transmon", "tl_resonator"}
+# tl_resonator 的 ``cpw:`` 子块 (P0-F) —— 给了它就用 CPW 解析计算器算 f_res,
+# 与直接给 ``f_res`` 二选一。长度量单位 = 仓库内部单位 µm。
+CPW_KEYS = {
+    "line_width", "line_gap", "length", "substrate_thickness", "film_thickness",
+}
+# λ/2 (两端开路) 还是 λ/4 (一端短路): 决定 Cr = π/(2 ω_r Z0) 的 /2, Lr 的 ×2。
+RESONATOR_MODES = {"half_wave", "quarter_wave"}
 
 # simulation.gmsh.gds block: GDS layer map + gdstk library settings.
 GDS_SIM_KEYS = {

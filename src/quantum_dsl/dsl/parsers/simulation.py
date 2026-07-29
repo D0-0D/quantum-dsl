@@ -20,10 +20,17 @@ from ..expression import walk_substitute as _walk_substitute
 from ..ir import ComponentIR
 from ..schema import (
     AIRBOX_KEYS,
+    ASSEMBLE_KEYS,
     CELL_KEYS,
     CIRCUIT_MODEL_KEYS,
     CIRCUIT_QUBIT_KEYS,
     CIRCUIT_SQUID_KEYS,
+    CPW_KEYS,
+    EXTRACT_BLOCK_KEYS,
+    EXTRACT_JUNCTION_KEYS,
+    EXTRACT_KEYS,
+    EXTRACT_MATRIX_KEYS,
+    EXTRACT_SOURCES,
     GDS_LAYER_MAP_ENTRY_KEYS,
     GDS_SIM_KEYS,
     GEO_META_ROOT_KEYS,
@@ -36,9 +43,12 @@ from ..schema import (
     OUTPUT_KEYS,
     PORT_KEYS,
     PORT_TYPES,
+    RESONATOR_MODES,
     SIMULATION_KEYS,
     SOLVER_KEYS,
     SOLVER_TYPES,
+    SUBSYSTEM_KEYS,
+    SUBSYSTEM_TYPES,
     SYMMETRY_CONDITIONS,
     SYMMETRY_KEYS,
     SYMMETRY_PLANES,
@@ -60,11 +70,15 @@ __all__ = [
     "_parse_unit_value",
     "_parse_circuit_model",
     "_parse_geo_cells",
+    "_parse_extract",
+    "_parse_assemble",
+    "_parse_subsystems",
     "parse_geo_meta_sidecar",
     "_SIMPLE_UNIT_SUFFIX_RE",
     "_ALLOWED_IMPEDANCE_UNITS",
     "_HENRY_UNITS",
     "_EJ_FREQ_UNITS",
+    "_FARAD_UNITS",
 ]
 
 _SIMPLE_UNIT_SUFFIX_RE = re.compile(
@@ -128,6 +142,13 @@ _HENRY_UNITS = {
 _EJ_FREQ_UNITS = {"Hz": 1.0, "kHz": 1e3, "MHz": 1e6, "GHz": 1e9, "THz": 1e12}
 # E_J as a bare energy: unit string -> multiplier to Joule.
 _EJ_ENERGY_UNITS = {"J": 1.0}
+# Capacitance: unit string -> multiplier to Farad (SI).  Used by the M8 ``C_j``
+# junction capacitance and to validate ``extract.blocks[].units``.  ASCII only
+# ("uF" not "µF"), same reason as _HENRY_UNITS.
+_FARAD_UNITS = {
+    "F": 1.0, "mF": 1e-3, "uF": 1e-6, "nF": 1e-9, "pF": 1e-12, "fF": 1e-15,
+    "aF": 1e-18,
+}
 
 
 def _parse_unit_value(value: Any, units: Mapping[str, float], *,
@@ -836,6 +857,17 @@ def _parse_qubit_entry(entry: Any, index: int) -> dict[str, Any]:
         resolved["E_J"] = e_j
     else:
         resolved.update(_parse_squid_entry(entry["squid"], owner=f"{owner}.squid"))
+
+    # 结电容 C_j (M8 / P0-E), 法拉, 可选, **默认 0** —— 不静默移动任何现有数值。
+    # 与 ``extract.blocks[].junctions[].C_j`` 同一语义 (``circuit_model`` 把它折在
+    # 结基对角上、求逆之前), 在这里也开放, 好让**整片**路径同样能表达结电容。
+    resolved["C_j"] = 0.0
+    if "C_j" in entry:
+        c_j = _parse_unit_value(entry["C_j"], _FARAD_UNITS, owner=f"{owner}.C_j")
+        if not (math.isfinite(c_j) and c_j >= 0):
+            raise DesignDslError(
+                f"{owner}.C_j must be >= 0 and finite (farad), got {c_j}")
+        resolved["C_j"] = c_j
     return resolved
 
 
@@ -923,6 +955,481 @@ def _parse_circuit_model(node: Any,
 
 
 # ---------------------------------------------------------------------------
+# M8 New-LOM parity — extract: / assemble: / subsystems: (lom-parity-spec §4)
+#
+# 三个块合起来描述「多 cell 拼装」: ``extract`` 说每份 Maxwell C 矩阵从哪来 + 它的
+# 节点叫什么名字 + 块内有哪些结; ``assemble`` 说参考地与不许被消元吃掉的节点;
+# ``subsystems`` 说拼装后的矩阵上挂哪些量子子系统。全部是**纯数据**解析 —— 没有任何
+# 几何 / 名字存在性校验 (那要等 geo_build 对着真实 TerminalBinding 做)。
+#
+# ⚠ ``extract.blocks`` 是**电学** Cell (一次 EM 提取), 与 M5a 的 ``cells:``
+# (**几何** cell 实例) 是两个概念 —— 键名区分的理由见 schema.py 的对照注释
+# (spec §8.1 / 风险 R10)。
+#
+# ⚠ 与 spec §4 P0-B 例子文本的**两处刻意偏离**:
+#
+#   1. spec 写单数 ``junction:`` (一个 block 一个结)。这里用**列表** ``junctions:``
+#      —— 4.05 那种「每个 cell 一个结」只是最简情形; sung 那类一块里多个结的设计
+#      (以及未来把 coupler 与 qubit 放进同一块) 必须能表达多个结, 而单数键要表达它
+#      就得改 schema 或加 ``junction2``。列表从一开始就没有这个上限。
+#   2. spec 写 ``{name: QB1, type: transmon, node: j1}`` —— 用 ``node:`` 指一个
+#      **结**名, 与 tl_resonator 的 ``node:`` (真的指节点) 撞语义。这里 transmon 用
+#      ``junction:`` 指结名、tl_resonator 用 ``node:`` 指节点名, 并按 type 收紧允许
+#      键, 所以照 spec 例子写的 ``type: transmon`` + ``node:`` 会**直接报错**并提示
+#      改用 ``junction:`` (而不是静默把结名当节点名查, 那会是 R2 类静默错)。
+#
+# 节点命名空间 (照 New LOM 4.05): ``nodes:`` 的 rename **先**生效, 之后
+# ``junctions[].between`` / ``assemble.ground_node`` / ``nodes_force_keep`` /
+# ``subsystems[].node`` 全部指 rename **之后**的名字; 没被 rename 的名字原样通过。
+# ---------------------------------------------------------------------------
+
+def _parse_node_name(value: Any, *, owner: str) -> str:
+    """校验一个节点名是非空字符串, 原样返回 (**不解析、不校验存在性**)。
+
+    节点名可以是结构化 geo 名 (``role::layer::component::primitive``) **或**已
+    sanitize 的 terminal group 名 (``{comp}_{prim}_sfs``), **或**任何 ``nodes:``
+    rename 之后的共享名 (``coupling``)。三者在这一层无法区分 —— 真正的解析要对着
+    ``load_geo``/Palace 给出的 ``TerminalBinding`` 做, 所以这里只当字符串保留。
+    """
+    if not isinstance(value, str) or not value.strip():
+        raise DesignDslError(f"{owner} must be a non-empty node-name string, "
+                             f"got {value!r}")
+    return value
+
+
+def _parse_extract_matrix(node: Any, *, owner: str) -> dict[str, Any]:
+    """解析 ``from: inline`` 的 ``matrix: {terminals, maxwell}`` 子块 (P0-C)。
+
+    ``maxwell`` 必须是与 ``terminals`` 等长的**方阵**, 元素全部有限。拒 nan/inf 的
+    理由与 ``palace_adapter.parse_capacitance_matrix`` 一样: ``nan <= 0`` 是 False,
+    所有下游守卫都会放行, 于是静默算出一整片 nan 的 E_C/g。
+    """
+    if not isinstance(node, Mapping):
+        raise DesignDslError(
+            f"{owner} must be a mapping {{terminals, maxwell}}")
+    _reject_unknown_keys(node, EXTRACT_MATRIX_KEYS, owner)
+    raw_terminals = node.get("terminals")
+    if not isinstance(raw_terminals, list) or not raw_terminals:
+        raise DesignDslError(f"{owner}.terminals must be a non-empty list")
+    terminals = tuple(
+        _parse_node_name(t, owner=f"{owner}.terminals[{i}]")
+        for i, t in enumerate(raw_terminals))
+    if len(set(terminals)) != len(terminals):
+        raise DesignDslError(f"{owner}.terminals has duplicate names")
+
+    rows = node.get("maxwell")
+    if not isinstance(rows, list) or not rows:
+        raise DesignDslError(f"{owner}.maxwell must be a non-empty list of rows")
+    if len(rows) != len(terminals):
+        raise DesignDslError(
+            f"{owner}.maxwell has {len(rows)} row(s) but "
+            f"{len(terminals)} terminal(s) — must match")
+    maxwell: list[tuple[float, ...]] = []
+    for i, row in enumerate(rows):
+        if not isinstance(row, list):
+            raise DesignDslError(f"{owner}.maxwell[{i}] must be a list")
+        if len(row) != len(terminals):
+            raise DesignDslError(
+                f"{owner}.maxwell[{i}] has {len(row)} entr(ies), expected "
+                f"{len(terminals)} (the matrix must be square)")
+        values: list[float] = []
+        for j, cell in enumerate(row):
+            if isinstance(cell, bool) or not isinstance(cell, (int, float)):
+                raise DesignDslError(
+                    f"{owner}.maxwell[{i}][{j}] must be a number, got {cell!r}")
+            if not math.isfinite(cell):
+                raise DesignDslError(
+                    f"{owner}.maxwell[{i}][{j}] is not finite ({cell!r}) — a "
+                    f"nan/inf entry passes every downstream '<= 0' guard and "
+                    f"silently produces nan results")
+            values.append(float(cell))
+        maxwell.append(tuple(values))
+    return {"terminals": terminals, "maxwell": tuple(maxwell)}
+
+
+def _parse_extract_junction(entry: Any, *, owner: str) -> dict[str, Any]:
+    """解析 ``extract.blocks[].junctions[]`` 的一个结。
+
+    ``between`` = 1 或 2 个节点名 (1 = 结跨岛与地; 2 = 浮动/差分, 顺序 (a, b) 定义
+    θ = φ_a − φ_b)。结元件 ``L_J`` (亨利) / ``E_J`` (焦耳) / ``squid`` **恰选一个**
+    —— 与 ``JunctionInput.__post_init__`` 同语义, 但在解析层就报, 消息点名
+    block + junction。``C_j`` = 结电容 → **法拉**, 默认 0.0 (P0-E: 默认 0 才不会
+    静默移动任何现有数值)。
+    """
+    if not isinstance(entry, Mapping):
+        raise DesignDslError(f"{owner} must be a mapping")
+    _reject_unknown_keys(entry, EXTRACT_JUNCTION_KEYS, owner)
+    name = entry.get("name")
+    if not isinstance(name, str) or not name:
+        raise DesignDslError(f"{owner}.name must be a non-empty string")
+
+    raw_between = entry.get("between")
+    if not isinstance(raw_between, list) or not 1 <= len(raw_between) <= 2:
+        raise DesignDslError(
+            f"{owner}.between must be a list of 1 or 2 node names (1 = junction "
+            f"to ground, 2 = floating/differential), got {raw_between!r}")
+    between = tuple(
+        _parse_node_name(n, owner=f"{owner}.between[{i}]")
+        for i, n in enumerate(raw_between))
+
+    junction_keys = [k for k in ("L_J", "E_J", "squid") if k in entry]
+    if len(junction_keys) != 1:
+        raise DesignDslError(
+            f"{owner} (junction {name!r}) must set exactly one of "
+            f"'L_J' / 'E_J' / 'squid', got {sorted(junction_keys)}")
+    out: dict[str, Any] = {"name": name, "between": between,
+                           "L_J": None, "E_J": None,
+                           "E_J1": None, "E_J2": None, "flux": 0.0}
+    if "L_J" in entry:
+        l_j = _parse_unit_value(entry["L_J"], _HENRY_UNITS, owner=f"{owner}.L_J")
+        if not (math.isfinite(l_j) and l_j > 0):
+            raise DesignDslError(f"{owner}.L_J must be > 0 and finite, got {l_j}")
+        out["L_J"] = l_j
+    elif "E_J" in entry:
+        e_j = _parse_ej_joule(entry["E_J"], owner=f"{owner}.E_J")
+        if not (math.isfinite(e_j) and e_j > 0):
+            raise DesignDslError(f"{owner}.E_J must be > 0 and finite, got {e_j}")
+        out["E_J"] = e_j
+    else:
+        out.update(_parse_squid_entry(entry["squid"], owner=f"{owner}.squid"))
+
+    c_j = 0.0
+    if "C_j" in entry:
+        c_j = _parse_unit_value(entry["C_j"], _FARAD_UNITS, owner=f"{owner}.C_j")
+        if not (math.isfinite(c_j) and c_j >= 0):
+            raise DesignDslError(
+                f"{owner}.C_j must be >= 0 and finite (farad), got {c_j}")
+    out["C_j"] = c_j
+    return out
+
+
+def _parse_extract(node: Any, variables: Mapping[str, Any], *,
+                   base_dir: Path, where: str = "extract") -> dict[str, Any]:
+    """解析顶层 ``extract:`` 块 —— 每个 block = 一次 EM 提取 = 一个 New LOM Cell。
+
+    形状::
+
+        extract:
+          blocks:
+            - name: qb1
+              components: [QB1]          # from: solve 时必填 (块几何子集)
+              from: solve                # solve (默认) | file | inline
+              path: measured/QB1.csv     # from: file 时必填 (相对 sidecar → 绝对)
+              matrix:                    # from: inline 时必填
+                terminals: [a, b]
+                maxwell: [[1.0, -0.1], [-0.1, 1.0]]
+              units: fF                  # file/inline 矩阵的单位, 默认 fF
+              nodes:                     # = New LOM 的 node_rename
+                metal::1::QB1::coupler_pad: coupling
+                QB1_readout_pad_sfs: readout_qb1
+              junctions:
+                - {name: j1, between: [...], E_J: 12.2GHz, C_j: 2fF}
+
+    返回 ``{"blocks": [{name, components, source, path, matrix, units, nodes,
+    junctions}]}``: ``source`` 是归一化后的 ``from`` (缺省 ``"solve"``);
+    ``path`` 是绝对 ``Path`` 或 ``None``; ``matrix`` 是 ``_parse_extract_matrix``
+    的产物或 ``None``; ``nodes`` 是原样保留的 ``{旧名: 新名}`` (**不**解析 key ——
+    见 ``_parse_node_name``); ``junctions`` 里 L_J 亨利 / E_J 焦耳 / C_j 法拉。
+
+    block 名必须唯一; ``junctions[].name`` 在**整个 extract 块内全局**唯一
+    (拼装后它们同处一个结索引空间, 重名会静默把两个结叠在一起)。
+    """
+    if not isinstance(node, Mapping):
+        raise DesignDslError(f"{where} must be a mapping")
+    node = _walk_substitute(dict(node), dict(variables))
+    _reject_unknown_keys(node, EXTRACT_KEYS, where)
+
+    raw_blocks = node.get("blocks")
+    if not isinstance(raw_blocks, list) or not raw_blocks:
+        raise DesignDslError(f"{where}.blocks must be a non-empty list")
+
+    blocks: list[dict[str, Any]] = []
+    seen_blocks: set[str] = set()
+    seen_junctions: dict[str, str] = {}
+    for index, entry in enumerate(raw_blocks):
+        owner = f"{where}.blocks[{index}]"
+        if not isinstance(entry, Mapping):
+            raise DesignDslError(f"{owner} must be a mapping")
+        _reject_unknown_keys(entry, EXTRACT_BLOCK_KEYS, owner)
+
+        name = entry.get("name")
+        if not isinstance(name, str) or not name:
+            raise DesignDslError(f"{owner}.name must be a non-empty string")
+        if name in seen_blocks:
+            raise DesignDslError(
+                f"{where}.blocks: duplicate block name {name!r} (every block "
+                f"name must be unique — it labels one EM extraction)")
+        seen_blocks.add(name)
+
+        source = entry.get("from", "solve")
+        if source not in EXTRACT_SOURCES:
+            raise DesignDslError(
+                f"{owner}.from must be one of {sorted(EXTRACT_SOURCES)}, got "
+                f"{source!r}")
+
+        components: tuple[str, ...] = ()
+        if "components" in entry:
+            raw_components = entry["components"]
+            if not isinstance(raw_components, list) or not raw_components:
+                raise DesignDslError(
+                    f"{owner}.components must be a non-empty list of component "
+                    f"names")
+            for i, comp in enumerate(raw_components):
+                if not isinstance(comp, str) or not comp:
+                    raise DesignDslError(
+                        f"{owner}.components[{i}] must be a non-empty string, "
+                        f"got {comp!r}")
+            components = tuple(raw_components)
+        elif source == "solve":
+            raise DesignDslError(
+                f"{owner}.components is required for from: solve (it selects the "
+                f"geometry subset emit_block_geo carves out)")
+
+        path: Path | None = None
+        if "path" in entry:
+            raw_path = entry["path"]
+            if not isinstance(raw_path, str) or not raw_path:
+                raise DesignDslError(f"{owner}.path must be a non-empty string")
+            path = (base_dir / raw_path).resolve()
+            if not path.is_file():
+                raise DesignDslError(
+                    f"{owner}.path capacitance-matrix file not found: {path}")
+        elif source == "file":
+            raise DesignDslError(f"{owner}.path is required for from: file")
+
+        matrix: dict[str, Any] | None = None
+        if "matrix" in entry:
+            matrix = _parse_extract_matrix(entry["matrix"],
+                                           owner=f"{owner}.matrix")
+        elif source == "inline":
+            raise DesignDslError(f"{owner}.matrix is required for from: inline")
+
+        # units 只对 file/inline 的矩阵有意义 (solve 的单位由 Palace 输出决定)。
+        units = entry.get("units", "fF")
+        if units not in _FARAD_UNITS:
+            raise DesignDslError(
+                f"{owner}.units must be one of {sorted(_FARAD_UNITS)}, got "
+                f"{units!r}")
+
+        nodes: dict[str, str] = {}
+        if "nodes" in entry:
+            raw_nodes = entry["nodes"]
+            if not isinstance(raw_nodes, Mapping):
+                raise DesignDslError(
+                    f"{owner}.nodes must be a mapping {{old_name: shared_name}}")
+            for raw_key, raw_value in raw_nodes.items():
+                key = _parse_node_name(raw_key, owner=f"{owner}.nodes key")
+                nodes[key] = _parse_node_name(
+                    raw_value, owner=f"{owner}.nodes[{key!r}]")
+
+        junctions: list[dict[str, Any]] = []
+        if "junctions" in entry:
+            raw_junctions = entry["junctions"]
+            if not isinstance(raw_junctions, list) or not raw_junctions:
+                raise DesignDslError(
+                    f"{owner}.junctions must be a non-empty list")
+            for j_index, j_entry in enumerate(raw_junctions):
+                junction = _parse_extract_junction(
+                    j_entry, owner=f"{owner}.junctions[{j_index}]")
+                previous = seen_junctions.get(junction["name"])
+                if previous is not None:
+                    raise DesignDslError(
+                        f"{owner}.junctions[{j_index}]: junction name "
+                        f"{junction['name']!r} already used by block "
+                        f"{previous!r} — junction names must be unique across "
+                        f"the whole extract block")
+                seen_junctions[junction["name"]] = name
+                junctions.append(junction)
+
+        blocks.append({
+            "name": name, "components": components, "source": source,
+            "path": path, "matrix": matrix, "units": units, "nodes": nodes,
+            "junctions": junctions,
+        })
+    return {"blocks": blocks}
+
+
+def _parse_assemble(node: Any, variables: Mapping[str, Any], *,
+                    where: str = "assemble") -> dict[str, Any]:
+    """解析顶层 ``assemble:`` 块 (P0-B 拼装参数)。
+
+    形状::
+
+        assemble:
+          ground_node: ground::1::chip::gnd
+          nodes_force_keep: [readout_qb1, readout_qb2]
+
+    返回 ``{"ground_node": str|None, "nodes_force_keep": tuple[str, ...]}``。
+    两者都指 ``extract.blocks[].nodes`` rename **之后**的名字, 原样保留字符串。
+    ``nodes_force_keep`` 是 Schur 消元的兜底 (风险 R3): 列在里面的节点不许被当成
+    非动力学节点消掉 —— 谐振器接入点必须留着才能接 tl_resonator。
+    """
+    if not isinstance(node, Mapping):
+        raise DesignDslError(f"{where} must be a mapping")
+    node = _walk_substitute(dict(node), dict(variables))
+    _reject_unknown_keys(node, ASSEMBLE_KEYS, where)
+
+    ground_node: str | None = None
+    if "ground_node" in node:
+        ground_node = _parse_node_name(node["ground_node"],
+                                       owner=f"{where}.ground_node")
+    keep: tuple[str, ...] = ()
+    if "nodes_force_keep" in node:
+        raw_keep = node["nodes_force_keep"]
+        if not isinstance(raw_keep, list):
+            raise DesignDslError(
+                f"{where}.nodes_force_keep must be a list of node names")
+        keep = tuple(
+            _parse_node_name(n, owner=f"{where}.nodes_force_keep[{i}]")
+            for i, n in enumerate(raw_keep))
+    return {"ground_node": ground_node, "nodes_force_keep": keep}
+
+
+def _parse_cpw_block(node: Any, *, owner: str,
+                     variables: Mapping[str, Any]) -> dict[str, float]:
+    """解析 ``subsystems[].cpw:`` 子块 (P0-F CPW 解析计算器的输入)。
+
+    ⚠ **单位**: 长度量解成 **µm** (``_parse_number`` 的默认单位, 与仓库内部单位
+    一致 —— ``_units.SI_PER_INTERNAL = 1e-6``), **不是**米。``cpw_analytic`` 的接口
+    是 SI 米, 所以 ``geo_build`` 接线时负责 ×1e-6。这里不换算, 是为了让 sidecar 里
+    所有长度 (layer_stack.thickness / airbox / cpw.length) 单位一致、可互相比对。
+    """
+    if not isinstance(node, Mapping):
+        raise DesignDslError(
+            f"{owner} must be a mapping (e.g. "
+            f"{{line_width: 10um, line_gap: 6um, length: 4200um}})")
+    _reject_unknown_keys(node, CPW_KEYS, owner)
+    for key in ("line_width", "line_gap", "length"):
+        if key not in node:
+            raise DesignDslError(
+                f"{owner}.{key} is required (a CPW needs line_width, line_gap "
+                f"and length)")
+    out: dict[str, float] = {}
+    for key in CPW_KEYS:
+        if key not in node:
+            continue
+        value = _parse_number(node[key], variables, owner=f"{owner}.{key}")
+        if not (math.isfinite(value) and value > 0):
+            raise DesignDslError(
+                f"{owner}.{key} must be > 0 and finite (µm), got {value}")
+        out[key] = value
+    return out
+
+
+# 每种子系统各自的允许键 —— SUBSYSTEM_KEYS 是两者的并集, 按 type 再收紧一次, 免得
+# ``type: transmon`` 写了 ``f_res:``/``node:`` 却被静默忽略 (见模块顶部偏离 #2)。
+_TRANSMON_KEYS = {"name", "type", "junction"}
+_TL_RESONATOR_KEYS = {"name", "type", "node", "f_res", "Z0", "mode", "cpw"}
+
+
+def _parse_subsystems(node: Any, variables: Mapping[str, Any], *,
+                      where: str = "subsystems") -> list[dict[str, Any]]:
+    """解析顶层 ``subsystems:`` 列表 (P0-B/D: 拼装后矩阵上的量子子系统)。
+
+    形状::
+
+        subsystems:
+          - {name: QB1, type: transmon, junction: j1}
+          - {name: RO1, type: tl_resonator, node: readout_qb1, f_res: 7.0GHz,
+             Z0: 50ohm, mode: half_wave}
+          - {name: RO2, type: tl_resonator, node: readout_qb2, Z0: 50ohm,
+             mode: half_wave, cpw: {line_width: 10um, line_gap: 6um,
+                                    length: 4200um}}
+
+    ``transmon`` 用 ``junction:`` 指 ``extract.blocks[].junctions[].name``;
+    ``tl_resonator`` 用 ``node:`` 指一个 (rename 之后的) 节点名 —— 谐振器的耦合爪子
+    就是那个节点上的真实导体。两者的允许键按 type 分开校验 (见模块顶部偏离 #2)。
+
+    ``f_res`` 与 ``cpw`` **恰给一个**: 直接给频率, 或给 CPW 几何让 P0-F 解析算。
+    ``f_res`` 解成 **Hz** (``7.0GHz`` → 7e9) 且按 spec §4 P0-D / 风险 R5 是**裸**
+    频率 (与老 LOM 的 ``freq_readout`` 一致, 不是 New LOM 的 dressed 频率);
+    ``Z0`` 解成**欧姆** (``50ohm`` 或裸数字 ``50``), 默认 50.0;
+    ``mode`` 默认 ``half_wave``。
+
+    返回 list[dict]: transmon → ``{name, type, junction}``; tl_resonator →
+    ``{name, type, node, f_res, Z0, mode, cpw}``。``name`` 必须唯一。
+    """
+    if not isinstance(node, list) or not node:
+        raise DesignDslError(f"{where} must be a non-empty list")
+    node = _walk_substitute(list(node), dict(variables))
+
+    out: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for index, entry in enumerate(node):
+        owner = f"{where}[{index}]"
+        if not isinstance(entry, Mapping):
+            raise DesignDslError(f"{owner} must be a mapping")
+        _reject_unknown_keys(entry, SUBSYSTEM_KEYS, owner)
+        name = entry.get("name")
+        if not isinstance(name, str) or not name:
+            raise DesignDslError(f"{owner}.name must be a non-empty string")
+        if name in seen:
+            raise DesignDslError(
+                f"{where}: duplicate subsystem name {name!r}")
+        seen.add(name)
+
+        kind = entry.get("type")
+        if kind not in SUBSYSTEM_TYPES:
+            raise DesignDslError(
+                f"{owner}.type must be one of {sorted(SUBSYSTEM_TYPES)}, got "
+                f"{kind!r}")
+        allowed = _TRANSMON_KEYS if kind == "transmon" else _TL_RESONATOR_KEYS
+        extra = set(entry) - allowed
+        if extra:
+            raise DesignDslError(
+                f"{owner} (type {kind!r}) does not accept key(s) "
+                f"{sorted(extra)}; allowed: {sorted(allowed)} — a transmon names "
+                f"its JUNCTION via 'junction:', a tl_resonator names its NODE "
+                f"via 'node:'")
+
+        if kind == "transmon":
+            junction = entry.get("junction")
+            if not isinstance(junction, str) or not junction:
+                raise DesignDslError(
+                    f"{owner}.junction is required for type 'transmon' (the "
+                    f"extract.blocks[].junctions[].name this qubit is built on)")
+            out.append({"name": name, "type": kind, "junction": junction})
+            continue
+
+        node_name = entry.get("node")
+        if not isinstance(node_name, str) or not node_name:
+            raise DesignDslError(
+                f"{owner}.node is required for type 'tl_resonator' (the node "
+                f"whose conductor is the resonator's coupling claw)")
+        if ("f_res" in entry) == ("cpw" in entry):
+            raise DesignDslError(
+                f"{owner} must set exactly one of 'f_res' (bare resonance "
+                f"frequency) / 'cpw' (CPW geometry → f_res computed analytically)")
+        f_res: float | None = None
+        if "f_res" in entry:
+            f_res = _parse_unit_value(entry["f_res"], _EJ_FREQ_UNITS,
+                                      owner=f"{owner}.f_res")
+            if not (math.isfinite(f_res) and f_res > 0):
+                raise DesignDslError(
+                    f"{owner}.f_res must be > 0 and finite (Hz), got {f_res}")
+        cpw = None
+        if "cpw" in entry:
+            cpw = _parse_cpw_block(entry["cpw"], owner=f"{owner}.cpw",
+                                   variables=variables)
+        z0 = 50.0
+        if "Z0" in entry:
+            z0 = _parse_scalar_with_optional_unit(
+                entry["Z0"], variables, owner=f"{owner}.Z0",
+                allowed_units=_ALLOWED_IMPEDANCE_UNITS)
+            if not (math.isfinite(z0) and z0 > 0):
+                raise DesignDslError(
+                    f"{owner}.Z0 must be > 0 and finite (ohm), got {z0}")
+        mode = entry.get("mode", "half_wave")
+        if mode not in RESONATOR_MODES:
+            raise DesignDslError(
+                f"{owner}.mode must be one of {sorted(RESONATOR_MODES)}, got "
+                f"{mode!r}")
+        out.append({"name": name, "type": kind, "node": node_name,
+                    "f_res": f_res, "Z0": z0, "mode": mode, "cpw": cpw})
+    return out
+
+
+# ---------------------------------------------------------------------------
 # standalone *.meta.yaml sidecar loader (Layer-1 physics metadata)
 # ---------------------------------------------------------------------------
 
@@ -931,21 +1438,24 @@ def parse_geo_meta_sidecar(path: str | Path) -> dict[str, Any]:
 
     The sidecar is **purely physics metadata** (materials / eps_r / mesh / GDS
     layer map / solver); the geometry lives in the companion ``.geo`` named by
-    the ``geo`` key.  Top-level keys are validated vs ``GEO_META_ROOT_KEYS``
-    (``{schema, geo, vars, simulation, circuit_model}``); ``${var}`` expressions
-    resolve against ``vars``; the ``simulation.gmsh`` block is parsed in **geo
-    mode** (ports bind by group name; gds/solver blocks parsed; no
-    component-layer coverage check); the optional ``circuit_model`` block (M6
-    junction inputs) is parsed by ``_parse_circuit_model``.
+    the ``geo`` key.  Top-level keys are validated vs ``GEO_META_ROOT_KEYS``;
+    ``${var}`` expressions resolve against ``vars``; the ``simulation.gmsh`` block
+    is parsed in **geo mode** (ports bind by group name; gds/solver blocks parsed;
+    no component-layer coverage check); the optional ``circuit_model`` block (M6
+    junction inputs) is parsed by ``_parse_circuit_model``; the optional M8
+    New-LOM-parity blocks ``extract`` / ``assemble`` / ``subsystems`` are parsed by
+    ``_parse_extract`` / ``_parse_assemble`` / ``_parse_subsystems``.
 
-    Returns ``{"geo": <abs Path>, "simulation": {...}, "vars": {...},
-    "circuit_model": {...}|None}`` — ``geo`` resolved to an absolute path
-    RELATIVE TO THE SIDECAR; ``circuit_model`` is ``None`` when the block is absent.
+    Returns ``{"geo": <abs Path>, "cells": [...], "simulation": {...},
+    "vars": {...}, "circuit_model": {...}|None, "extract": {...}|None,
+    "assemble": {...}|None, "subsystems": [...]|None}`` — ``geo`` resolved to an
+    absolute path RELATIVE TO THE SIDECAR; every optional block is ``None`` when
+    absent (a sidecar declaring none of them behaves exactly as before).
 
     Raises:
         DesignDslError: file missing / not a mapping / unknown top-level key /
             missing ``geo`` / referenced ``.geo`` not found / invalid
-            ``circuit_model`` block.
+            ``circuit_model`` / ``extract`` / ``assemble`` / ``subsystems`` block.
     """
     sidecar = Path(path)
     if not sidecar.is_file():
@@ -1001,12 +1511,31 @@ def parse_geo_meta_sidecar(path: str | Path) -> dict[str, Any]:
     if "circuit_model" in raw:
         circuit_model_out = _parse_circuit_model(raw["circuit_model"], variables)
 
+    # M8: the three New-LOM parity blocks.  Each is None when absent, so a sidecar
+    # that declares none of them behaves EXACTLY as before (whole-chip solve).
+    extract_out: dict[str, Any] | None = None
+    if "extract" in raw:
+        extract_out = _parse_extract(raw["extract"], variables,
+                                     base_dir=sidecar.parent,
+                                     where=f"{sidecar.name}.extract")
+    assemble_out: dict[str, Any] | None = None
+    if "assemble" in raw:
+        assemble_out = _parse_assemble(raw["assemble"], variables,
+                                       where=f"{sidecar.name}.assemble")
+    subsystems_out: list[dict[str, Any]] | None = None
+    if "subsystems" in raw:
+        subsystems_out = _parse_subsystems(raw["subsystems"], variables,
+                                           where=f"{sidecar.name}.subsystems")
+
     return {
         "geo": geo_path,
         "cells": cells,
         "simulation": simulation_out,
         "vars": dict(variables),
         "circuit_model": circuit_model_out,
+        "extract": extract_out,
+        "assemble": assemble_out,
+        "subsystems": subsystems_out,
     }
 
 
