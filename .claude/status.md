@@ -62,7 +62,8 @@ R3 circuit solve ✅, R4 read QDA ✅, R5 GDSFactory) + verbal "电容矩阵就�
 - M5a impl (emit_geo bridge, carved ground): see `session/2606080338.md`.
 
 ## Recent notable commits
-- _(branch `main` — 2607290329, **未提交**)_ **M8 P0 落地**（`.claude/lom-parity-spec.md`
+- _(branch `main` — 2607290329, 9 个 commit `5d6406f`…`e2739c5`，经
+  `feat/m8-p0-lom-parity` ff-only 合入)_ **M8 P0 落地**（`.claude/lom-parity-spec.md`
   的 P0-A…F）。全套 **368 → 619 passed, 3 skipped, 0 failed**。要点：
   1. **拼装层 `dsl/assemble.py`**（P0-B，核心）：电容图按**共享节点名累加** + **Schur 消元**
      非动力学节点（eq 7b）。**对 4.05 golden 的 `C_k` 偏差 7.7e-16**（判据 <0.1%）。
