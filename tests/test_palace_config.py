@@ -137,7 +137,17 @@ def test_surface_flux_mirrors_terminals():
     assert all(f["Type"] == "Electric" for f in flux)
 
 
-def test_fewer_than_two_terminals_raises():
+def test_single_terminal_is_accepted_for_block_extraction():
+    """ONE conductor is legal: the 1x1 Maxwell matrix is its self-capacitance.
+
+    This guard used to demand >=2 terminals (M1: a capacitance MATRIX needs two
+    conductors to have a mutual term).  M8's block extraction
+    (``extract.blocks``) broke that premise — a block may legitimately hold a
+    single conductor, and then the 1x1 diagonal is exactly what the assembly
+    layer wants (capacitance to the grounded boundary).  ``two_pads`` split into
+    blocks A and B is that case, and it solves: 24.98457 / 24.99032 fF vs the
+    whole-chip diagonal 24.7288 / 24.7293 fF (+1.03 % / +1.06 %).
+    """
     attrs = {
         "Q1_pad_sfs": 11,        # only ONE conductor
         "gnd_layer1_sfs": 20,
@@ -145,7 +155,26 @@ def test_fewer_than_two_terminals_raises():
         "vacuum": 40,
         "vacuum_outer": 41,
     }
-    with pytest.raises(DesignDslError, match=">=2 conductor terminals"):
+    cfg = build_palace_config(attrs, _layer_stack())
+    assert [t["Index"] for t in cfg["Boundaries"]["Terminal"]] == [1]
+    assert cfg["Boundaries"]["Terminal"][0]["Attributes"] == [11]
+
+
+def test_zero_terminals_raises():
+    """0 conductors still raises — that IS the "author forgot metal::" symptom.
+
+    The protection this guard actually buys sits at zero, not at one: a design
+    whose conductors were never tagged ``metal::N::C::P`` produces no ``_sfs``
+    group at all, and silently solving an empty terminal set would write an
+    empty capacitance matrix.
+    """
+    attrs = {
+        "gnd_layer1_sfs": 20,
+        "substrate_layer3": 30,
+        "vacuum": 40,
+        "vacuum_outer": 41,
+    }
+    with pytest.raises(DesignDslError, match=">=1 conductor terminal"):
         build_palace_config(attrs, _layer_stack())
 
 

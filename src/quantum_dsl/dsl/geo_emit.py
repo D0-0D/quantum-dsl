@@ -27,15 +27,19 @@ Locked seam decisions (session ``2606080224.md``):
   Python (rounded corners come from the buffer's round joins); the loader only sees
   straight ``Line`` segments, so GDS == mesh and loader arc sampling is sidestepped.
 
-IMPORTANT: this module imports **only shapely** (a v3-core dependency) — **never**
-``gmsh`` or ``gdstk``.  It runs before either backend touches the geometry.
+IMPORTANT: at module level this file imports **only shapely** (a v3-core
+dependency) — **never** ``gmsh`` or ``gdstk``.  It runs before either backend
+touches the geometry.  The one exception is :func:`emit_block_geo` (P0-A), whose
+input is an *already existing* ``.geo`` rather than an IR, so it **lazily** imports
+``_gmsh_geo_source`` inside the call to read the source geometry (spec §12.4).
+``import quantum_dsl.dsl.geo_emit`` still pulls in no gmsh.
 """
 
 from __future__ import annotations
 
 import math
 from pathlib import Path
-from typing import Iterable, Optional, Union
+from typing import Iterable, Optional, Sequence, Union
 
 from shapely.geometry import LineString, MultiPolygon, Polygon, box
 from shapely.geometry.base import BaseGeometry
@@ -46,7 +50,7 @@ from .errors import DesignDslError
 from .ir import ComponentIR, DesignIR, PinIR, PrimitiveIR
 from .schema import CURRENT_SCHEMA
 
-__all__ = ["emit_geo", "elaborate_cells"]
+__all__ = ["emit_geo", "elaborate_cells", "emit_block_geo"]
 
 
 # ---------------------------------------------------------------------------
@@ -58,6 +62,9 @@ DEFAULT_ARC_TOL_UM = 0.5
 # Default ground-plane margin (µm) added around the union bbox of all features on
 # a layer when no explicit chip floorplan is supplied.
 DEFAULT_GROUND_MARGIN_UM = 120.0
+# Default block window margin (µm): how far past the selected conductors' bbox the
+# derived block keeps ground / substrate (§4 P0-A rule S3).
+DEFAULT_BLOCK_SIDE_BUFFER_UM = 200.0
 
 
 def _fmt(v: float) -> str:
@@ -545,3 +552,239 @@ def elaborate_cells(cells: list[dict],
                     ground_margin_um=ground_margin_um, chip_bbox=chip_bbox,
                     emit_ports=emit_ports, cap_style=cap_style,
                     join_style=join_style)
+
+
+# ---------------------------------------------------------------------------
+# emit_block_geo — 从整片 .geo 派生一份只含若干 component 的 block_<name>.geo
+# ---------------------------------------------------------------------------
+
+def _geo_physical_name(surf) -> str:
+    """``GeoSurface`` 的 4 段身份 → 源 ``.geo`` 里那个 physical 名 (逐字重组)。"""
+    return f"{surf.role}::{surf.layer}::{surf.component}::{surf.primitive}"
+
+
+def _emit_face(w: _GeoWriter, poly: Polygon) -> str:
+    """发一个 shapely 面 → 可写进 ``Physical Surface`` 的 surface 表达式。
+
+    无孔 → ``Plane Surface``; **有孔 → ``BooleanDifference``**。后者是硬要求:
+    多环 ``Plane Surface`` 在 OCC ``extrude`` 时孔会被填实 (M5a 的发现, 见
+    :meth:`_GeoWriter.boolean_difference` 的 docstring), 地平面的 pocket 就会
+    在 mesh 分支里悄悄消失。
+    """
+    if not poly.interiors:
+        return w.plane_surface(poly)
+    base = w.plane_surface(Polygon(poly.exterior))
+    tools = [w.plane_surface(Polygon(ring)) for ring in poly.interiors]
+    return f"{w.boolean_difference(base, tools)}()"
+
+
+def _fill_excluded_holes(poly: Polygon, selected: list[Polygon],
+                         excluded: list[Polygon]) -> Polygon:
+    """**故意错误**的 pocket 过滤 (只服务 ``keep_all_subtractive=False``)。
+
+    去掉「只与未入选 component 的金属相交」的内环 = 把那些 pocket **填实**。
+    与未入选金属**和**入选金属都相交的孔 (例如 chip_layout 里 bus gap 与 qubit
+    pocket 已经连通成同一个孔) 保留 —— 填掉它会把入选导体也埋进金属里。
+    """
+    # ponytail: 保留这个错误分支是有意的 —— 它是 §7 那条 live 护栏测试的被测项,
+    # 用来量化「按 component 过滤 pocket」的对地电容偏高幅度。删掉它就等于删掉
+    # 防止 S2 被「优化」回错误实现的那道防线 (§11 R1)。天花板: 只按「孔 vs 金属
+    # 相交」判定, 不理会孔的成因; 够护栏用, 不要拿它当生产路径。
+    if not poly.interiors or not excluded:
+        return poly
+    kept = []
+    for ring in poly.interiors:
+        hole = Polygon(ring)
+        if any(hole.intersects(m) for m in selected):
+            kept.append(ring)
+        elif any(hole.intersects(m) for m in excluded):
+            continue  # ← 这一句就是被护栏测试量化的那个错误
+        else:
+            kept.append(ring)
+    return Polygon(poly.exterior, kept)
+
+
+def emit_block_geo(src_geo: Union[str, Path],
+                   *,
+                   components: Sequence[str],
+                   out_path: Union[str, Path],
+                   arc_tol_um: float = DEFAULT_ARC_TOL_UM,
+                   side_buffer_um: float = DEFAULT_BLOCK_SIDE_BUFFER_UM,
+                   keep_all_subtractive: bool = True) -> Path:
+    """P0-A: 从一份**已存在的整片** ``.geo`` 派生只含 ``components`` 的块几何。
+
+    按 §3.0 的 G1 实现为一个 **emitter**, 不是运行时的 tracker 过滤器: 产物
+    ``block_<name>.geo`` **落盘**, 严格运行在 ``load_geo`` 上游, ``load_geo``
+    及其下游一行不改 (与 M5a 的 ``emit_geo`` / ``elaborate_cells`` 同构)。落盘
+    的好处不只是可归档/可 diff —— 它让 §4 P0-A 的头号风险 S2 变成**可以用 gmsh
+    GUI 目视确认**的东西, 而不是只能靠单元测试。
+
+    与 ``emit_geo`` 的分工差别: 输入是几何而不是 IR, 所以本函数需要 gmsh 读一次
+    源几何 (``load_geo`` + ``surface_outline_um`` → shapely), 布尔运算全在
+    shapely 里做, **不引入任何新的 OCC 布尔切割** (§3.2: 切割面只能落在
+    component 边界)。
+
+    §4 P0-A 的五条规则在这里的落地:
+
+    * **S1** ``metal::`` / ``jj::``: 只保留 ``component ∈ components``。
+    * **S2/S3** ``ground::`` / ``substrate::``: 整张面与「块窗口」求交
+      (``ground_poly.intersection(window)``), 窗口 = 入选 metal/jj 并集 bbox 向外
+      扩 ``side_buffer_um``。**这是本函数最重要的一行**: ground 在源 ``.geo`` 里
+      已经是一张**带孔**的面 (孔由 ``.geo`` 内的 ``BooleanDifference`` 挖好),
+      shapely 求交**自动保留窗口内的全部孔**, 不问那个孔属于哪个 component。所以
+      **绝不能**「按 component 重建 ground 的孔集合」—— 那正是 §4 P0-A 记的头号
+      silent-wrong-result: 被排除 component 的 pocket 没挖 → ground 金属侵入本该
+      是真空腔的区域 → 留下来的导体对地电容**静默偏高, 管线全绿**。
+      正确语义是: 被排除的 component 留下一个**有洞、没金属的空真空腔**。
+      这正是 qiskit-metal ``add_endcaps()`` 的等价物
+      (``renderers/renderer_ansys/ansys_renderer.py:1388`` 起, 在 open pin 处
+      画一个 ``gap × (width+2·gap)`` 矩形加进 ``chip_subtract_dict``, 即从地平面
+      减掉) —— 两边都是「金属移走、地平面开口留下」, 不是新概念。
+    * **S4** airbox: **本函数不写一行代码**。airbox 由 ``gmsh_adapter`` 从
+      ``compute_chip_bbox_from_geo(块几何)`` + sidecar 的 ``airbox:`` 参数派生,
+      块几何小了它自动跟着小 —— 这就是分块省算力的主要来源, 白拿的。
+    * **S5** ``port::`` / ``symmetry::`` (dim=1): 随 S1 按 component 过滤后原样重发。
+
+    Physical 名从源几何的 4 段身份原样重组 (``role::layer::component::primitive``),
+    所以块几何过 ``load_geo`` → ``assign_physical_groups`` 之后的 group 名与整片
+    解**逐字相同** (G1 契约, §7 的 byte-identical 判据)。
+
+    session 所有权: 与 ``load_geo`` 同一契约 —— gmsh 未初始化时由 ``load_geo``
+    initialize, 但本函数 **从不 finalize** (调用方拥有 session)。所以从
+    ``build_geo`` 的单一 session 里调用是安全的 (见 ``geo_build.py`` 的
+    SESSION OWNERSHIP 注释)。
+
+    Args:
+        src_geo: 整片 ``.geo`` 路径 (µm, OpenCASCADE)。
+        components: 入选的 component 名 (``::<component>::`` 字段)。
+        out_path: 块 ``.geo`` 的落盘路径。
+        arc_tol_um: 读源几何轮廓时的弧线采样弦高容差 (µm)。
+        side_buffer_um: 块窗口在入选导体 bbox 外的余量 (µm, 规则 S3)。
+        keep_all_subtractive: **True 是唯一物理正确的行为** (见上面 S2)。
+            ``False`` 是**故意错的**: 它把「只与未入选 component 的金属相交」的
+            pocket 填实, 存在的唯一目的是让 §7 的 live 护栏测试能**量化**「按
+            component 过滤 pocket」造成的误差 (对地电容偏高)。护栏测试的存在本身
+            就是为了防止后人把 True 的行为「优化」掉。生产代码永远不要传 False。
+
+    Returns:
+        写出的块 ``.geo`` 路径 (``Path(out_path)``)。
+
+    Raises:
+        DesignDslError: ``components`` 为空 / 有名字不在源几何里 / 入选后没有任何
+            metal|jj 面 / ground 与块窗口求交后为空。
+    """
+    # 惰性导入: 本模块其余部分不依赖 gmsh (见模块 docstring)。
+    from ._gmsh_geo_source import (  # noqa: PLC0415
+        _curve_points_um, load_geo, surface_outline_um,
+    )
+
+    wanted = list(dict.fromkeys(components or ()))
+    if not wanted:
+        raise DesignDslError(
+            "emit_block_geo: 'components' is empty — a block must name at least "
+            "one component to keep.")
+
+    surfaces = load_geo(src_geo, scale_to_si=False)
+    available = sorted({s.component for s in surfaces})
+    unknown = [c for c in wanted if c not in available]
+    if unknown:
+        raise DesignDslError(
+            f"emit_block_geo: unknown component(s) {unknown} in {src_geo} — "
+            f"available components: {available}.")
+    keep = set(wanted)
+
+    # --- pass 0: 每个 dim-2 physical group 的实体 → shapely Polygon (µm) -----
+    # 一个 physical group 可能有多个 entity, 逐个转。
+    dim2: list[tuple[object, list[Polygon]]] = []
+    selected_metal: list[Polygon] = []
+    excluded_metal: list[Polygon] = []
+    for surf in surfaces:
+        if surf.dim != 2:
+            continue
+        polys: list[Polygon] = []
+        for ent in surf.entities:
+            exterior, holes = surface_outline_um(int(ent), arc_tol_um)
+            polys.extend(_iter_polygons(Polygon(exterior, holes)))
+        if not polys:
+            continue
+        dim2.append((surf, polys))
+        if surf.role in ("metal", "jj"):
+            (selected_metal if surf.component in keep
+             else excluded_metal).extend(polys)
+
+    if not selected_metal:
+        raise DesignDslError(
+            f"emit_block_geo: components {wanted} select no metal|jj surface in "
+            f"{src_geo} — available components: {available}.")
+
+    # --- 块窗口 = 入选导体并集 bbox + side_buffer (规则 S3) ------------------
+    bx0, by0, bx1, by1 = unary_union(selected_metal).bounds
+    sb = float(side_buffer_um)
+    window = box(bx0 - sb, by0 - sb, bx1 + sb, by1 + sb)
+
+    w = _GeoWriter()
+    w.comment("=" * 69)
+    w.comment("AUTO-GENERATED by quantum_dsl.dsl.geo_emit.emit_block_geo (P0-A).")
+    w.comment(f"Block subset derived from: {Path(src_geo).name}")
+    w.comment(f"components      : {', '.join(wanted)}")
+    w.comment(f"side_buffer_um  : {_fmt(sb)}")
+    w.comment(f"window (µm)     : {tuple(_fmt(v) for v in window.bounds)}")
+    w.comment(f"keep_all_subtractive: {keep_all_subtractive}"
+              + ("" if keep_all_subtractive else "   <-- PHYSICALLY WRONG"
+                                                " (guard-rail test only)"))
+    w.comment("Units: µm.  DO NOT EDIT — regenerate from the source .geo.")
+    w.comment("=" * 69)
+    w.raw()
+    w.raw('SetFactory("OpenCASCADE");')
+    w.raw()
+
+    # --- pass 1: 入选的 metal / jj (规则 S1) --------------------------------
+    for surf, polys in dim2:
+        if surf.role not in ("metal", "jj") or surf.component not in keep:
+            continue
+        w.physical_surface(_geo_physical_name(surf),
+                           [_emit_face(w, p) for p in polys])
+    w.raw()
+
+    # --- pass 2: ground / substrate ∩ 窗口 (规则 S2/S3) ---------------------
+    for surf, polys in dim2:
+        if surf.role not in ("ground", "substrate"):
+            continue
+        clipped: list[Polygon] = []
+        for poly in polys:
+            if not keep_all_subtractive:
+                poly = _fill_excluded_holes(
+                    poly, selected_metal, excluded_metal)
+            clipped.extend(
+                p for p in _iter_polygons(poly.intersection(window))
+                if p.area > 0.0)
+        if not clipped:
+            raise DesignDslError(
+                f"emit_block_geo: {_geo_physical_name(surf)} does not "
+                f"intersect the block window "
+                f"{tuple(round(v, 3) for v in window.bounds)} — nothing left to "
+                f"emit (side_buffer_um too small, or the components lie off the "
+                f"sheet).")
+        # 求交可能得到 MultiPolygon: 每块单独发面, 一起挂同一个 Physical 名。
+        w.physical_surface(_geo_physical_name(surf),
+                           [_emit_face(w, p) for p in clipped])
+    w.raw()
+
+    # --- pass 3: port / symmetry dim-1 marker, 随 S1 过滤 (规则 S5) ----------
+    for surf in surfaces:
+        if surf.dim != 1 or surf.component not in keep:
+            continue
+        markers: list[str] = []
+        for ent in surf.entities:
+            # 复用 loader 的曲线采样器; marker 实际都是直线 (emit_geo 发的是
+            # line_marker), 弧线 marker 会退化成弦 —— 静电用不到 (M5a 决策 #2)。
+            pts = _curve_points_um(1, int(ent), arc_tol=arc_tol_um)
+            if len(pts) >= 2 and pts[0] != pts[-1]:
+                markers.append(w.line_marker(pts[0], pts[-1]))
+        if markers:
+            w.physical_curve(_geo_physical_name(surf), markers)
+
+    out = Path(out_path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(w.text(), encoding="utf-8")
+    return out

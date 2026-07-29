@@ -210,14 +210,20 @@ def build_palace_config(
         order: 有限元阶数 (``Solver.Order``), 缺省 2。
         mesh_path: 可选 ``Model.Mesh`` 路径 (相对/绝对均可); orchestrator 写入。
 
-    要求至少 **2 个 Terminal** (电容矩阵需≥2 导体), 否则 ``DesignDslError``。
+    要求至少 **1 个 Terminal**, 否则 ``DesignDslError``。
+
+    ⚠ 这条曾经是「至少 **2** 个」(M1: 电容矩阵总得有两个导体才有互电容)。M8 的分块
+    提取 (``extract.blocks``) 打破了这个前提: 一个块**完全可以只含一个导体**, 此时
+    1×1 的 Maxwell 矩阵就是该导体对接地边界 (``gnd_*_sfs`` 或被接地的 ``vacuum_outer``)
+    的自电容 —— 这正是拼装层要的量, Palace 也照常做一次 terminal 激励求解。
+    ``two_pads`` 分块成 A/B 两个单导体块就是这个情形 (spec §7 第一行的 A/B 对照)。
+    0 个 Terminal 仍然 raise —— 那才是「作者忘了给导体打 ``metal::`` 标注」的症状,
+    而那个保护是这条守卫真正的价值所在。
     """
     bindings = terminal_bindings(physical_attributes)
-    if len(bindings) < 2:
-        names = [b.group for b in bindings]
+    if not bindings:
         raise DesignDslError(
-            "Electrostatic capacitance needs >=2 conductor terminals "
-            f"(found {len(bindings)}: {names or '<none>'}). "
+            "Electrostatic capacitance needs >=1 conductor terminal (found none). "
             "Each conductor must author a metal::N::C::P surface so that a "
             "'{C}_{P}_sfs' physical group exists."
         )
