@@ -390,8 +390,11 @@ class TestN9Assemble:
                     "maxwell_fF": [[3.0, -2.0], [-2.0, 6.0]]}],
             keep=("a", "s", "b"))
         assert out.labels == ("a", "s", "b")
-        assert out.maxwell_fF == pytest.approx(
-            [[5.0, -1.0, 0.0], [-1.0, 7.0, -2.0], [0.0, -2.0, 6.0]])
+        # pytest.approx 不支持嵌套 list (构造期 TypeError) → 逐行比较;
+        # golden 数值逐字不动 (2026-08-24 harness 修复)。
+        expected = [[5.0, -1.0, 0.0], [-1.0, 7.0, -2.0], [0.0, -2.0, 6.0]]
+        for row, exp in zip(out.maxwell_fF, expected, strict=True):
+            assert row == pytest.approx(exp)
 
     def test_schur_elimination(self):
         """消掉未保留节点 g: C' = C_AA − C_AB·C_BB⁻¹·C_BA (手算可验)。"""
@@ -403,9 +406,11 @@ class TestN9Assemble:
                                    [-3.0, -1.0, 12.0]]}],
             keep=("a", "b"))
         assert out.labels == ("a", "b")
-        assert out.maxwell_fF == pytest.approx(
-            [[10.0 - 9.0 / 12.0, -2.0 - 3.0 / 12.0],
-             [-2.0 - 3.0 / 12.0, 8.0 - 1.0 / 12.0]])
+        # 同上: 嵌套 approx 不可用 → 逐行; golden 数值逐字不动。
+        expected = [[10.0 - 9.0 / 12.0, -2.0 - 3.0 / 12.0],
+                    [-2.0 - 3.0 / 12.0, 8.0 - 1.0 / 12.0]]
+        for row, exp in zip(out.maxwell_fF, expected, strict=True):
+            assert row == pytest.approx(exp)
 
     def test_unknown_keep_label_raises(self):
         """keep 里写错的名字必须 raise — 拼错 = 静默接地是 v3 踩过的坑。"""

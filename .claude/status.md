@@ -8,7 +8,7 @@
 |---|---|
 | 分支 | `v4`(orphan, worktree `~/quantum_dsl-v4`;v3 在主 worktree `~/quantum_dsl` 的 `main`) |
 | 契约 | [`SPEC.md`](../SPEC.md) + `tests/test_spec.py`(N0–N14 可执行需求) |
-| 实现进度 | **未开始**(契约套件全红, 除 N0)—— 但物理管线已 **de-risk 并定架构**: 金属按零厚度片 imprint(v3 "Palace 拒内部面 Terminal" 系误诊, 本机实证推翻), 设计文档 [`physics-pipeline.md`](physics-pipeline.md), 文献出处 [`palace-lit-survey.md`](palace-lit-survey.md); N7 golden 已按该配方重钉(原型脚本 `.claude/proto/`, 复算见 pipeline §7); V4-3 数学对 golden 逐位复算通过 |
+| 实现进度 | **V4-1 + V4-3 完成**(N0–N3、N8–N11 全绿; 30 passed / 4 skipped(live 门)/ 10 failed 全是未开工组)。**下一步 V4-2 几何分叉**(N4–N6, 先读 pipeline §4–§6), 然后 V4-4/V4-5/V4-6。物理管线已 de-risk 定架构(零厚度片 imprint), 设计文档 [`physics-pipeline.md`](physics-pipeline.md); N7 golden 按该配方重钉(pipeline §7) |
 | 测试跑法 | `~/miniconda3/envs/qdsl313/bin/python -m pytest tests/ -q`(Python 3.13;live 加 `QDSL_RUN_PALACE=1`) |
 | 完成定义 | 契约 0 failed + N7 live 两条(回归锚: two_pads C 对 `[[24.5324,-1.9472],[-1.9472,24.5353]]` fF <2%)+ **N15 两条(外部物理锚: sung 对 PRX 11.021058 论文值, C_Σ ±5%, gate `QDSL_RUN_PALACE_SUNG=1`, V4-6 收尾跑)** |
 
