@@ -22,17 +22,22 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started。
 - [ ] **V4-4 cells**: `rounded_polygon`(shapely buffer 预采样)+ `emit_geo`
       (N12, load_geo 可回读)。
 - [ ] **V4-5 编排**: `build(meta, out, solve=)` 产 gds/mesh/config/manifest
-      (N13, sha256)+ `extract.blocks` 分块落盘(N14)。
+      (N13, sha256)+ `extract.blocks` 分块落盘(N14)。分块语义与廉价防线
+      (几何邻近但结构性零耦合 → warn)见 [`physics-pipeline.md`](physics-pipeline.md) §11。
 - [ ] **V4-6 live 验证 + 收尾**: N7 两条(Palace 0.16, golden <2%)+ README/SPEC
-      核对 + journaling。
+      核对 + journaling。运行面口径(多 rank 可用、AMR 试点条件、域尺寸扫)
+      见 [`physics-pipeline.md`](physics-pipeline.md) §12。
 
 ## Session logs
 - [`session/2608240435.md`](session/2608240435.md) — 2026-08-24 · **物理管线
-  de-risk + 定架构**: 原仓 issues #1–#28 调研([`v3-issue-survey.md`](v3-issue-survey.md));
-  gmsh→Palace 原型 6 组实测(N7 golden 全通过, order 1 除外); **零厚度片
-  imprint 定为 v4 金属表示**(v3 "Palace 拒内部面 Terminal" 系误诊, 实证推翻,
-  ε-nudge/scale-ladder 失效类随之消失); 设计文档
-  [`physics-pipeline.md`](physics-pipeline.md); V4-3 数学对 golden 逐位复算通过。
+  de-risk + 定架构 + 预研收口**: 原仓 issues #1–#28 调研([`v3-issue-survey.md`](v3-issue-survey.md));
+  gmsh→Palace 原型 6 组实测; **零厚度片 imprint 定为 v4 金属表示**(v3
+  "Palace 拒内部面 Terminal" 系误诊, ε-nudge/scale-ladder 失效类随之消失);
+  N7 golden 重钉为零厚度片配方实测值; 设计文档
+  [`physics-pipeline.md`](physics-pipeline.md) §1–§12; 后半程: 分块拼装
+  取证(SPEC 措辞收紧)、Palace 运行面与 LOM 公式口径双跑取证(χ 引文修正,
+  g 口径分叉钉死)、64C 裸机实测(order2 多 rank 无恙, v3 #22 = 环境问题)。
+  V4-3 数学对 golden 逐位复算通过。四份原始取证归档 `.claude/*-survey.md`。
 - [`session/2608240352.md`](session/2608240352.md) — 2026-08-24 · **v4 立项**(空白 orphan 分支):
   SPEC.md 契约 + `tests/test_spec.py` 可执行需求(N0–N14, 全红起点)+ fixtures
   (two_pads.geo/meta 新词汇/Palace verbatim CSV)+ pyproject(py≥3.13)+
