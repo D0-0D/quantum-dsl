@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "quantum-dsl"
+version = "4.0.0a0"
+description = "Superconducting quantum-chip layout DSL: native Gmsh .geo + meta.yaml -> GDS / Palace electrostatics -> circuit model."
+readme = "README.md"
+requires-python = ">=3.13"
+license = { text = "Apache-2.0" }
+authors = [{ name = "D0-0D" }]
+keywords = ["superconducting", "quantum", "eda", "gmsh", "palace", "gds"]
+dependencies = [
+    "pyyaml>=5.4",
+    "shapely>=2",
+    "numpy>=1.26",
+]
+
+[project.optional-dependencies]
+# 网格分叉 (build_mesh / palace_config) 需要 gmsh; GDS 分叉需要 gdstk。
+# `import quantum_dsl` 不得拉起它们 (契约 N0)。
+gmsh = ["gmsh>=4.13"]
+gds = ["gdstk>=0.9.53"]
+test = ["pytest>=8"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["quantum_dsl*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

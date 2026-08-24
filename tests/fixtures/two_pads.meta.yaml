@@ -1,0 +1,26 @@
+# two_pads.meta.yaml — 2 导体参考件的 Layer-1 sidecar (v4 词汇, 见 SPEC.md)。
+# 刻意做小 (浅衬底 + 紧凑 airbox + 粗网格), 真实 Palace 求解分钟级完成。
+# 物理 golden: 实测 Maxwell C = [[24.7288, -1.976], [-1.976, 24.7293]] fF。
+
+schema: quantum-dsl/meta/1
+
+geo: two_pads.geo
+
+materials:
+  substrate: {eps_r: 11.45, thickness_um: 100}
+
+airbox: {top_um: 120, bottom_um: 120, side_um: 80}
+
+mesh: {max_size_um: 40, min_size_um: 4}
+
+solver: {type: electrostatic, order: 2}
+
+gds:
+  by_role:
+    metal: {layer: 1, datatype: 0}
+
+# 每块焊盘 = 一个对地单岛 transmon, 10 nH 结; 非对角给 A↔B 耦合。
+circuit_model:
+  qubits:
+    - {name: A, island: A, L_J: 10nH}
+    - {name: B, island: B, L_J: 10nH}

@@ -1,0 +1,21 @@
+# two_pads_blocks.meta.yaml — 同一几何按 component 边界切两块 (N14 分块契约)。
+# 每块派生独立 block_<name>.geo 各自求解; 跨块只有共享节点名可表达耦合
+# (本例两块无共享节点, A↔B 互容在分块下必然丢 —— 固有代价, 见 SPEC.md)。
+
+schema: quantum-dsl/meta/1
+
+geo: two_pads.geo
+
+materials:
+  substrate: {eps_r: 11.45, thickness_um: 100}
+
+airbox: {top_um: 120, bottom_um: 120, side_um: 80}
+
+mesh: {max_size_um: 40, min_size_um: 4}
+
+solver: {type: electrostatic, order: 2}
+
+extract:
+  blocks:
+    - {name: A, components: [A]}
+    - {name: B, components: [B]}
