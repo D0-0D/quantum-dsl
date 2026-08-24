@@ -63,7 +63,7 @@ subsystems: [...]                     # 可选: TL_RESONATOR 等
 | N2 geo 加载 | `load_geo(path) → Geo(.physicals[Physical(name,role,layer,component,primitive)], .bbox_um)` | `TestN2LoadGeo` |
 | N3 meta 加载 | `load_meta(path) → Meta`(上表词汇; 未知顶层键 raise) | `TestN3LoadMeta` |
 | N4 GDS | `build_gds(geo_path, meta, out) → Path`(µm verbatim, by_role 映射) | `TestN4Gds` |
-| N5 mesh | `build_mesh(geo_path, meta, out) → Mesh(.groups, .num_cells)`(导体挖空为边界组; 空网格 raise) | `TestN5Mesh` |
+| N5 mesh | `build_mesh(geo_path, meta, out) → Mesh(.groups, .num_cells)`(零厚度导体片 imprint 为边界面组; 空网格 raise) | `TestN5Mesh` |
 | N6 Palace | `palace_config(mesh, meta, out) → dict`; `parse_capacitance(postpro) → Cap(.labels, .maxwell_fF, .mutual_fF)` | `TestN6Palace` |
 | N7 live 解 | `build(meta, out, solve=True)`(gate `QDSL_RUN_PALACE=1`)C 对 golden <2% | `TestN7Live` |
 | N8 电路模型 | `solve_circuit_model(labels, maxwell_fF, junctions) → .qubits/.couplings`(dict 入参; SQUID; nan 拒绝) | `TestN8CircuitModel` |

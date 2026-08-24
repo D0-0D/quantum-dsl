@@ -10,8 +10,10 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started。
       `parse_length`/`parse_quantity`(N1)+ `load_geo` 四段名解析(N2)+
       `load_meta` 新词汇(N3)+ import 纯度(N0)。
 - [ ] **V4-2 几何分叉**: `build_gds`(N4, gdstk µm verbatim)+ `build_mesh`
-      (N5, 导体挖空 conductors-as-voids, 空网格 raise)+ `palace_config` /
-      `parse_capacitance`(N6)。⚠ OCC 的坑看旧仓「别重新踩」表。
+      (N5, **零厚度片 imprint**——焊盘面 fragment 进衬底/真空界面, Terminal 挂
+      内部边界面; 空网格 raise)+ `palace_config` / `parse_capacitance`(N6)。
+      ⚠ 先读 [`physics-pipeline.md`](physics-pipeline.md) §4–§6(配方/单位/网格实测);
+      旧仓「别重新踩」表大半是挖空路线的对策, 不适用。
 - [ ] **V4-3 物理内核**(纯 math, 不依赖 V4-2): `solve_circuit_model`
       逆电容 LOM + SQUID 无奇点式 + nan 守卫(N8)+ `assemble` 累加/Schur(N9)+
       `lumped_cpw`/`guided_wavelength` AGM(N10)+ `resonator_lumped_lc`/
