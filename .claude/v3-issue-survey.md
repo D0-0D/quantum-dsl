@@ -43,6 +43,10 @@
 - sung 网格(1.54M tets, p=2 → 2.24M 未知量)多 rank 总在第 2 个 terminal
   静默掉 rank; order 1 / 8 rank 干净。怀疑 ZZ 误差估计器的 RT 空间(H1 的 6×)。
 - 已排除: 场输出、OOM、vader/CMA。绕过 = 分块降规模。
+- **v4 复判(2026-08-24, 64C/128G 裸机)**: 同规模件(two_pads 20/2, ~1.7M
+  未知量, order 2)在 spack 干净构建的 Palace 0.16 + openmpi 5.0.10 上
+  np=4 / np=32 全 rc=0, C 一致到 1e-12——不可复现, 定性为 v3 运行环境/
+  构建问题, 非 Palace bug(pipeline §6)。
 
 **A7. 浮动/双岛 transmon 被当单岛 → C_Σ 错 1.70×(issue #20, 已修 `a8e3ed7`)**
 - sung: 单岛写法 C_Σ 38.36 vs 正确差分 22.59 fF; 全绿静默通过。
