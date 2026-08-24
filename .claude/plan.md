@@ -25,6 +25,10 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started。
       核对 + journaling。
 
 ## Session logs
+- [`session/2608240435.md`](session/2608240435.md) — 2026-08-24 · **V4-3 de-risk**:
+  原仓 issues #1–#28 物理问题调研(→ [`physics-pitfalls.md`](physics-pitfalls.md))+
+  gmsh→Palace 原型本机实证(N7 golden 0.038%/0.072%, 推荐 µm+L0=1e-6 免 dilate)+
+  V4-3 数学链条对 golden 逐位复算通过。
 - [`session/2608240352.md`](session/2608240352.md) — 2026-08-24 · **v4 立项**(空白 orphan 分支):
   SPEC.md 契约 + `tests/test_spec.py` 可执行需求(N0–N14, 全红起点)+ fixtures
   (two_pads.geo/meta 新词汇/Palace verbatim CSV)+ pyproject(py≥3.13)+
