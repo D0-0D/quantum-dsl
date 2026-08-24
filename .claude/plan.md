@@ -15,7 +15,8 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started。
       ⚠ 先读 [`physics-pipeline.md`](physics-pipeline.md) §4–§6(配方/单位/网格实测);
       旧仓「别重新踩」表大半是挖空路线的对策, 不适用。
 - [ ] **V4-3 物理内核**(纯 math, 不依赖 V4-2): `solve_circuit_model`
-      逆电容 LOM + SQUID 无奇点式 + nan 守卫(N8)+ `assemble` 累加/Schur(N9)+
+      逆电容 LOM + **浮动双岛差模约化**(完整求逆取 θθ 块, N8 闭式 case)+
+      SQUID 无奇点式 + nan 守卫(N8)+ `assemble` 累加/Schur(N9)+
       `lumped_cpw`/`guided_wavelength` AGM(N10)+ `resonator_lumped_lc`/
       `dispersive_shift_hz`(N11)。算法可从旧仓 `dsl/{circuit_model,assemble,
       cpw_analytic}.py` 审后搬运(它们本就无 qiskit_metal import)。
@@ -24,9 +25,11 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started。
 - [ ] **V4-5 编排**: `build(meta, out, solve=)` 产 gds/mesh/config/manifest
       (N13, sha256)+ `extract.blocks` 分块落盘(N14)。分块语义与廉价防线
       (几何邻近但结构性零耦合 → warn)见 [`physics-pipeline.md`](physics-pipeline.md) §11。
-- [ ] **V4-6 live 验证 + 收尾**: N7 两条(Palace 0.16, golden <2%)+ README/SPEC
+- [ ] **V4-6 live 验证 + 收尾**: N7 两条(回归锚, golden <2%)+ **N15 两条
+      (外部物理验证: sung 对 PRX 11.021058, C_Σ ±5% + β_qc ±20%, gate
+      `QDSL_RUN_PALACE_SUNG=1`, 整片 order2 重解可上多核真机)** + README/SPEC
       核对 + journaling。运行面口径(多 rank 可用、AMR 试点条件、域尺寸扫)
-      见 [`physics-pipeline.md`](physics-pipeline.md) §12。
+      见 [`physics-pipeline.md`](physics-pipeline.md) §12, N15 边界见 §9。
 
 ## Session logs
 - [`session/2608240435.md`](session/2608240435.md) — 2026-08-24 · **物理管线

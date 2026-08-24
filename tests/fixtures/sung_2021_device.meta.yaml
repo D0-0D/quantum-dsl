@@ -1,0 +1,58 @@
+# =====================================================================
+# sung_2021_device.meta.yaml — N15 外部物理验证 fixture 的 Layer-1 sidecar。
+# 器件: Y. Sung et al., "Realization of High-Fidelity CZ and ZZ-Free iSWAP
+# Gates with a Tunable Coupler", PRX 11, 021058 (2021) / arXiv:2011.01261。
+#
+# ---------------------------------------------------------------------
+# 论文报告值(全在 arXiv 补充材料):
+#   E_J/h: QB1 12.2 GHz(单结); CPLR 46+25 GHz、QB2 13+2.8 GHz(非对称
+#   SQUID, 逐结)。下方 E_J 取零磁通最大值 E_J1+E_J2(无磁通旋钮, 模型
+#   永远坐在调谐区上甜点)。
+#   E_C/h = 0.195 / 0.085 / 0.190 GHz → C_Σ = 99.3 / 227.9 / 101.9 fF
+#   电容表: C_1=95, C_c=228, C_2=98, C_1c=C_2c=5.36, C_12=0.125 fF
+#          → 无量纲耦合 β: q–c 0.0364, q–q 0.0013
+#   ω/2π = 4.16 / 5.45 / 4.00 GHz(CPLR/QB2 可调, 数值为工作点);
+#   g_1c/2π=72.5, g_2c/2π=71.5, g_12/2π=5.0 MHz
+#   (注: 论文的 C 值本身是"设计仿真+对实测频率拟合", 频率才是直接实测。)
+#
+# ---------------------------------------------------------------------
+# 本版图的可复现边界(v3 时代 Elmer 6.87M tets 权威档实测, 逐条有账):
+#   可断言: C_Σ ×3(Elmer 对论文 1.00–1.03)→ N15 判据 ±5%;
+#           β_1c/β_2c(Elmer 0.0390 vs 论文 0.0364, +7% 系版图近似)→ ±20%。
+#   必须排除(结构性, 不是精度问题):
+#   * C_12 / β_12: 直接 q–q 互容 0.125 fF 在本简化版图不存在(三个矩形
+#     pad 差分远场相消, Elmer 也只解出 0.003 fF, ×0.02)——真器件有本版图
+#     没画的直接耦合路径。circuit_model 报的 q–q 耦合走 coupler 中介路径,
+#     数值接近论文纯属巧合, 不得用作验证。
+#   * 绝对 g / f01(CPLR/QB2): 论文 g 在 ω_c/2π=5.45 GHz 磁通工作点,
+#     本模型无磁通旋钮, 坐在零磁通 ~6.8 GHz, g 系统性偏高 ~1.4×。
+# ---------------------------------------------------------------------
+
+schema: quantum-dsl/meta/1
+geo: sung_2021_device.geo
+
+materials:
+  substrate: {eps_r: 11.45, thickness_um: 750}
+
+# v3 最佳精度配方: 开放边界(不给盒壁挂 Ground; 片上 ground sheet 提供电位
+# 参考), airbox 取自 v3 实测档
+airbox: {top_um: 890, bottom_um: 1650, side_um: 200}
+
+mesh: {max_size_um: 80, min_size_um: 2}
+
+solver: {type: electrostatic, order: 2, outer_boundary: open}
+
+gds:
+  by_role:
+    metal:  {layer: 1,  datatype: 0}
+    ground: {layer: 1,  datatype: 0}
+    jj:     {layer: 20, datatype: 0}
+
+circuit_model:
+  # 三个都是浮动(差分)transmon: 结桥接两个岛, 都不接地。
+  # islands 列表 = .geo component 段; 单岛写 island: X 是它的退化形式。
+  # 只声明一个岛会把另一块 pad 静默接地 —— v3 实测 C_Σ/E_C 错 1.70×。
+  qubits:
+    - {name: QB1,  islands: [QB1_t, QB1_b],   E_J: 12.2GHz}
+    - {name: CPLR, islands: [CPLR_t, CPLR_b], E_J: 71GHz}
+    - {name: QB2,  islands: [QB2_t, QB2_b],   E_J: 15.8GHz}

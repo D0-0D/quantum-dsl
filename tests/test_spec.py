@@ -24,6 +24,7 @@ import yaml
 
 FIXTURES = Path(__file__).parent / "fixtures"
 TWO_PADS_META = FIXTURES / "two_pads.meta.yaml"
+SUNG_META = FIXTURES / "sung_2021_device.meta.yaml"
 BLOCKS_META = FIXTURES / "two_pads_blocks.meta.yaml"
 
 # two_pads 的实测 Maxwell 矩阵 (fF) — N7 的 live golden。
@@ -40,6 +41,12 @@ N8_MAXWELL = [[24.73, -1.98], [-1.98, 24.72]]
 live = pytest.mark.skipif(
     not os.environ.get("QDSL_RUN_PALACE"),
     reason="live Palace solve — enable with QDSL_RUN_PALACE=1")
+
+# N15 单独闸门: sung 整片 order-2 是重解 (~百万级未知量, 分钟-小时级),
+# 不挂在 N7 的快速 live 闸下; V4-6 收尾必须跑通一次 (可在多核真机跑)。
+live_sung = pytest.mark.skipif(
+    not os.environ.get("QDSL_RUN_PALACE_SUNG"),
+    reason="sung paper-validation solve — enable with QDSL_RUN_PALACE_SUNG=1")
 
 
 # =====================================================================
@@ -309,10 +316,34 @@ class TestN8CircuitModel:
         assert a.f01_GHz == pytest.approx(9.364926800074445, rel=1e-9)
         assert a.EJ_over_EC == pytest.approx(20.735322324095453, rel=1e-9)
 
+    def test_floating_two_island_closed_form(self):
+        """浮动双岛: 结桥接两岛, 都不接地 (sung/N15 依赖的数学)。
+
+        手算 fixture: 岛 a,b 对地 50/40 fF, 岛间 30 fF
+        → Maxwell = [[80,-30],[-30,70]] fF。
+        结支路差模的有效电容 (完整求逆取 θθ 块, Yanay et al. npj QI 2020
+        Eq. 56 同款闭式): C_eff = C_ab + C_ag·C_bg/(C_ag+C_bg)
+                               = 30 + 50·40/90 = 52.2222… fF。
+        错误口径参照: 把 b 静默接地 → 1/[C⁻¹]_aa = 67.14 fF (v3 实测这类
+        错误在 sung 上放大成 1.70×); "删共模行列再求逆" = A⁻¹, 亦错。
+        """
+        from quantum_dsl import solve_circuit_model
+        r = solve_circuit_model(
+            labels=("a", "b"), maxwell_fF=[[80.0, -30.0], [-30.0, 70.0]],
+            junctions=[{"name": "Q", "islands": ["a", "b"], "L_J": 10e-9}])
+        (q,) = r.qubits
+        assert q.C_sigma_fF == pytest.approx(52.22222222222223, rel=1e-9)
+        assert q.E_C_GHz == pytest.approx(0.37091928494028104, rel=1e-9)
+        assert q.f01_GHz == pytest.approx(6.593621041343882, rel=1e-9)
+        assert q.EJ_over_EC == pytest.approx(44.06929470736441, rel=1e-9)
+
     def test_two_pads_coupling_g(self):
         r = self._two_pads()
         (c,) = r.couplings
         assert {c.qubit_a, c.qubit_b} == {"A", "B"}
+        # β 是与磁通/E_J 无关的纯几何耦合度量 (N15 对论文断言的就是它);
+        # g = ½·β·√(f01_a·f01_b) — 两条 golden 互为闭式一致性校验
+        assert c.beta == pytest.approx(0.08008089142510777, rel=1e-9)
         assert c.g_MHz == pytest.approx(375.0105674523576, rel=1e-6)
 
     def test_anharmonicity_is_minus_e_c(self):
@@ -518,3 +549,40 @@ class TestN14Extract:
         assert len(r["blocks"]) == 2
         for blk in r["blocks"]:
             assert Path(blk["config"]).exists()
+
+
+# =====================================================================
+# N15 — 外部物理验证: Sung et al. PRX 11.021058 (gated, 独立于 N7 闸门)
+# N7 是自参照回归锚 (钉配方可复现); 本组才锚外部真相 (论文/跨求解器)。
+# 判据出处、可复现边界与排除项: tests/fixtures/sung_2021_device.meta.yaml 头注。
+# =====================================================================
+class TestN15SungPaper:
+
+    def _solve(self, tmp_path):
+        from quantum_dsl import build
+        result = build(SUNG_META, tmp_path, solve=True)
+        return yaml.safe_load(
+            Path(result["results"]).read_text(encoding="utf-8"))
+
+    @live_sung
+    def test_c_sigma_against_paper(self, tmp_path):
+        """C_Σ ×3 对论文 ±5%。诊断参照 (v3 Elmer 6.87M tets 权威档):
+        102.1/232.8/102.1 fF (对论文 1.00–1.03) — 若失败先比对它再怀疑物理。"""
+        doc = self._solve(tmp_path)
+        qubits = {q["name"]: q for q in doc["hamiltonian"]["qubits"]}
+        paper = {"QB1": 99.3, "CPLR": 227.9, "QB2": 101.9}  # fF, 由论文 E_C 换算
+        for name, ref in paper.items():
+            assert qubits[name]["C_sigma_fF"] == pytest.approx(ref, rel=0.05)
+
+    @live_sung
+    def test_qubit_coupler_beta_against_paper(self, tmp_path):
+        """无量纲 β = |C'⁻¹_ij|/√(C'⁻¹_ii·C'⁻¹_jj) 与磁通/E_J 无关, 可对论文
+        断言 (v3 Elmer 得 0.0390, +7% 系简化版图所致 → 容差 ±20%)。
+        排除项 (结构性, 见 meta 头注): β_12/C_12 (本版图无直接 q-q 路径,
+        差分远场相消, Elmer 也只得论文的 2%), 绝对 g 与 CPLR/QB2 的 f01
+        (论文在磁通工作点, 本模型坐零磁通)。"""
+        doc = self._solve(tmp_path)
+        betas = {frozenset((c["qubit_a"], c["qubit_b"])): c["beta"]
+                 for c in doc["hamiltonian"]["couplings"]}
+        assert betas[frozenset(("QB1", "CPLR"))] == pytest.approx(0.0364, rel=0.20)
+        assert betas[frozenset(("QB2", "CPLR"))] == pytest.approx(0.0364, rel=0.20)

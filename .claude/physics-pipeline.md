@@ -276,9 +276,16 @@ two_pads 全部实测。⚠ 下表"偏差"列以 **v3 旧 golden**
 - **qm4q**(qiskit-metal 同几何 Elmer 对照): 单 transmon pocket + ground;
   Elmer 参考 pad 电容 ~110 fF 级, v3 最好达 −5.5%(共面+开放边界+order 2)。
   文件: `examples/dsl/geo/qm4q_transmon_cell.*`, `examples/qiskit_metal_ref/`。
-- **sung**(论文对照, PRX 11 021058): 3 浮动双岛 transmon; C_Σ 对 Elmer
-  +1~3%; 直接 q-q 互容 C_12 未复现(0.003 vs 0.125 fF, 差分远场相消);
-  引用其数字前必读旧仓 session 2607280204(有两个大误差反向抵消的坑)。
+- **sung**(论文对照, PRX 11 021058)——**已升格为契约 N15**(fixture 进
+  `tests/fixtures/sung_2021_device.*`, gate `QDSL_RUN_PALACE_SUNG=1`):
+  3 浮动双岛 transmon。可断言: C_Σ ×3 对论文 ±5%(Elmer 权威档对论文
+  1.00–1.03, 这条是**独立**交叉, 不是抵消产物)、β_qc ±20%; 结构性排除:
+  C_12/β_12(本简化版图无直接 q-q 路径, 差分远场相消, Elmer 也只得 2%)、
+  绝对 g 与可调 qubit 的 f01(论文在磁通工作点, 模型坐零磁通)。
+  ⚠ v3 自己的 Palace "分块 o2 对 Elmer −3%" **是**抵消产物: 同 order 下
+  分块抬 C_Σ +12~15%, order 1→2 压 −20~22%, 净 −3%(v3 session 2607290329
+  原话"两个大误差反向抵消"); v3 整片 o2 因 #22 从未跑成——N15 将是整片
+  o2 的第一次干净测量, 而 #22 已在裸机排除(§6)。
 - Elmer 侧口径: 输出是 SPICE 互容且需 ×ε0; 禁用 qiskit-metal 的 pandas
   后处理(pandas≥2 下静默错), 从原始 `cap_matrix.txt` 自建。
 
