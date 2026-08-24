@@ -263,3 +263,27 @@ two_pads 全部实测。⚠ 下表"偏差"列以 **v3 旧 golden**
   g RMSE ~24.5%(材料/制程/省略物理)——仿真间一致性 ≠ 对器件预测精度。
 - **收敛常识**: 光滑区 p 加密指数收敛, 奇异点附近 h 加密更有效——边缘细化
   不可被升阶替代; KQCircuits 默认 p=3, Q3D 默认目标 0.5%。
+
+## 11. 分块拼装(N9/N14)的适用边界(codex 取证 86 次检索 → [`assemble-lit-survey.md`](assemble-lit-survey.md))
+
+v4 的"逐块提取 → 同名节点累加 → Schur 消元"与 qiskit-metal composite LOM
+(LOM 2.0)**机制同构**(源码行号级证据: 节点 rename → 邻接表 += 累加 →
+Schur 补 C−C·S(SᵀCS)⁻¹SᵀC; v3 曾对其 golden 命中 7.7e-16)。这是**明确披露
+的 quasi-lumped 近似**, 合理; 但要认清边界:
+
+- **数学性质**: 两导体的直接 Maxwell 互容, 只在它们于同一次求解中共现时存在;
+  共享节点只能提供网络中介路径; **共享 ground 不算耦合路径**(datum 不传播)。
+- **丢掉的量不总是小**: 公开设计里直接 q–q 腿相对 q–coupler 腿从 <1%
+  (Goto 2022 DTC: 0.4%)到 ~10–15%(常规单 coupler: g_12=25 vs g_1c=250 MHz)
+  都有; 相消型 coupler 的零耦合点 g = g_12 − g_eff **直接依赖**直接腿——
+  切错块会移动甚至消灭零点。"跨块直接互容天然可忽略"不成立。
+- **业界对照**: KQCircuits/SQDMetal 不做分块拼装, 整域(或用户选定单域)求解;
+  经典 EDA 窗口化提取(Hipex vicinity、BEM windowing 上下界、pattern+stitch)
+  都带显式作用距离/重叠/误差界——裸切块纪律的防护水平低于它们。
+- **LOM 论文自己的切块经验**: qubit cell 要装下 qubit pads + 相邻 CPW 段 +
+  coupler pads; cell padding ~100 µm 后对 χ 的影响 <0.5%(仅对其版图成立,
+  无普适值)。
+- **v4 决议**: 契约措辞已收紧(SPEC "绑定键"段); 整片求解仍是默认(blocks
+  可选)。廉价防线留给 V4-5 实现时: extract 时对"几何邻近(如间距 <
+  airbox.side)但结构性零耦合"的导体对告警。core+halo、邻块 pair-solve、
+  期望耦合图覆盖检查按需再上(YAGNI, 出处与做法见 survey §3)。

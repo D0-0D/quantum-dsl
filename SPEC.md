@@ -51,28 +51,32 @@ subsystems: [...]                     # 可选: TL_RESONATOR 等
 ```
 
 **绑定键 = component 段**: 电容矩阵行列标签、circuit_model 的 island、assemble 的节点名,
-一律用 `.geo` Physical 名的第 3 段。跨块耦合只靠**共享节点名**(同名 = 同导体);
-两块分离导体的互电容必然丢——想保耦合就放同一块(v3 已证明的固有代价, 不是 bug)。
+一律用 `.geo` Physical 名的第 3 段(同名 = 同导体; 跨块共享 = 同一 component 显式列入
+多个 block 的 `components:`)。分块是 **quasi-lumped 近似**(qiskit-metal LOM 2.0 同款,
+机制同构证据见 `.claude/assemble-lit-survey.md`): 两导体要有**直接** Maxwell 互容,
+必须**在至少一次求解中共现**; 共享节点只提供网络中介路径, 共享 ground 不算耦合路径。
+跨块直接互容 = 结构性零, 且不总是小量(相消型 coupler 的零耦合点对它敏感)——
+切块纪律: 有意直接耦合的导体对必须同块共现。
 
 ## 公共 API(顶层扁平; 内部模块组织自由)
 
-| 需求 | API | 测试类 |
-|---|---|---|
-| N0 平台/纯度 | `import quantum_dsl` 轻量; py≥3.13; 无 qiskit_metal | `TestN0Platform` |
-| N1 单位 | `parse_length("0.5mm")→500.0(µm)`; `parse_quantity("10nH")→1e-8(SI)` | `TestN1Units` |
-| N2 geo 加载 | `load_geo(path) → Geo(.physicals[Physical(name,role,layer,component,primitive)], .bbox_um)` | `TestN2LoadGeo` |
-| N3 meta 加载 | `load_meta(path) → Meta`(上表词汇; 未知顶层键 raise) | `TestN3LoadMeta` |
-| N4 GDS | `build_gds(geo_path, meta, out) → Path`(µm verbatim, by_role 映射) | `TestN4Gds` |
-| N5 mesh | `build_mesh(geo_path, meta, out) → Mesh(.groups, .num_cells)`(零厚度导体片 imprint 为边界面组; 空网格 raise) | `TestN5Mesh` |
-| N6 Palace | `palace_config(mesh, meta, out) → dict`; `parse_capacitance(postpro) → Cap(.labels, .maxwell_fF, .mutual_fF)` | `TestN6Palace` |
-| N7 live 解 | `build(meta, out, solve=True)`(gate `QDSL_RUN_PALACE=1`)C 对 golden <2% | `TestN7Live` |
-| N8 电路模型 | `solve_circuit_model(labels, maxwell_fF, junctions) → .qubits/.couplings`(dict 入参; SQUID; nan 拒绝) | `TestN8CircuitModel` |
-| N9 拼装 | `assemble(cells, keep) → (.labels, .maxwell_fF)`(共享节点累加 + Schur 消元) | `TestN9Assemble` |
-| N10 CPW | `guided_wavelength(...)`/`lumped_cpw(...)`(AGM 椭圆积分, 含动力学电感) | `TestN10Cpw` |
-| N11 子系统 | `resonator_lumped_lc(f, Z0, mode)`; `dispersive_shift_hz(g, f_r, f01, f12)` | `TestN11Subsystems` |
-| N12 圆角 cell | `rounded_polygon(points, radius_um) → [(x,y)]`; `emit_geo(cells) → str`(load_geo 可回读) | `TestN12Cells` |
-| N13 编排 | `build(meta, out, solve=False) → {gds, mesh, config, manifest}`(manifest 带输入 sha256) | `TestN13Build` |
-| N14 分块 | `extract.blocks` → 落盘 `block_<name>.geo`(只含该块 component)+ 各块 config | `TestN14Extract` |
+| 需求          | API                                                                                                                 | 测试类                 |
+| ------------- | ------------------------------------------------------------------------------------------------------------------- | ---------------------- |
+| N0 平台/纯度  | `import quantum_dsl` 轻量; py≥3.13; 无 qiskit_metal                                                              | `TestN0Platform`     |
+| N1 单位       | `parse_length("0.5mm")→500.0(µm)`; `parse_quantity("10nH")→1e-8(SI)`                                         | `TestN1Units`        |
+| N2 geo 加载   | `load_geo(path) → Geo(.physicals[Physical(name,role,layer,component,primitive)], .bbox_um)`                      | `TestN2LoadGeo`      |
+| N3 meta 加载  | `load_meta(path) → Meta`(上表词汇; 未知顶层键 raise)                                                             | `TestN3LoadMeta`     |
+| N4 GDS        | `build_gds(geo_path, meta, out) → Path`(µm verbatim, by_role 映射)                                              | `TestN4Gds`          |
+| N5 mesh       | `build_mesh(geo_path, meta, out) → Mesh(.groups, .num_cells)`(零厚度导体片 imprint 为边界面组; 空网格 raise)     | `TestN5Mesh`         |
+| N6 Palace     | `palace_config(mesh, meta, out) → dict`; `parse_capacitance(postpro) → Cap(.labels, .maxwell_fF, .mutual_fF)` | `TestN6Palace`       |
+| N7 live 解    | `build(meta, out, solve=True)`(gate `QDSL_RUN_PALACE=1`)C 对 golden <2%                                         | `TestN7Live`         |
+| N8 电路模型   | `solve_circuit_model(labels, maxwell_fF, junctions) → .qubits/.couplings`(dict 入参; SQUID; nan 拒绝)            | `TestN8CircuitModel` |
+| N9 拼装       | `assemble(cells, keep) → (.labels, .maxwell_fF)`(共享节点累加 + Schur 消元)                                      | `TestN9Assemble`     |
+| N10 CPW       | `guided_wavelength(...)`/`lumped_cpw(...)`(AGM 椭圆积分, 含动力学电感)                                          | `TestN10Cpw`         |
+| N11 子系统    | `resonator_lumped_lc(f, Z0, mode)`; `dispersive_shift_hz(g, f_r, f01, f12)`                                     | `TestN11Subsystems`  |
+| N12 圆角 cell | `rounded_polygon(points, radius_um) → [(x,y)]`; `emit_geo(cells) → str`(load_geo 可回读)                      | `TestN12Cells`       |
+| N13 编排      | `build(meta, out, solve=False) → {gds, mesh, config, manifest}`(manifest 带输入 sha256)                          | `TestN13Build`       |
+| N14 分块      | `extract.blocks` → 落盘 `block_<name>.geo`(只含该块 component)+ 各块 config                                    | `TestN14Extract`     |
 
 ## 验收
 
