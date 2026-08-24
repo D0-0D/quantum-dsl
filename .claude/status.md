@@ -11,7 +11,7 @@ _headline 变了（里程碑翻页 / 分支合并 / 测试数变 / 结论被推�
 
 | | |
 |---|---|
-| 分支 | `main`（native Gmsh `.geo` pivot 经 PR #14 / `931b8ec` 合入） |
+| 分支 | `main`（native Gmsh `.geo` pivot 经 PR #14 / `931b8ec` 合入）。**⚠ v4 greenfield 重写已立项**: orphan 分支 `v4`（worktree `~/quantum_dsl-v4`, Python 3.13, 无 qiskit_metal）, 契约 = 那边的 `SPEC.md` + `tests/test_spec.py`（38 红 = 需求清单）;本仓转为参考实现（算法审后搬运, 坑清单见下「已了结, 别重新踩」） |
 | 本阶段范围 | 圆角多边形 cell + **静电电容矩阵**。eigenmode/driven、lumped port、损耗 **不在本阶段**（deferred, 非否决） |
 | 已完成 | **M1 · M3 · M5a · M6 · M7**（本阶段目标全部达成）+ **M8 P0**（`lom-parity-spec.md` 的 P0-A…F = M8a–M8d） |
 | 测试 | **619 passed, 3 skipped — 0 failed / 0 errors / 0 deselected**（conda `metal-env`, 2 分 37 秒） |
