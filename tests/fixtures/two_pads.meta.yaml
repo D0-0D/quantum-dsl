@@ -1,6 +1,7 @@
 # two_pads.meta.yaml — 2 导体参考件的 Layer-1 sidecar (v4 词汇, 见 SPEC.md)。
 # 刻意做小 (浅衬底 + 紧凑 airbox + 粗网格), 真实 Palace 求解分钟级完成。
-# 物理 golden: 实测 Maxwell C = [[24.7288, -1.976], [-1.976, 24.7293]] fF。
+# 物理 golden (零厚度片配方, .claude/physics-pipeline.md §6):
+#   实测 Maxwell C = [[24.5324, -1.9472], [-1.9472, 24.5353]] fF。
 
 schema: quantum-dsl/meta/1
 

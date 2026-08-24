@@ -10,7 +10,7 @@
 | 契约 | [`SPEC.md`](../SPEC.md) + `tests/test_spec.py`(N0–N14 可执行需求) |
 | 实现进度 | **未开始**(契约套件全红, 除 N0)—— 但物理管线已 **de-risk 并定架构**: 金属按零厚度片 imprint(v3 "Palace 拒内部面 Terminal" 系误诊, 本机实证推翻), 设计文档 [`physics-pipeline.md`](physics-pipeline.md); 原型对 N7 golden 实测 0.04–1.5%(`proto/`); V4-3 数学对 golden 逐位复算通过 |
 | 测试跑法 | `~/miniconda3/envs/qdsl313/bin/python -m pytest tests/ -q`(Python 3.13;live 加 `QDSL_RUN_PALACE=1`) |
-| 完成定义 | 契约 0 failed + N7 live 两条通过(two_pads C 对 `[[24.7288,-1.976],[-1.976,24.7293]]` fF <2%) |
+| 完成定义 | 契约 0 failed + N7 live 两条通过(two_pads C 对 `[[24.5324,-1.9472],[-1.9472,24.5353]]` fF <2%, 零厚度片配方——2026-08-24 经用户批准重钉, 见 pipeline §7) |
 
 ## 硬约束(继承自 v3 的教训)
 

@@ -22,7 +22,8 @@
    {metal, ground, jj, substrate, port, symmetry}。JJ 是集总元件: 进 GDS、不进静电网格。
 2. **内部单位 µm**: 几何一律 µm;mesh/Palace 边界换算 SI 由实现自理,GDS µm verbatim
    (`unit=1e-6`)。**不双重缩放**。
-3. **物理 golden**(锚点与实现无关, 见测试内数值): two_pads 实测 C 矩阵与哈密顿量、
+3. **物理 golden**(锚点与实现无关, 见测试内数值): two_pads 实测 C 矩阵与哈密顿量
+   (2026-08-24 起为 v4 零厚度片配方实测, 见 `.claude/physics-pipeline.md` §7)、
    逆电容 LOM 闭式值、CPW 参考值、Koch(3.9)/(3.10) χ、λ/4 等效 LC、Schur 手算。
 
 ## Layer-1 词汇(`*.meta.yaml`, schema `quantum-dsl/meta/1`)

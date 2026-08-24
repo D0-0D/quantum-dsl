@@ -6,7 +6,8 @@
 
 数值 golden 的三种来源, 都与实现无关:
   * 闭式可手验 (Schur 3×3、SQUID flux 甜点、λ/4 LC、E_C=e²/2C);
-  * v3 在同一物理输入上的实测/参考值 (two_pads C 矩阵与哈密顿量、CPW、χ) ——
+  * 同一物理输入上的实测/参考值 (two_pads C 矩阵 = v4 零厚度片配方 2026-08-24
+    实测, 见 .claude/physics-pipeline.md; CPW、χ 沿用 v3 验证过的参考) ——
     这些是**物理**锚点, 不是 API 兼容锚点;
   * Palace 0.16 的 verbatim CSV 输出 (tests/fixtures/palace_postpro/)。
 """
@@ -25,9 +26,15 @@ FIXTURES = Path(__file__).parent / "fixtures"
 TWO_PADS_META = FIXTURES / "two_pads.meta.yaml"
 BLOCKS_META = FIXTURES / "two_pads_blocks.meta.yaml"
 
-# two_pads 的实测 Maxwell 矩阵 (fF, Palace 0.16 order 2) — N7 的 live golden,
-# 也是 N8 的纯数学输入 (N8 golden 由它 + 10 nH 闭式导出, 不依赖 Palace)。
-LIVE_MAXWELL_GOLDEN = [[24.7288, -1.976], [-1.976, 24.7293]]
+# two_pads 的实测 Maxwell 矩阵 (fF) — N7 的 live golden。
+# 配方 = v4 产品路径: 零厚度金属片 imprint 进衬底/真空界面, µm 网格 +
+# Model.L0=1e-6, mesh 40/4 µm, order 2, 接地盒 (Palace 0.16, 2026-08-24 实测;
+# 见 .claude/physics-pipeline.md §6–§7 与 .claude/proto/two_pads_sheet.py)。
+# 历史: v3 的 2 µm 板挖空配方给 [[24.7288,-1.976],[-1.976,24.7293]] —— 板厚
+# 工件偏置 ~1%, 不是物理更优 (pipeline §7)。
+LIVE_MAXWELL_GOLDEN = [[24.5324, -1.9472], [-1.9472, 24.5353]]
+# N8 的纯数学输入 (golden 由它 + 10 nH 闭式导出, 与 Palace 无关, 数值无需跟随
+# N7 golden 变动)。
 N8_MAXWELL = [[24.73, -1.98], [-1.98, 24.72]]
 
 live = pytest.mark.skipif(
@@ -263,7 +270,8 @@ class TestN7Live:
         results_file = result["results"]
         doc = yaml.safe_load(Path(results_file).read_text(encoding="utf-8"))
         f01 = [q["f01_GHz"] for q in doc["hamiltonian"]["qubits"]]
-        assert f01 == pytest.approx([9.3649, 9.3667], rel=0.03)
+        # 由 LIVE_MAXWELL_GOLDEN + 10 nH 闭式导出 (逆电容 LOM)
+        assert f01 == pytest.approx([9.3989, 9.3984], rel=0.03)
 
 
 # =====================================================================
