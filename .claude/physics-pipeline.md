@@ -87,10 +87,19 @@ codex 双跑文献核对(5.6-sol 202 检索 / 5.5 68 检索, 原始报告
 - CPW 解析(N10): 椭圆积分共形映射是标准谱系(Wen 1969 / Simons ch.2 /
   Göppl), AGM 只是 K(k) 的数值法; 动力学电感 L_k(Clem 2013, 薄膜 t<2λ 用
   Pearl 长度 Λ=2λ²/t)加进总 `L' = L_g' + L_k'` 后, **Z0/相速/λ_g 必须由
-  总 L'C' 重算**, 不能再用 c/√ε_eff——从 v3 搬运时验证这一点。有限衬底厚
-  (h 不再 ≫ w+2s)用 sinh 分支修正; 背面接地版图是 tanh 分支, 不可混用。
-  v3 `cpw_analytic.py`/`circuit_model.py` 对 golden 命中 1e-16/精确,
-  **审后原样搬运**, 审的重点即上述口径点。
+  总 L'C' 重算**, 不能再用 c/√ε_eff。有限衬底厚(h 不再 ≫ w+2s)用 sinh
+  分支修正; 背面接地版图是 tanh 分支, 不可混用。
+  **2026-08-24 翻案**(用户裁定"Nxx 不许锚原有错误"): V4-3 首版曾照 v3 =
+  qiskit-metal 逐行搬运并把参考输出钉为 golden——那套 Z0/λ_g 不含 Lk,
+  ε_eff 打了膜厚+TE 色散补丁而 C 没打(差 ~2.6%, Lext=Z0²C 连带失真),
+  常数还是截断值。契约已改锚**自洽集**(Göppl Eq.2–5 + Simons sinh +
+  Mohebbi&Majedi Lk + Clem Eq.35; 每式独立出处, 见 lom-conventions-survey
+  §5 与 `cpw.py` docstring): 典型工况差值 Z0 −1.08%(撤色散补丁 −1.35% +
+  补 Lk +0.28%)、λ_g −1.56%、ε_eff +2.63%、Lext −2.70%(改纯几何
+  μ0/4·K′/K); C 与 Lk 公式不变。弃掉的膜厚 ε 修正/TE 色散在本仓工况
+  (t/w≲0.03, f≲0.2·f_TE)均 <3% 且是不自洽根源; >20 GHz 或厚膜再议,
+  路径是 2D/3D EM 而不是加回补丁。独立复算脚本
+  [`proto/cpw_selfconsistent_golden.py`](proto/cpw_selfconsistent_golden.py)。
 
 ## 3. 计算域怎么建
 

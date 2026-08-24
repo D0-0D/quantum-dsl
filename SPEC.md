@@ -78,7 +78,7 @@ Terminal 即双岛短路(v3 实测 C_Σ 错 1.70×); 器件归组在 circuit_mod
 | N7 live 解    | `build(meta, out, solve=True)`(gate `QDSL_RUN_PALACE=1`)C 对 golden <2%                                         | `TestN7Live`         |
 | N8 电路模型   | `solve_circuit_model(labels, maxwell_fF, junctions) → .qubits/.couplings(g, β)`(dict 入参; 浮动双岛差模约化; SQUID; nan 拒绝) | `TestN8CircuitModel` |
 | N9 拼装       | `assemble(cells, keep) → (.labels, .maxwell_fF)`(共享节点累加 + Schur 消元)                                      | `TestN9Assemble`     |
-| N10 CPW       | `guided_wavelength(...)`/`lumped_cpw(...)`(AGM 椭圆积分, 含动力学电感)                                          | `TestN10Cpw`         |
+| N10 CPW       | `guided_wavelength(...)`/`lumped_cpw(...)`(AGM 椭圆积分; **自洽集**: Z0/λ_g 由总 L′=Lext+Lk 导出, 不锚参考实现)   | `TestN10Cpw`         |
 | N11 子系统    | `resonator_lumped_lc(f, Z0, mode)`; `dispersive_shift_hz(g, f_r, f01, f12)`                                     | `TestN11Subsystems`  |
 | N12 圆角 cell | `rounded_polygon(points, radius_um) → [(x,y)]`; `emit_geo(cells) → str`(load_geo 可回读)                      | `TestN12Cells`       |
 | N13 编排      | `build(meta, out, solve=False) → {gds, mesh, config, manifest}`(manifest 带输入 sha256)                          | `TestN13Build`       |

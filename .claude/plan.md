@@ -34,6 +34,10 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started。
       见 [`physics-pipeline.md`](physics-pipeline.md) §12, N15 边界见 §9。
 
 ## Session logs
+- [`session/2608241316.md`](session/2608241316.md) — 2026-08-24 · **N10 golden
+  翻案**: 全契约 golden 出处审计, 唯一锚原有错误的是 N10(qiskit-metal 参考
+  输出: Z0/λ_g 不含 Lk、ε_eff 与 C 不自洽、常数截断)→ 改锚自洽物理集
+  (Göppl+Simons+Clem/Mohebbi), 新增自洽性断言; 差值 Z0 −1.08% / λ_g −1.56%。
 - [`session/2608241251.md`](session/2608241251.md) — 2026-08-24 · **V4-1 +
   V4-3 落地**(N0–N3 + N8–N11 全绿, 30 passed): errors/units/geo/meta +
   circuit_model/assemble/cpw; 新防线(反对称残差 raise、未认领 label 拒

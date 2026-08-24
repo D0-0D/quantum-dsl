@@ -5,11 +5,14 @@
 全部翻绿 + `QDSL_RUN_PALACE=1` 下 N7 通过 = v4 完成。
 
 数值 golden 的三种来源, 都与实现无关:
-  * 闭式可手验 (Schur 3×3、SQUID flux 甜点、λ/4 LC、E_C=e²/2C);
-  * 同一物理输入上的实测/参考值 (two_pads C 矩阵 = v4 零厚度片配方 2026-08-24
-    实测, 见 .claude/physics-pipeline.md; CPW、χ 沿用 v3 验证过的参考) ——
-    这些是**物理**锚点, 不是 API 兼容锚点;
+  * 闭式可手验 (Schur 3×3、SQUID flux 甜点、λ/4 LC、E_C=e²/2C、χ 微扰式、
+    CPW 自洽集 — 后两者是核定公式在给定输入上的手验值, 出处见各 class 注);
+  * 同一物理输入上的实测值 (two_pads C 矩阵 = v4 零厚度片配方 2026-08-24
+    实测, 见 .claude/physics-pipeline.md) — 物理回归锚, 不是 API 兼容锚;
   * Palace 0.16 的 verbatim CSV 输出 (tests/fixtures/palace_postpro/)。
+历史教训 (2026-08-24): N10 曾直接钉 qiskit-metal 参考实现的输出, 把
+"Z0/λ_g 不含 Lk、ε_eff 与 C 不自洽" 这些已知错误锚成了需求 — 已翻案为
+自洽物理集 (下方 TestN10Cpw)。golden 不锚参考实现, 只锚物理与闭式。
 """
 from __future__ import annotations
 
@@ -428,16 +431,25 @@ class TestN10Cpw:
 
     _TYPICAL = dict(freq=5e9, line_width=10e-6, line_gap=6e-6,
                     substrate_thickness=760e-6, film_thickness=200e-9)
-    # 参考实现 (qiskit-metal cpw_calculations, Apache-2.0) 的输出 — 物理锚点
-    _GOLDEN = dict(Lk=2.3681287381377575e-09, Lext=4.353629666360981e-07,
-                   C=1.63492916307188e-10, Z0=51.60315696321091,
-                   eps_eff=6.065432087076736, lambda_g=0.024345363624151843)
+    # 自洽物理集的手验值 (Göppl Eq.2–5 零厚度准静态 + Simons sinh 有限衬底
+    # + Mohebbi&Majedi Lk; Z0 与 λ_g 由总 L′=Lext+Lk 导出 — Clem Eq.35)。
+    # 独立复算脚本见 .claude/proto/; 出处与对 qiskit-metal 参考实现的翻案
+    # (其 Z0 −1.08% / λ_g −1.56% / ε_eff +2.63% 系统偏差) 见
+    # physics-pipeline.md §2。常数: c=299792458 精确, μ0=4πe-7, ε0=1/(μ0c²)。
+    _GOLDEN = dict(Lk=2.368128738137757e-09, Lext=4.236292014318449e-07,
+                   C=1.6349287600947502e-10, Z0=51.04509563807205,
+                   eps_eff=6.22481040888492, lambda_g=0.023964983826402806)
 
     def test_lumped_cpw_golden(self):
         from quantum_dsl import lumped_cpw
         r = lumped_cpw(**self._TYPICAL)
         for key in ("Lk", "Lext", "C", "Z0", "eps_eff"):
             assert getattr(r, key) == pytest.approx(self._GOLDEN[key], rel=1e-9), key
+        # 自洽性是需求本身: λ_g·f·√(L′C′) ≡ 1 (Z0/λ_g 必须含 Lk, 不许再
+        # 退回 c/√ε_eff — ε_eff 是介质填充值, 不含 Lk)
+        assert r.lambda_g * self._TYPICAL["freq"] * math.sqrt(
+            (r.Lext + r.Lk) * r.C) == pytest.approx(1.0, rel=1e-12)
+        assert r.Z0 == pytest.approx(math.sqrt((r.Lext + r.Lk) / r.C), rel=1e-12)
 
     def test_guided_wavelength_golden(self):
         from quantum_dsl import guided_wavelength
