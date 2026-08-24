@@ -411,3 +411,18 @@ Single metal layer + dielectric substrate is the scope; defer until a multi-laye
   (→ order 2 才跑得起)。χ 对老 LOM **−16.1% 未达 5%**, 已分解成两个已知定义差(公式本身逐位一致)。
   全套 **368 → 619 passed, 3 skipped, 0 failed**(+251 测试)。
   🔴 欠: §7 的 **S2 live Palace 护栏未跑**(需要 pocket 互不相连的设计)。
+- [`session/2607292213.md`](session/2607292213.md) — 2026-07-29 · **M8 P0 的 code review +
+  `status.md` 压缩**(无代码改动)。全套复跑证实 **619 passed, 3 skipped, 0 failed**(156.78 s);
+  P0-A…F 六项确认落地, 4.05 golden 是**参考实现独立生成**的(`expected.yaml` 同时存
+  带/不带 `cj_dict` 两组 → `C_j` 两种折入方式的等价性用参考实现自己的两次运行验证)。
+  8 条 finding: 🔴 **F1 `from: file` 读 Palace CSV 时终端名自动生成 `t1..tN` → 两个块被
+  当成共享节点静默合并**(实测对角 20/30 → 40/60 fF, 零警告); 🟡 F2 块窗口(S3)与 airbox(S4)
+  复用同一个 `airbox.side_buffer` 且**叠加** → 调 airbox 会静默改动块的 ground 外延, 且 sung
+  的分块 A/B 对照并非「同 airbox」(two_pads 不受影响, +1.03% 仍成立); 🟡 F3 `ground_node`
+  拼错是静默 no-op; 🟡 F4 file/inline 块的报错给出错的可寻址终端列表; 🟢 F5–F8
+  (块内同名合并少一项 C_ij[当前不可达] / g 用加载 C + 裸 ω 的混搭 / gmsh model 只增不删 /
+  `units:` 在 Palace CSV 上被静默忽略)。spec 的 7 条偏离逐条复核**都成立**;
+  四条不利结果(sung 误差抵消 · R8 墙钟没降 · χ −16.1% · S2 live 护栏没跑)都主动记录, 无隐瞒。
+  `status.md` **254 → 85 行**: 逐 session 叙事删掉(plan.md 已有)、Open 段压成 issue 表
+  (#15/#18/#19/#20/#22–#28 只留一行指针)、已了结的坑压成「别重新踩」表、新增「读数前必看」
+  数值可信边界表。

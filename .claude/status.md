@@ -1,254 +1,85 @@
 # Quantum-DSL — Current Status
 
-**This is an active, in-progress project.** Read this file *and* `plan.md` at the start of
-every session before touching code. This file is the quick "where are we right now" snapshot;
-`plan.md` is the full milestone checklist + the original-requirements map.
-
-_Update this file whenever the headline state changes (milestone flips, branch merges, notable
-commits, test-count changes)._
+**在做的项目, 不是完成品。** 每个 session 开工前读这份 + [`plan.md`](plan.md)。
+本文件只放「现在在哪」的快照 —— 详细里程碑清单在 `plan.md`, 过程记录在 `session/*.md`,
+未决问题在 **GitHub issue**（本文件只留一行指针, 不复制内容）。
+_headline 变了（里程碑翻页 / 分支合并 / 测试数变 / 结论被推翻）就更新这里。_
 
 ---
 
 ## At a glance
-- **Active branch**: `main` (the native Gmsh `.geo` pivot landed via PR #14, commit `931b8ec`).
-- **Current-phase scope** (2026-06-08, phased — not a final ceiling): rounded-corner polygon cells
-  + an **electrostatic capacitance matrix**. Eigenmode/driven, lumped ports, and loss are out of
-  *this* phase — staged for later, not ruled out.
-- **Done**: **M1 `[x]`** (both branches end-to-end), **M3 `[x]`** (live Palace C-matrix +
-  `chip.results.yaml` write-back; conductors-as-voids `carve_conductors`), **M5a `[x]`** (emit_geo
-  cell-library bridge: v3 templates → flat positive-tone `.geo`, rounded corners via pre-sampled
-  shapely buffers, carved metal ground), and **M6 `[x]`** (circuit-model solve: C-matrix → transmon
-  Hamiltonian via lumped-oscillator inverse-cap method; tier-2 `hamiltonian` write-back), and
-  **M7 `[x]`** (GDSFactory visualization: `dsl/gds_viz.py` — read `chip.gds` → preview via a
-  gdsfactory bridge + an always-available matplotlib fallback; CLI `--png`).
-- **Status**: **current phase COMPLETE** — R1–R5 + R+ all met; PR #14 (`feat/native-geo-dsl` →
-  `main`) **merged** (`931b8ec`). Post-merge (2606080906): docs/examples cleaned up for the native
-  path (see below).
-- **M8 P0 `[x]`** (2607290329) — `.claude/lom-parity-spec.md` 的 **P0-A…F 全部落地**
-  (= 里程碑 M8a–M8d)，架构照抄 qiskit-metal **New LOM (LOM 2.0)**。6 个并行 subagent
-  (同一主工作树、文件域分开) + 主控做契约/编排/验证。新模块 `dsl/assemble.py`
-  (电容图累加 + **Schur 消元**) 与 `dsl/cpw_analytic.py` (CPW 解析集总，含动力学电感);
-  `emit_block_geo` 派生并**落盘** `block_<name>.geo`; sidecar 新增 `extract:` /
-  `assemble:` / `subsystems:`; `C_j` / `TL_RESONATOR` / χ / 文件+inline 矩阵注入。
-  详见 `session/2607290329.md`。
-- **Tests** (2607290329): full suite **619 passed, 3 skipped — 0 failed, 0 errors, 0 deselected**
-  in conda `metal-env` (2 min 25 s)。3 个 skip 仍是 2 × viz + 1 × gated live Palace。
-  _(2607290110 时是 368 passed, 3 skipped; M8 P0 加了 +251 个测试。)_ Run it as
-  `PYTHONPATH=src python -m pytest tests/ -q`
-  and **without** `QDSL_MESH_ALGO3D` exported — see the ⚠ notes in `CLAUDE.md`.
-  - The `--deselect` ritual is **gone**: the live-Palace `skipif` marker had drifted onto
-    `test_build_geo_archives_inputs_and_writes_manifest` (which needs no Palace) while the real
-    live test `test_two_pads_live_capacitance_matrix` had no gate at all. Fixed in 2607290110.
-    The 3 skips are now 2 × viz (`gdsfactory` absent) + 1 × gated live Palace.
-  - Reconciliation: 349 passed + 1 hand-deselected = 350 → +15 SQUID +1 `--np` +2 nan/inf = 368.
-  - _Previously this file claimed `319 passed, 3 skipped` — that was stale by a wide margin. The
-    real state at `5737011` was **8 failed / 313 passed / 2 errors**: session 2607021950's
-    empty-mesh guard had **exposed** (not caused) a total breakage of the legacy YAML→gmsh path,
-    which until then silently wrote empty meshes. Fixed in 2607280204; do not let this line rot again._
-- **End-to-end**: `build_geo(two_pads.meta.yaml --run-palace)` → real C-matrix
-  `[[24.73,-1.98],[-1.98,24.72]]` fF → (M6) tier-2 `hamiltonian` (2 grounded transmons, L_J=10nH:
-  E_C≈0.788 GHz, f01≈9.36 GHz, g≈375 MHz). (M5a) a `cells:` sidecar elaborates v3 template
-  instances → `<stem>.elaborated.geo` → GDS + mesh + carved-ground Palace config.
 
-## Plan re-org (2026-06-08)
-Re-anchored `plan.md` to the **5 original requirements** (R1 group→circuit ✅, R2 Palace→C-matrix ✅,
-R3 circuit solve ✅, R4 read QDA ✅, R5 GDSFactory) + verbal "电容矩阵就够":
-- **Active path**: ~~M5a (emit_geo)~~ ✅ **DONE** → ~~M6 circuit-model solve (R1+R3)~~ ✅ **DONE** →
-  ~~M7 GDSFactory (R5)~~ ✅ **DONE** — current phase complete.
-- **M2 / M4 / M5b deferred** — out of this phase, not ruled out (M2 ports/arc/qlib unneeded now;
-  M4 eigenmode/driven later; M5b hierarchy/multi-layer/flip-chip later).
-- emit_geo design + the 3 locked seam decisions: see `session/2606080224.md`.
-- M6 design (inverse-cap LOM, `circuit_model` sidecar block, tier-2): see `session/2606080308.md`.
-- M5a impl (emit_geo bridge, carved ground): see `session/2606080338.md`.
+| | |
+|---|---|
+| 分支 | `main`（native Gmsh `.geo` pivot 经 PR #14 / `931b8ec` 合入） |
+| 本阶段范围 | 圆角多边形 cell + **静电电容矩阵**。eigenmode/driven、lumped port、损耗 **不在本阶段**（deferred, 非否决） |
+| 已完成 | **M1 · M3 · M5a · M6 · M7**（本阶段目标全部达成）+ **M8 P0**（`lom-parity-spec.md` 的 P0-A…F = M8a–M8d） |
+| 测试 | **619 passed, 3 skipped — 0 failed / 0 errors / 0 deselected**（conda `metal-env`, 2 分 37 秒） |
+| 跑法 | `PYTHONPATH=src python -m pytest tests/ -q` —— **不要** export `QDSL_MESH_ALGO3D`；Palace 必须 `HWLOC_COMPONENTS=-gl`（两条 ⚠ 见 `CLAUDE.md`） |
+| 3 个 skip | 2 × viz（`gdsfactory` 缺）+ 1 × gated live Palace。**不再需要手工 `--deselect`** |
 
-## Recent notable commits
-- _(branch `main` — 2607290329, 9 个 commit `5d6406f`…`e2739c5`，经
-  `feat/m8-p0-lom-parity` ff-only 合入)_ **M8 P0 落地**（`.claude/lom-parity-spec.md`
-  的 P0-A…F）。全套 **368 → 619 passed, 3 skipped, 0 failed**。要点：
-  1. **拼装层 `dsl/assemble.py`**（P0-B，核心）：电容图按**共享节点名累加** + **Schur 消元**
-     非动力学节点（eq 7b）。**对 4.05 golden 的 `C_k` 偏差 7.7e-16**（判据 <0.1%）。
-     Schur 在 **node 基**做，结基变换仍由 M6 的 `C' = BᵀC_S B` 承担 → **M6 一行不改**。
-     非动力学节点用**结构判定**（不出现在任何 `between` 里），已对参考的 `get_nodes_keep()`
-     逐项比对（一处不一致已解释：参考的清单在结基里，那两个是残余共模，由下一层消掉）。
-  2. **issue #20 / 缺口 ⑥ 收尾**：Schur vs 硬接地实测 —— 接地把跨 cell 耦合
-     **`g` 25.14 MHz → 0.00**（不是扰动，是整条删掉），块内 `C_Σ` 只错 **+0.9%**
-     （后者才是会静默出货的那部分）。
-  3. **分块提取 `emit_block_geo`**（P0-A，G1）：`block_<name>.geo` **落盘** + 进 manifest 带
-     sha256 + physical 名逐字相同 + 块 mesh 的 group 名是整片的子集。S2（pocket 保留）改成
-     **shapely 求交**而非按 component 过滤 → 结构上写不错。S4（airbox 收缩）**零代码**。
-  4. **`two_pads` 分块 vs 整片**（干净对照，同 order/同网格）：对角 **+1.03% / +1.06%**
-     （判据 <2% ✓）；非对角 −1.976 fF → **0**（跨块耦合只能靠共享节点名，结构必然）。
-  5. **`sung` 三块 order 2 实解**：C_Σ **98.856 / 226.160 / 98.835 fF**，对 Elmer
-     **−3.2% / −2.9% / −3.2%**（判据 <5% ✓），对论文 0.995/0.992/0.970。
-     ⚠ **但这是两个大误差反向抵消** —— 补的 order-1 对照显示：同 order 下**分块本身
-     抬高 C_Σ +12~15%（超判据）**，order 1→2 又压低 ~21%。sung 上**无法干净分离**
-     （整片 order 2 = #22 解不出来，order 1 离收敛差 ~20%）→ 可信的分块误差是
-     `two_pads` 的 +1.03%。
-  6. **R8「分块后总墙钟没降」成立**：分块 3 块合计 **2.19 M 未知量 / 132.1 s**
-     ≈ 整片 order 2 的 2.24 M（每块重划自己的衬底+airbox，抵消了 S3/S4 的节省）。
-     真实收益是**单次求解 2.24M → 0.6~1.0M，于是 order 2 才跑得起**（整片 order 2 = #22）。
-  7. P0-C 文件/inline 注入：**Q3D 解析对参考 `load_q3d_capacitance_matrix` 逐位一致**；
-     `_SUNG_MAXWELL` 往返恒等逐位。P0-D `TL_RESONATOR` + χ（Koch 3.10，`f_bare`/`f_loaded`
-     都输出）：**χ 对老 LOM −16.1%，未达 5%，已如实记录并分解成两个已知定义差**
-     （g 定义 −8.50% + 数值 CPB 谱 −8.33%，乘积 0.8388 ≈ 实测 0.8392；公式本身逐位一致）。
-     P0-E `C_j` **只在 `circuit_model`、结基对角、求逆之前**（spec 那式是老 LOM 标量加法，
-     对耦合系统错；已在真实耦合矩阵上实证与 New LOM 的 node 基折入 `==` 逐位）。
-     P0-F CPW 对参考 **最大偏差 9.2e-16**（判据 1%），窄线 `Lk/Lext = 1.399`。
-  8. 顺带放宽 `build_palace_config` 的 **≥2 Terminal → ≥1**（分块后单导体块合法；0 个仍 raise）。
-  🔴 欠：§7 的 **S2 live Palace 护栏没跑**（需要 pocket 互不相连的设计 —— `chip_layout` 的
-  6 个 pocket 已被 OCC 合成 1 个连通孔，`keep_all_subtractive` 在它上面是 no-op）。
-  See `session/2607290329.md`。
-- _(branch `main` — 2607280204)_ **`5737011` review 的修复落地** (6 个 commit: `8e45507` `d07b087`
-  `ab94a13` `e61f324` `6db8134` + 收尾)。全套 `8 failed/313 passed/2 errors` → **`349 passed,
-  3 skipped, 1 deselected, 0 failed`**。四条:
-  1. **fragment 的 dilate 往返不是单位换算而是意外 shape-heal** (`occ.dilate` =
-     `BRepBuilderAPI_GTransform`, 会重建每条曲线/曲面并放大容差)。`s=1`(坐标不变但仍重建) 与
-     `s=1e2` 治好 qm4q 的效果完全一样, 而这次重建对另 6 个设计是纯损伤 → 改成
-     **`FRAGMENT_SCALE_LADDER = (1.0, 1e2)`**, 1.0 档完全不 dilate, 仅 boolean 抛异常才升档。
-     **legacy YAML 路径 9 个失败全清。**
-  2. **fragment 后拓扑不变量** (负质量面/体、体积和超 bbox、carve 面面积上界) + `resolve_conductor_faces`
-     加 bbox 包含判定 —— 原先整张 z=0 衬底/真空界面会被误标成 `gnd_layer1_sfs`(静默错解)。
-  3. **浮动/差分多岛 transmon**: `C' = BᵀC_S B` 后求完整逆取 θθ 块; 全接地逐位向后兼容;
-     与 qiskit-metal LOM 2.0 独立吻合 **<0.1%**。
-  4. `_conductor_surface_tags` 补 `ground_faces`(#18 的机制)、`QDSL_MESH_ALGO3D` 分支补空网格守卫、
-     `max_size_jj` 死开关告警、两个回退测试 `delenv` 该变量。
-  **例子 `sung_2021_device` 现在端到端跑通并按论文标定**: C_Σ 102.1/232.8/102.1 fF vs 论文
-  99.3/227.9/101.9 (比值 1.03/1.02/1.00), E_C 0.190/0.083/0.190 vs 0.195/0.085/0.190,
-  q–c 无量纲耦合 1.07× —— 原先 E_C 差 4.4–6.7×、耦合差 20×。唯一未达标: 直接 q–q 电容 C_12
-  低 ~50×(已在 header 如实写明)。See `session/2607280204.md`。
-- _(branch `main` — 2607280204, review 阶段)_ **`5737011`
-  (sung_2021_device 例子) review + qiskit-metal/Elmer 交叉验算**。例子 **端到端跑不通**:
-  3D 网格生成在 5 种 Algorithm3D × 3 种 min_size × 2 种 `substrate_gap_um` × 7 种几何简化变体下
-  **全部失败**;同 env 同命令的 `qm4q_transmon_cell` 正常,qiskit-metal 自己的 `QGmshRenderer`
-  也能把同一份版图网格化(449k tets)→ 失败在我们的 carve/fragment 段(几何相关脆弱性)。
-  取证发现库级 **silent-wrong-result**: `substrate_gap_um: 0` 时 `fragment_everything` 静默
-  产出损坏模型(dielectric 体被复制、出现负面积 face),且 `resolve_conductor_faces` 只按质心
-  bbox 判定 → 把整张 z=0 衬底/真空界面(1.6e6 µm²)误标成 `gnd_layer1_sfs`;fragment 后**没有任何
-  拓扑不变量检查**。另: `generate_mesh` 的 `QDSL_MESH_ALGO3D` 覆盖分支绕过 2607021950 新加的
-  空网格守卫(而演示命令恰恰要求带这个环境变量)。物理侧: 本机源码装好 **ElmerFEM 9.0**
-  (`~/opt/elmer`),在 qiskit-metal 0.7.6 里 1:1 重建器件 → Elmer 电容 + LOM 2.0 + `Hcpb` 显示
-  E_C 比论文大 **4.5–6.9×**、无量纲耦合小 **20×/42×**(几何未按论文标定);例子的单岛
-  `circuit_model` 写法在自己的几何上也有 **1.85×** 误差(#20)。See `session/2607280204.md`。
-- _(branch `main` — 2607021950, 已提交 `30a241e`)_ **静默空网格根因修复 + qm4q 汇报稿**:新 gmsh 构建
-  (metal-env 已重建为 conda 4.11.1;qmetal-src pip 4.15.2)对共面 PLC 失败**不抛异常**,旧
-  `generate_mesh` 的 HXT 回退永不触发 → qm4q 静默产出 533B 空网格(`build/qm4q/chip.msh` 即此),
-  Palace abort。修复:空 3D 网格也触发回退、回退仍空则 raise;+2 回归测试
-  (`test_geo_pipeline.py` **12 passed, 1 skipped**)。**演示/复现命令必须
-  `export QDSL_MESH_ALGO3D=10`**(失败-Delaunay 后的进程内回退在新 gmsh 下无效,从头 HXT 两 env 均稳)。
-  端到端重验 `build/qm4q_demo`(pad_top 103.5 fF,与 6/27 基线 <2%)。新增
-  `docs/report/qm4q_talk_script.md`(对着念/操作的汇报稿)。See `session/2607021950.md`。
-- _(branch `main` — 2606300056)_ **build 结果归档 + 文件指纹清单**: `build_geo()` 现在每次 build
-  都把 `meta.yaml` + `.geo` 复制进 `out_dir`(保留原名),并写一个 `chip.manifest.yaml` —— 登记
-  输入副本 + 全部产物(gds/msh/json/results)的 sha256 指纹、字节数、修改时间(UTC)。纯附加,
-  未碰 results schema / provenance。新增 `_file_record()` helper、return dict 加 `"manifest"` 键、
-  CLI 多打印 `Manifest` 行。+2 测试;`tests/test_geo_pipeline.py` **10 passed, 1 skipped**(was 9/1)。
-  See `session/2606300056.md`.
-- _(branch `fix/review-critical-robustness` — 2606081710)_ **xhigh re-review of #14 → 3 critical
-  fixes** (silent-wrong-result hardening, each + regression test; all 3 adversarially verified
-  "sound"): `carve_conductors` now **raises** on a split vacuum (was warn-and-continue → incomplete
-  Palace domain); `circuit_model._invert_matrix` singular guard is now **scale-relative** (farad-scale
-  ill-conditioned matrices raise, not invert to garbage); Palace C-matrix CSV parser **rejects
-  nan/inf**. Full suite **319 passed, 3 skipped** (was 314/3, +5 new tests, 0 regressions). Deferred
-  findings filed as **#18** (carved-ground mesh refinement → biased C) + **#19** (robustness checklist);
-  the singular-guard item in **#15** is now resolved. See `session/2606081710.md`. _(已合并进 `main`。)_
-- _(branch `chore/viz-deps-and-cleanup` — 2606080906)_ **docs/examples cleanup + viz deps**:
-  `examples/dsl/` is now geo-only (deleted `.note`/`notebooks`/`scripts`/`outputs`/`yaml` +
-  `docs/codex_notes/dsl_v3_*`); the 2 test-referenced `.metal.yaml` moved to `tests/fixtures/`;
-  `README.md` + `examples/dsl/README.md` rewritten for the native-geo path; `refer/` untracked +
-  gitignored; local gmsh SDK removed. **Installed gdsfactory 9.2.2** (viz extra) — needed
-  `gdsfactory<9.3` (keeps numpy~=1.24) + `pydantic<2.11` (kfactory 1.2.2 import); added cross-platform
-  `requirements.txt` + capped the `viz` extra. v3 engine + all 5 legacy test files kept (314 passed,
-  3 skipped). See `session/2606080906.md`.
-- _(PR #14)_ **M7**: `dsl/gds_viz.py` GDSFactory visualization (gdsfactory bridge + matplotlib
-  fallback, CLI `--png`) — full suite 314 passed, 3 skipped.
-- `f376b0e` **merge**: M5a + M6 integrated into `feat/native-geo-dsl` (302 passed, 1 skipped).
-- `5e13311` **M5a**: emit_geo cell-library bridge + carved metal ground.
-- `6ad6845` **M6**: circuit-model solve — Palace C-matrix → transmon Hamiltonian (R1+R3).
-- `1e91315` **M3**: live Palace capacitance write-back + conductors-as-voids mesh.
+**三条端到端路径都活着**：
 
-## Open / next steps
-- ✅ **MPI 挂死已修**(根因非 openmpi): hwloc 的 `gl` 插件会**通过 TCP** 探测 X display
-  `:0…:N`(127.0.0.1:6000+N) 来枚举 NVIDIA GPU; 本机 127.0.0.1:6001 黑洞掉 SYN(无 listener、
-  无 RST —— WSL2 localhost 转发), `connect()` 永久阻塞 → **任何** MPI 程序在 `MPI_Init` 返回前
-  就挂死且零输出。修法 `HWLOC_COMPONENTS=-gl`, 已用 `conda env config vars set` 持久化进
-  `metal-env` 与 `quantum-metal`(新建 env 必须照做)。取证见 `session/2607280204.md`。
-  ⚠ 早先「因为 `DISPLAY` 为空所以不是 X11」的判断是错的。
-  **三笔实解回归欠账**:
-  1. ✅ `two_pads` —— 实测 `[[24.7288,-1.976],[-1.976,24.7293]]` fF vs 基线
-     `[[24.73,-1.98],[-1.98,24.72]]`, **max |rel dev| 0.202%**; tier-2 `C_Σ=24.571 fF,
-     E_C=0.7883 GHz, f01=9.365 GHz, g=374.2 MHz`。`FRAGMENT_SCALE_LADDER` 与 `ground_faces`
-     细化**没有移动电容值**。⚠ 但该测试**只断言结构/符号**, 上面这组数是手工核对的 ——
-     数值断言待补, 连同未被利用的 `terminal-Cinv.csv` 交叉校验记在 **#28**。(该测试目前只断言结构/符号, **数值断言仍待补**, 带容差。)
-  2. ✅ **`sung_2021_device` Palace ↔ Elmer ↔ 论文 三方闭环** (2607280204 §7)。Palace p=1 / 8 rank /
-     50.9 s: C_Σ **110.69 / 252.80 / 111.03 fF** vs Elmer **102.1 / 232.8 / 102.1** vs 论文
-     **99.3 / 227.9 / 101.9**; **Palace/Elmer = 1.084 / 1.086 / 1.087**。三个 qubit 上高度一致
-     → **系统性偏移而非噪声**, 最可能是网格收敛(我们 `max_size 80` vs Elmer 侧 `max 30`, 而 Elmer
-     自身 5/50→2/30 就降 6%), 次因是外边界不等价(自然 Neumann vs `Electric Infinity BC`)。
-     **表述: 两个独立求解器在较粗一方的网格收敛不确定度之内互相印证。** A4 的 1.03/1.02/1.00
-     仍以 Elmer 为准(网格更细), Palace 这组是佐证不是替代。
-     ⚠ 口径是 **order 1**, 而 sidecar 声明 `order: 2` —— 见下。
-  3. 🔴 `ground_faces` 细化对 C 的量化影响 = issue **#18** 的正题, **仍欠**(已在 #18 留进展评论)。(2607290110 的
-     ε-nudge 重标定量化的是**另一个**旋钮 —— 衬底顶面的 ε 缝, 不是 ground 腔壁的网格细化。)
-- 🔴 **order 2 在多 rank 下解不出来**(2607280204 §7): 16 rank 三次尝试都在第 2 个 terminal
-  静默掉 rank; order 1 / 8 rank 干净跑完。已排除场输出、OOM、vader/CMA(那只是 `ptrace_scope=1`
-  触发的噪音症状)。剩余怀疑: 误差估计器的 `RT (p=2): 14151282` 空间。**后果: 这个例子当前无法在
-  本机跑出它自己声明的精度。** 下一步: 降到 2 rank / 单 rank 加长 timeout, 区分「rank 间通信」
-  与「order 2 本身」。→ **#22**。
-- **参考侧对照已可跑**: ElmerFEM 9.0 装在 `~/opt/elmer`(`export PATH=$HOME/opt/elmer/bin:$PATH`),
-  conda env `quantum-metal` = quantum-metal 0.7.6(editable 自 `~/metal/qiskit-metal`)。
-  复用脚本(scratchpad, 见 session log): `qm_sung.py`(qiskit-metal 重建 + Elmer)、
-  `analyze.py`(Elmer→Maxwell→我们的 circuit_model + 论文对比)、`lom2.py`(LOM 2.0 + Hcpb)。
-  两个上游坑要绕: `ElmerRunner` 假定相对路径布局; `_get_capacitance_matrix` 用 pandas 链式赋值设
-  Maxwell 对角, 在 pandas ≥2 下静默失效。qm4q 的原定「与 qiskit-metal 自带解对比」可以补做了。
-- **`occ.fragment` 对近邻但不重叠的 pocket carve 退化**(A4 实测): pocket 重叠 30/40 µm 干净,
-  重叠 10 µm 与完全不重叠都抛 `Boolean fragments failed`, 且 scale 1/1e2/1e3 皆然 → 是 boolean
-  本身。重画例子几何时留意, 已写进 `sung_2021_device.geo` header。
-- **ε-nudge 已重新标定** (2607290110): 默认 `CARVED_GROUND_SUBSTRATE_GAP_SI` **1 µm → 0.01 µm**。
-  实测(`two_pads` + 一张 carved ground 环, 只变 ε, 8-rank Palace 实解): 旧的 1 µm 默认值
-  **压低 C_AA 29.1%、压低耦合 C_AB 40.3%**; 0.01 µm 只差 0.03%。所以历史上那个「~30% 误差」
-  **是默认值比需要的大三个数量级造成的, 不是挖空的内在代价**。ε=0 不是万能解: 该几何在任何
-  coordinate scale 下都 fragment 失败; ε=0.5 更产出损坏拓扑(被 A1 的不变量拦住) → OCC 共面
-  布尔的抽风是**非单调**的。完整 ε 阶梯表在 `_gmsh_geo_source.CARVED_GROUND_SUBSTRATE_GAP_SI`
-  的注释里。适用面: 只在**有 carved ground** 且走 **auto-substrate** 时触发 —— `two_pads`
-  (没有 `ground::`)与 `qm4q`/`sung`(显式 `substrate_gap_um: 0`)一直都是物理精确的,
-  受影响的只有 `chip_layout` 与 `tiny_chip` fixture。
-- **feature 缺口**(编号沿用 2607280204 的提出顺序):
-  - ✅ ⑤ **SQUID / 磁通可调 E_J** —— 2607290110 落地。`squid: {E_J1, E_J2, flux}` 子块,
-    `E_J,eff = E_JΣ·sqrt(cos²(πΦ/Φ0) + d²sin²(πΦ/Φ0))`(Koch 2007 的无奇点等价形式,
-    教科书的 `|cos|·sqrt(1+d²tan²)` 在 Φ=0.5Φ0 处 tan 发散 → nan)。`L_J`/`E_J`/`squid` 三选一。
-  - ✅ **⑦(新)** `geo_build --np N` —— `run_palace` 一直支持 `num_procs`, 但 `geo_build` 硬编码
-    不传 → `--run-palace` 永远单 rank。2607290110 落地。
-  - 🔴 ① `targets:` 验收块 → **#23**(性价比最高; 2607280204 那次事故的根因级预防)。
-  - 🔴 ② Elmer 第二求解器后端 → **#25**(含 ElmerFEM 9.0 的构建坑与 qiskit-metal 两个上游 bug)。
-  - 🔴 ③ `mesh.conductor_mode: void|volume`(现在只有 conductors-as-voids 一条路) —— 代价是
-    OCC 布尔在共面输入上脆弱(见上一条 bullet), 而 ε-nudge 只是绕开它的标定旋钮。volume 模式
-    (零厚度面 `fragment` **进**界面, Palace 自己的 CPW 例子与 qiskit-metal 的 Elmer 流程都这么做)
-    根本不需要共面布尔, 既是退路, 也是第一次能让两条路的 C 互相对照。→ **#24**。
-  - 🔴 ④ 网格收敛扫描 `--converge` → **#26**。
-  - ✅ ⑥ **浮动 bus 的 Schur 消元 —— 2607290329 落地** (`dsl/assemble.py`, M8 P0-B)。
-    在 **node 基**做 Schur 补 `C_kk − C_kr C_rr⁻¹ C_rk` (eq 7b), 结基变换仍归 M6 的
-    `C' = BᵀC_S B` (两者可交换, 被消节点不在结坐标张成里) → M6 一行不改。对 4.05 的
-    `C_k` 偏差 **7.7e-16**。实测硬接地的代价: 跨 cell `g` **25.14 MHz → 0.00**,
-    块内 `C_Σ` +0.9%。⚠ 只在 **`extract:` 分块路径**上生效 —— 不带 `extract:` 的整片路径
-    仍然把未被引用的 Terminal 当接地电极 (那条路径没有「哪些节点是动力学的」这个声明)。
-    `chip_layout` 的浮动 bus 若要享受它, 得改写成 `extract.blocks` + `nodes_force_keep`。
-  - 🟡 **`run_palace` / Palace config 三处待整理** → **#27**(另含场输出硬编码): `dry_run` 完全吞掉 `num_procs`
-    (Palace `--dry-run` 本意就是按 rank 数试划分, 故 `--np 8 --dry-run` 现在验不到 8 路划分);
-    native 分支无条件追加 `-np N` 而 WSL 分支只在 `>1` 时前置 `mpirun -np N`。
-- **#14 re-review follow-ups**: 那 3 个 critical fix **已在 `main`**
-  (`git branch --merged main` 含 `fix/review-critical-robustness`; nan/inf 拒绝在
-  `palace_adapter.py:539`, scale-relative 奇异守卫在 `circuit_model._invert_matrix`,
-  carve 分裂真空 raise 在 `_gmsh_layers`)。仍 open: **#18** / **#19** / **#15** 的剩余项。
-- **viz**: install the `viz` extra (`gdsfactory`) to exercise that backend live — it is absent in
-  metal-env, so its 2 tests are gated/skipped (the matplotlib fallback IS verified).
-- **M5a follow-ups**: full-chip live Palace solve on an emit_geo ground design (gated); connection-pad
-  transmons may overlap the ground (clean-disjoint cells are the tested path); ε-vacuum-gap artifact
-  under carved metal.
-- **#20 现状**(2607280204 更新, 三条里两条已了结): ✅ 多岛浮动/差分 transmon **已实现**
-  (`a8e3ed7`, 与 LOM 2.0 吻合 <0.1%); ✅ 「meta→tier-2 wiring bug」经核实**本就不存在**
-  (`_parse_qubit_entry` 早已把 `island:` 归一成 `islands`, `L_J: 10nH` 走 `_parse_unit_value`)
-  —— 已补测试钉住; 🔴 仅剩**浮动 bus 被硬接地**(需 Schur 消元)。
-- **chip_layout.geo** (example): 2-transmon + coupling-bus 布局(焊盘在真空孤岛里, 下焊盘经
-  neck+paddle 电容耦合到 bus)。**改动已提交** (`cfce32f`)。tier-1 已验证; tier-2 仍卡在 #20
-  的浮动 bus 那一半。
-- `CLAUDE.md` no longer pins "M1–M5" — milestones are re-scoped per phase (see `plan.md`).
+- **整片**：`build_geo(two_pads.meta.yaml --run-palace)` → 实解 C `[[24.7288,-1.976],[-1.976,24.7293]]` fF
+  → tier-2 `hamiltonian`（C_Σ 24.571 fF, E_C 0.7883 GHz, f01 9.365 GHz, g 374.2 MHz）。
+- **分块（M8 P0）**：sidecar 带 `extract:` / `assemble:` / `subsystems:` → 每块派生并**落盘**
+  `block_<name>.geo` → 各自 mesh + Palace → 电容图按共享节点名累加 + **Schur 消元** →
+  系统级 `chip.results.yaml`（含 `TL_RESONATOR` / χ / `C_j`；`--no-solve` 可零 FEM 成本走全链）。
+- **cell 库**：`cells:` sidecar → `<stem>.elaborated.geo` → GDS + mesh + carved-ground Palace config（M5a）。
+
+## 读数前必看 —— 现役数值的可信边界
+
+| 量 | 现状 |
+|---|---|
+| 分块引入的误差 | 可信值只有 `two_pads` 的 **+1.03%**（同 order / 同网格的受控对照）。`sung` 那组（对 Elmer −3%）是**两个大误差反向抵消**：同 order 下分块本身 +12~15%，order 1→2 又 −21% —— 卡在 #22 + #26，在 sung 上无法干净分离 |
+| 分块的算力收益 | **总墙钟没降**（3 块合计 2.19 M 未知量 ≈ 整片 2.24 M；每块要重划自己的衬底+airbox）。真收益是**单次求解规模降一个量级 → order 2 才跑得起**、峰值内存降 |
+| 网格收敛 | **从来没测过离收敛多远**。sung order 1→2 差 21%；Elmer 自己 5/50→2/30 就降 6%。`tier` 只描述完整度、不描述精度 → **#26** |
+| Palace vs Elmer | 整片 order 1 对 Elmer **+8.4~8.7%**，三个 qubit 高度一致 → 系统性偏移而非噪声（最可能是网格收敛，次因外边界不等价）。表述：**两个独立求解器在较粗一方的收敛不确定度之内互相印证** |
+| χ（色散位移） | Koch 2007 eq.(3.10) 二阶微扰，结果标 `chi_method: perturbative`。对老 LOM **−16.1%**，已分解成 g 定义（−8.5%）+ 数值 CPB 谱（−8.3%），**公式本身对参考实现逐位一致**。近共振 / 强耦合别用 |
+| 跨块耦合 | 切割面只能落在 component 边界 ⇒ 跨块**互电容必然为 0**，只能靠共享节点名表达。**想保哪两个导体的耦合, 就把它们放进同一个块** |
+| 硬接地 vs Schur | Schur 只在 **`extract:` 分块路径**生效。不带 `extract:` 的整片路径仍把未被引用的 Terminal 当接地电极 → 会把跨 cell 的 `g` 整条删掉（实测 25.14 MHz → 0.00）= **#20 的剩余一半** |
+
+## Open —— 都在 GitHub issue 里
+
+| # | 一句话 | 备注 |
+|---|---|---|
+| **#26** | 网格收敛扫描 `--converge` | **当前性价比最高** —— 它决定分块误差到底能不能测 |
+| **#23** | `targets:` 验收块（声明期望的 C / E_C / g，管线报偏差） | 2607280204 那次事故的根因级预防 |
+| #22 | Palace order 2 多 rank 解不出来（第 2 个 terminal 静默掉 rank；order 1 / 8 rank 干净） | 后果：sung 无法在本机跑出它 sidecar 自己声明的精度 |
+| #18 | carved ground 面被排除在网格细化外 → C 有偏 | 量化影响仍欠。与 ε-nudge 是**两个**旋钮，别混 |
+| #20 | 整片路径的浮动 bus 仍被硬接地 | 分块路径已由 Schur 解掉；`chip_layout` 要享受它得改写成 `extract.blocks` + `nodes_force_keep` |
+| #24 | `mesh.conductor_mode: void\|volume` | 第二条网格路线，绕开脆弱的共面 OCC 布尔；也是第一次能让两条路的 C 互相对照 |
+| #25 | Elmer 第二求解器后端 | 脚本仍在 scratchpad（含 ElmerFEM 9.0 构建坑 + qiskit-metal 两个上游 bug） |
+| #27 | `run_palace` / Palace config 三处粗糙（`dry_run` 吞掉 `num_procs`、`-np` 两分支不一致、场输出硬编码） | |
+| #28 | live `two_pads` 回归只断言结构/符号，不断言数值（含未被利用的 `terminal-Cinv.csv` 交叉校验） | |
+| #15 · #19 | PR #14 review 的剩余 follow-up | 那 3 个 critical fix **已在 `main`** |
+
+**还没有 issue 的欠账**：
+
+- 🔴 `lom-parity-spec.md` §7 的 **S2 live Palace 护栏没跑** —— 需要一个 pocket **互不相连**的小设计
+  （`chip_layout` 的 6 个 pocket 被 OCC 合成了 1 个连通孔，`keep_all_subtractive=False` 在它上面是 no-op）。
+  目前 S2 由几何层的点覆盖 + 面积/孔数断言守着，**没有**「两解对地电容比值」这条实解证据。
+- P1-G / P1-H / P2-I / P2-J / P2-K 未做（本次范围是 P0，见 `lom-parity-spec.md` §5）。
+  **P1-H**（电荷基精确 CPB 对角化）是关掉 χ 偏差里「谱」那一半的唯一途径。
+- M5a 尾巴：emit_geo ground 设计的整片 live Palace 解（gated）；connection-pad transmon 可能与 ground 重叠
+  （clean-disjoint cell 才是被测过的路）。
+
+## 已了结, 别重新踩
+
+| 坑 | 结论 | 取证 |
+|---|---|---|
+| **任何** MPI 程序零输出挂死 | hwloc 的 `gl` 插件**通过 TCP** 探测 X display `:0…:N`；本机 127.0.0.1:6001 黑洞掉 SYN（WSL2 localhost 转发，无 listener 也无 RST）→ `connect()` 永久阻塞，`MPI_Init` 返回前就死。修法 `HWLOC_COMPONENTS=-gl`，已持久化进 `metal-env` 与 `quantum-metal`（新建 env 必须照做）。⚠ 早先「`DISPLAY` 为空所以不是 X11」的判断是错的 | `session/2607280204.md` |
+| 「挖空 ground 有 ~30% 内在误差」 | **错**。那是默认 ε-nudge 比需要的大三个数量级：1 µm → **0.01 µm** 后只差 0.03%。ε=0 不是万能解（该几何在任何 scale 下都 fragment 失败），OCC 共面布尔的抽风是**非单调**的 | `_gmsh_geo_source.CARVED_GROUND_SUBSTRATE_GAP_SI` 的 ε 阶梯表 |
+| fragment 的 dilate 往返 | 不是单位换算，是**意外 shape-heal**（`occ.dilate` 重建每条曲线/曲面并放大容差）→ 改成 `FRAGMENT_SCALE_LADDER = (1.0, 1e2)`，1.0 档完全不 dilate | `session/2607280204.md` |
+| `occ.fragment` 对近邻但不重叠的 pocket carve | 重叠 30/40 µm 干净；重叠 10 µm 与**完全不重叠**都抛 `Boolean fragments failed`，scale 1/1e2/1e3 皆然 → 是 boolean 本身。重画几何时留意 | `sung_2021_device.geo` header |
+| legacy YAML→gmsh 路径静默写空网格 | 空网格守卫把它**暴露**出来（不是造成）并修好；新 gmsh 对共面 PLC 失败不抛异常是根因 | `session/2607021950.md` |
+| 参考侧交叉验算怎么跑 | ElmerFEM 9.0 在 `~/opt/elmer`（`export PATH=$HOME/opt/elmer/bin:$PATH`）+ conda `quantum-metal` = quantum-metal 0.7.6。两个上游坑要绕：`ElmerRunner` 假定相对路径布局；`_get_capacitance_matrix` 用 pandas 链式赋值设 Maxwell 对角，pandas ≥2 下**静默失效** | `session/2607280204.md` |
+| 缺口 ⑤ SQUID 磁通可调 · ⑦ `geo_build --np N` · ⑥ 浮动 bus 的 Schur 消元 | 都已落地（⑤⑦ 在 2607290110，⑥ 在 M8 P0；Schur 对 4.05 golden 的 `C_k` 偏差 **7.7e-16**） | `session/2607290110.md` · `session/2607290329.md` |
+| #20 的三条里两条 | ✅ 多岛浮动/差分 transmon 已实现（与 LOM 2.0 吻合 <0.1%）；✅ 「meta→tier-2 wiring bug」核实**本就不存在**（已补测试钉住） | `session/2607280204.md` |
+
+## 历史
+
+每个 session 的完整记录 + 里程碑逐条状态见 [`plan.md`](plan.md)（底部 `## Session logs` 索引）。
+最近三条：`session/2607290329.md`（M8 P0 全部落地）· `session/2607290110.md`（缺口 ⑤⑦）·
+`session/2607280204.md`（Palace↔Elmer↔论文三方闭环 + 4-agent 修复）。
+`CLAUDE.md` 不再钉死 "M1–M5" —— 里程碑按 phase 重新划定（见 `plan.md`）。

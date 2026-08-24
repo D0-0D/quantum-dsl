@@ -11,20 +11,20 @@
    **最新的 `*.meta.yaml` + 手写 `.geo`** 路径(`quantum_dsl.dsl.geo_build`)。
    - **「全用 YAML 写」**(旧 `.metal.yaml → shapely → QDesign`)记为 **legacy**。
    - **「emit geo」**(由 YAML 自动生成 `.geo`)也记为 **legacy**。
-3. **诊断任务(已完成)**:看现有两个例子里"芯片那个"(`chip_layout`),给完整物理+计算图像,
+2. **诊断任务(已完成)**:看现有两个例子里"芯片那个"(`chip_layout`),给完整物理+计算图像,
    判断是否过于 toy-model。→ 已给结论:作为 DSL→GDS+mesh→Palace 全链路 demo 合格;作为真实
    芯片偏 toy(缺读出谐振器/ports/控制线、纯静电、直角矩形)。
-4. **主任务**:去 qiskit-metal **官方 examples/教学**找一个**真实例子**(用户举例"一开始的完整
+3. **主任务**:去 qiskit-metal **官方 examples/教学**找一个**真实例子**(用户举例"一开始的完整
    4qubit,有简单点的更好"),**用我们的语言(meta.yaml + 手写 geo)做完整复现,到电容矩阵**,
    并**与 qiskit-metal 直接求解的电磁参数对比**。
-5. **源码口径**:这是个 fork(`dyk07/qiskit-metal`)。**pip 包很旧**(conda-forge 0.5.1);
+4. **源码口径**:这是个 fork(`dyk07/qiskit-metal`)。**pip 包很旧**(conda-forge 0.5.1);
    qiskit-metal 正改名 **Quantum-metal**;**GitHub 上游 = 最新且权威**;本地 Windows fork
    次新且**有自己的废弃改动**(不可当权威)。
-6. **至少 2 qubit**(确认要求 ≥2 qubit)。
-7. **指定例子 + 拉源码**:用 `tutorials/1 Overview/1.3 Build a 4-qubit chip.ipynb`;
+5. **至少 2 qubit**(确认要求 ≥2 qubit)。
+6. **指定例子 + 拉源码**:用 `tutorials/1 Overview/1.3 Build a 4-qubit chip.ipynb`;
    **先在 WSL clone 最新源码**。
-8. **环境**:WSL 有 conda `metal-env`;**直接用 metal-env** 跑 qiskit-metal 参考解。
-9. **(本次暂停指令)**:先创建本 spec 到 `.claude/` 记录原始需求与完整进度,然后停下。
+7. **环境**:WSL 有 conda `metal-env`;**直接用 metal-env** 跑 qiskit-metal 参考解。
+8. **(本次暂停指令)**:先创建本 spec 到 `.claude/` 记录原始需求与完整进度,然后停下。
 
 ---
 
@@ -42,12 +42,12 @@
 
 ## 锁定的实验设计
 
-| | 我们的路径(被测) | qiskit-metal 参考 |
-|---|---|---|
-| 几何 | 手写 `.geo` + `meta.yaml` | `TransmonPocket`(1.3 的 Q1 参数) |
-| 网格 | gmsh(我们的 adapter) | gmsh(QGmshRenderer) |
+|      | 我们的路径(被测)               | qiskit-metal 参考                  |
+| ---- | ------------------------------ | ---------------------------------- |
+| 几何 | 手写`.geo` + `meta.yaml`   | `TransmonPocket`(1.3 的 Q1 参数) |
+| 网格 | gmsh(我们的 adapter)           | gmsh(QGmshRenderer)                |
 | 求解 | **Palace** Electrostatic | **Elmer** StatElecSolver(P1) |
-| 产物 | N×N Maxwell 电容矩阵 | (N+1)×(N+1) 含 ground 行 |
+| 产物 | N×N Maxwell 电容矩阵          | (N+1)×(N+1) 含 ground 行          |
 
 - **复现对象**:教程 **1.3 Build a 4-qubit chip** 的**单个 `TransmonPocket`(Q1)cell**。
   - 整片是 4×`TransmonPocket`(菱形)+ 4 条 6mm 蜿蜒 `RouteMeander`,5.95×2.65mm。
@@ -58,6 +58,7 @@
   ground 是参考(不计端口)→ **6×6** Maxwell 矩阵。
 
 ### 单 cell 精确几何(µm,局部居中,取自 qiskit-metal 实渲染)
+
 ```
 pad_top  x[-225,225] y[ 15,105]  450×90      conn_a pad x[100,225]  y[120,150] 125×30
 pad_bot  x[-225,225] y[-105,-15] 450×90      conn_b pad x[-225,-100]y[120,150] 125×30
@@ -67,6 +68,7 @@ JJ (0,-15)-(0,15) 20µm 宽;  引线 25µm 线/49µm gap, 由 pad 伸到 |x|=425
 layer 1 = pec 2µm @z0; layer 3 = silicon -750µm; eps_r=11.45(已确认与 Elmer 一致)
 airbox: top 890 / bottom 1650 / side_buffer(待与 Elmer vacuum box 对齐, 现 200)
 ```
+
 引线原始是 3 段折线(含斜段),我们用轴对齐近似(保线宽/gap/长度)。
 
 ---
@@ -74,6 +76,7 @@ airbox: top 890 / bottom 1650 / side_buffer(待与 Elmer vacuum box 对齐, 现 
 ## 完整进度(截至暂停)
 
 ### ✅ 已完成
+
 - **clone 最新源码**:`/home/administrator/qiskit-metal`(`dyk07/qiskit-metal` main,HEAD `5eb380fd`,
   blobless)。
 - **表征 1.3 整片** + **挖出单 cell 精确几何**(脚本 `dump_spec.py` / `render_cell.py`)。
@@ -98,6 +101,7 @@ airbox: top 890 / bottom 1650 / side_buffer(待与 Elmer vacuum box 对齐, 现 
   (2) v1 网格极粗(仅 9326 未知数)+ order1 → FEM 系统性高估电容。**非 setup bug,是收敛/几何差异**。
 
 ### ⚠️ 进行中 / 当前阻塞点(恢复时从这里继续)
+
 - **v2(含引线)的 `.geo` 仍处于"坏"中间态**:文件
   `examples/dsl/geo/qm4q_transmon_cell.geo` 当前是 BooleanUnion 版,**有 tag 撞号**
   (`conn_a` 与 `pad_bot` 共享 surface tag 5)→ 管线 extrude 失败。
@@ -106,9 +110,11 @@ airbox: top 890 / bottom 1650 / side_buffer(待与 Elmer vacuum box 对齐, 现 
 - **✅ 已验证的修复方案(实验 `_exp_d.geo` 通过,但尚未写回正式 .geo)**:
   > **给所有金属面用显式唯一 surface tag(如 1001+,绕开 `news`);ground 用宏先建好(经 `sret`
   > 捕获),金属在 ground 之后用显式 tag 创建;pad+引线用同一 Physical 名标成双面(无需 Boolean)。**
-  实验结果:`pad_top=1001 pad_bot=1002 jj=1003 conn_a={1004,1005} ground={1}`,无撞号、无 BAD。
+  > 实验结果:`pad_top=1001 pad_bot=1002 jj=1003 conn_a={1004,1005} ground={1}`,无撞号、无 BAD。
+  >
 
 ### ⏳ 待办(恢复顺序)
+
 1. **把上面的显式-tag 方案写回** `examples/dsl/geo/qm4q_transmon_cell.geo`,dry-run 验证成网。
 2. **v2 收敛网格跑 Palace**:网格对齐 Elmer(min5/max50);Elmer 是 P1,故我们用 **order 1**
    做公平对比(或注明 order 差异)。注意:之前 min4/max50+order2 在小 pocket 上要 8min+(过细),
@@ -129,20 +135,24 @@ airbox: top 890 / bottom 1650 / side_buffer(待与 Elmer vacuum box 对齐, 现 
 ## 文件 / 路径清单
 
 **我们的 DSL(deliverable)**
+
 - `examples/dsl/geo/qm4q_transmon_cell.meta.yaml` — Layer-1 物理元数据(层栈/airbox/mesh/gds/solver)。
 - `examples/dsl/geo/qm4q_transmon_cell.geo` — 单 cell 几何 **(当前坏态,待应用显式-tag 修复)**。
 - `examples/dsl/geo/qlib.geo` — 复用的宏库(PAD/CPW/JUNCTION/GROUND_POCKET/GROUND_CUTOUT/COUPLER)。
 
 **结果**
+
 - `build/qm4q_v1/` — 我们 v1 Palace(无引线/粗网格)输出 + `chip.results.yaml`(6×6 + circuit model)。
 - `build/qm4q_elmer_ref/elmer_cap_matrix.txt` — Elmer 参考 7×7 矩阵。
 
 **临时脚本(scratchpad)**
+
 - `build_4q.py`(整片表征)、`render_cell.py`(单 cell 渲染+物理组 dump)、`dump_spec.py`(精确几何 spec)、
   `elmer_ref.py`(Elmer 参考解)。scratchpad =
   `/tmp/claude-1000/-home-administrator-quantum-dsl/<session>/scratchpad/`。
 
 **外部源码**
+
 - `/home/administrator/qiskit-metal` — clone 的 dyk07/main(权威最新)。
 - `/mnt/d/Workspace/vsCOde/circuit/qiskit/qiskit-metal`(+ `…-worktrees/dyk07-main`)— Windows 本地 fork
   (次新+废弃改动,仅参考)。4-qubit 教程:`tutorials/1 Overview/1.3 Build a 4-qubit chip.ipynb`;
@@ -150,6 +160,7 @@ airbox: top 890 / bottom 1650 / side_buffer(待与 Elmer vacuum box 对齐, 现 
   2-transmon LOM:`tutorials/4 Analysis/A…/4.05 New LOM and Two Coupled Transmon Example.ipynb`。
 
 **命令**
+
 ```bash
 # 跑我们的管线(metal-env):
 source ~/miniconda3/etc/profile.d/conda.sh; conda activate metal-env

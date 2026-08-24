@@ -1,0 +1,47 @@
+schema: qiskit-metal/design-dsl/3
+geo: two_pads.geo          # 占位: 本例的电容全部来自文件注入
+vars: {}
+
+extract:
+  blocks:
+    - name: qb1
+      from: file
+      path: Q1_TwoTransmon_CapMatrix.txt
+      nodes:
+        coupler_connector_pad_Q1: coupling        # ← 共享节点名
+        readout_connector_pad_Q1: readout_alice
+      junctions:
+        - {name: j1, between: [pad_top_Q1, pad_bot_Q1], L_J: 10nH, C_j: 2fF}
+    - name: qb2
+      from: file
+      path: Q2_TwoTransmon_CapMatrix.txt
+      nodes:
+        coupler_connector_pad_Q2: coupling        # ← 同一个名字 → 与 qb1 连通
+        readout_connector_pad_Q2: readout_bob
+      junctions:
+        - {name: j2, between: [pad_top_Q2, pad_bot_Q2], L_J: 12nH, C_j: 2fF}
+
+assemble:
+  ground_node: ground_main_plane
+  nodes_force_keep: [readout_alice, readout_bob]
+
+subsystems:
+  - {name: QB1, type: transmon, junction: j1}
+  - {name: QB2, type: transmon, junction: j2}
+  - {name: RO1, type: tl_resonator, node: readout_alice, f_res: 8.0GHz, Z0: 50ohm, mode: half_wave}
+  - {name: RO2, type: tl_resonator, node: readout_bob,   f_res: 7.6GHz, Z0: 50ohm, mode: half_wave}
+
+simulation:
+  gmsh:
+    layer_stack:
+      1: {kind: metal, thickness: 2, z: 0, material: pec}
+      3: {kind: dielectric, thickness: -100, z: 0, material: silicon, eps_r: 11.45}
+    airbox: {top: 120, bottom: 120, side_buffer: 80}
+    mesh: {max_size: 40, min_size: 4}
+    gds:
+      lib_name: demo
+      top_cell: demo
+      unit: 1.0e-6
+      precision: 1.0e-9
+      by_role: {metal: {layer: 1, datatype: 0}}
+    solver: {type: Electrostatic, order: 2, l0: 1.0}
