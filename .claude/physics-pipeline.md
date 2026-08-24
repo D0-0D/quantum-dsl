@@ -294,3 +294,37 @@ Schur 补 C−C·S(SᵀCS)⁻¹SᵀC; v3 曾对其 golden 命中 7.7e-16)。这�
   可选)。廉价防线留给 V4-5 实现时: extract 时对"几何邻近(如间距 <
   airbox.side)但结构性零耦合"的导体对告警。core+halo、邻块 pair-solve、
   期望耦合图覆盖检查按需再上(YAGNI, 出处与做法见 survey §3)。
+
+## 12. Palace 运行面: 版本/并行/AMR/域尺寸(codex 双跑取证 → [`palace-ops-survey.md`](palace-ops-survey.md))
+
+gpt-5.6-sol(152 检索)+ gpt-5.5(72 检索)独立跑, 结论一致; 与 §6 裸机实测互洽。
+
+- **多 rank order-2**: 上游无对应 bug 报告、无版本自称修复——与裸机实测
+  "本来就不是 Palace bug"互洽。v3 的绕法(单 rank/分块降规模)在干净环境
+  不必保留; WSL 上仍建议 `-np 1` 起步 + 盯内存。
+- **每个 terminal 解完都跑误差估计器**(RT 通量恢复), 即使
+  `Refinement.MaxIts=0` 也**不跳过**——大网格内存预算要把 estimator 阶段
+  算进去(官方内存表单列此项; AMR refine 峰值可达稳定 solve 的 3–4×)。
+- **多 terminal = 顺序单 RHS**: 矩阵/预条件器构建一次复用, N 导体 = N 次
+  CG 解——terminal 数是线性成本, 不是矩阵重装成本。
+- **AMR**(0.12 起支持 Electrostatic, `Model.Refinement`, 默认 MaxIts=0 关):
+  是 gmsh 边缘 seed 网格**之上**的二次自适应, 不能取代 Distance/Threshold
+  尺寸场(SQDMetal 明说且实践如此)。接入时: 1–2 轮、设 MaxSize、纯四面体可
+  `Nonconformal=false`; 避开 `SaveAdaptMesh+SaveAdaptIterations` 组合
+  (0.16.1 引入的覆盖 bug #887)。正面样本: SQDMetal AMR O2 到 71M DoF,
+  对 COMSOL/Q3D <0.3%。**v4 契约不需要 AMR**(fixture 规模小), V4-6 大网格
+  时再试点。
+- **版本**: 最新 0.17.0(2026-06); spack 只到 0.16.0(本机/裸机同版)。
+  0.16.1/0.17 带来的是诊断(分阶段内存表、resolved config)与 cracking/AMR
+  修复, **无静电相关行为变化**——v4 留在 0.16 没有已知代价, 升级不紧迫;
+  若升, 从源码 tag 构建并用 N7 golden 回归。
+- **静电外边界只有两种**: `Ground`(Dirichlet 0)与 `ZeroCharge`(Neumann);
+  **不写就是自然边界 ≡ ZeroCharge**——"开放边界"= 直接不给盒壁挂 Ground,
+  无需任何特殊配置。无 Absorbing/PML。全接地导体版图 + 开放边界会奇异,
+  此时必须接地盒壁(§3 已述)。
+- **域尺寸无公认定律**, 公开起点: SQDMetal 接地盒 = 芯片高×2、XY +20%
+  (模拟真实 sample holder); KQCircuits 默认 cell bbox 每侧 +300 µm。
+  给真实器件报数时应做域尺寸扫(1×/1.5×/2×, 关注 C 变化 <0.2–0.5% 验收);
+  two_pads fixture 的 side=80 µm 是刻意小型化的回归件, 不是物理推荐值。
+- **对称面减半**: 偶对称用 ZeroCharge、奇对称用 Ground 在原理上可行, 但
+  完整 C 矩阵的逐 terminal 单位激励通常破坏对称性——不做。
