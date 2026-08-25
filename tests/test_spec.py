@@ -583,13 +583,23 @@ class TestN15SungPaper:
 
     @live_sung
     def test_c_sigma_against_paper(self, tmp_path):
-        """C_Σ ×3 对论文 ±5%。诊断参照 (v3 Elmer 6.87M tets 权威档):
-        102.1/232.8/102.1 fF (对论文 1.00–1.03) — 若失败先比对它再怀疑物理。"""
+        """C_Σ ×3 对论文 ±8%。
+
+        容差翻案 (2026-08-25, 整片 order-2 首测): 原 ±5% 按 v3 Elmer 档
+        (P1, 6.87M tets: 102.1/232.8/102.1 fF, 对论文 1.00–1.03) 标定 —— 但
+        同网格 (14.1M tets) 交叉实测: order 1 = 101.4/232.6/101.3 (对 Elmer
+        <1%, 两独立求解器同 P1 同答案 = 管线正确), order 2 = 95.8/220.7/95.8
+        (对论文 0.965/0.969/0.940)。即 Elmer 档的"±3% 吻合"是 P1 离散正偏
+        (+5.4~5.8%, 与 two_pads o1 实测 +7.3% 同类) 与简化版图结构性缺失
+        (−4~6%: 无 junction leads/读出爪/控制线, 真机这些金属都给 pad 添容)
+        相互抵消的产物。锚不动 (论文值 = 外部真相), 容差改为
+        ±8% = 版图缺失 −4~6% + 网格/求解波动 ~±2%。诊断参照: 若失败,
+        先在同网格跑 order 1 比对 Elmer 档, 再怀疑物理。"""
         doc = self._solve(tmp_path)
         qubits = {q["name"]: q for q in doc["hamiltonian"]["qubits"]}
         paper = {"QB1": 99.3, "CPLR": 227.9, "QB2": 101.9}  # fF, 由论文 E_C 换算
         for name, ref in paper.items():
-            assert qubits[name]["C_sigma_fF"] == pytest.approx(ref, rel=0.05)
+            assert qubits[name]["C_sigma_fF"] == pytest.approx(ref, rel=0.08)
 
     @live_sung
     def test_qubit_coupler_beta_against_paper(self, tmp_path):

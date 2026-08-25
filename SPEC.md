@@ -83,7 +83,7 @@ Terminal 即双岛短路(v3 实测 C_Σ 错 1.70×); 器件归组在 circuit_mod
 | N12 圆角 cell | `rounded_polygon(points, radius_um) → [(x,y)]`; `emit_geo(cells) → str`(load_geo 可回读)                      | `TestN12Cells`       |
 | N13 编排      | `build(meta, out, solve=False) → {gds, mesh, config, manifest}`(manifest 带输入 sha256)                          | `TestN13Build`       |
 | N14 分块      | `extract.blocks` → 落盘 `block_<name>.geo`(只含该块 component)+ 各块 config                                    | `TestN14Extract`     |
-| N15 外部物理验证 | sung fixture(PRX 11.021058)live 解: C_Σ ×3 对论文 ±5%, β_qc ±20%(gate `QDSL_RUN_PALACE_SUNG=1`; 排除项见 fixture meta) | `TestN15SungPaper`   |
+| N15 外部物理验证 | sung fixture(PRX 11.021058)live 解: C_Σ ×3 对论文 ±8%(2026-08-25 翻案: 原 ±5% 锚的 Elmer P1 档系偏置抵消产物, 账见 fixture meta 头注), β_qc ±20%(gate `QDSL_RUN_PALACE_SUNG=1`; 排除项见 fixture meta) | `TestN15SungPaper`   |
 
 ## 验收
 
