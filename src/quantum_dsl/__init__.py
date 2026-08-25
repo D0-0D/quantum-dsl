@@ -20,7 +20,6 @@ __all__ = [
     "Meta", "load_meta",
 ]
 
-# --- V4-3 物理内核 (circuit_model / assemble / cpw) 在此追加 import ---
 # V4-3 物理内核 (纯 math, 不依赖 V4-2)
 from .circuit_model import (ELEM_CHARGE, FLUX_QUANTUM_REDUCED, H_PLANCK, HBAR,
                             dispersive_shift_hz, resonator_lumped_lc,
@@ -32,4 +31,16 @@ __all__ += [
     "ELEM_CHARGE", "FLUX_QUANTUM_REDUCED", "H_PLANCK", "HBAR",
     "solve_circuit_model", "resonator_lumped_lc", "dispersive_shift_hz",
     "assemble", "guided_wavelength", "lumped_cpw",
+]
+
+# V4-2 几何分叉 (gmsh/gdstk 惰性 import 在各函数内) + V4-4 cells + V4-5 编排
+from .gds import build_gds
+from .mesh import Mesh, build_mesh
+from .palace import Cap, palace_config, parse_capacitance
+from .cells import emit_geo, rounded_polygon
+from .build import build
+
+__all__ += [
+    "build_gds", "Mesh", "build_mesh", "Cap", "palace_config",
+    "parse_capacitance", "rounded_polygon", "emit_geo", "build",
 ]

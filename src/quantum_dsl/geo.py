@@ -65,28 +65,16 @@ def parse_physical_name(name: str) -> Physical:
 
 
 def load_geo(path) -> Geo:
-    """加载 ``.geo``, 返回 Physical 组与 µm 包围盒。名字不合约定即 raise。"""
-    path = Path(path)
-    if not path.is_file():
-        raise QuantumDslError(f"load_geo: no such file: {path}")
-    import gmsh  # 惰性: N0 import 纯度
+    """加载 ``.geo``, 返回 Physical 组与 µm 包围盒。名字不合约定即 raise。
 
-    owns = not gmsh.isInitialized()
-    if owns:
-        gmsh.initialize()
-    try:
-        gmsh.option.setNumber("General.Terminal", 0)
-        try:
-            gmsh.open(str(path))
-        except Exception as exc:
-            raise QuantumDslError(f"load_geo: gmsh cannot parse {path}: {exc}") from exc
+    解析进一次性 model (进程级共享 gmsh session, 见 ``_gmsh.geo_model``
+    docstring —— 宏库 include guard 只有这个口径下可靠)。"""
+    path = Path(path)
+    from ._gmsh import geo_model
+
+    with geo_model(path) as gmsh:
         physicals = tuple(
             parse_physical_name(gmsh.model.getPhysicalName(dim, tag))
             for dim, tag in gmsh.model.getPhysicalGroups())
         xmin, ymin, _zmin, xmax, ymax, _zmax = gmsh.model.getBoundingBox(-1, -1)
-    finally:
-        if owns:
-            gmsh.finalize()
-        else:
-            gmsh.clear()
     return Geo(path=path, physicals=physicals, bbox_um=(xmin, ymin, xmax, ymax))
