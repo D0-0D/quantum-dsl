@@ -5,7 +5,7 @@
 Physical 名 ``"<role>::<layer>::<component>::<primitive>"``。**component 段 =
 电学岛 (net)**, 是电容矩阵/circuit_model/assemble 的绑定键。
 
-解析用 gmsh 本体 (它就是 .geo 的解释器 —— fixtures 里有变量/宏/Include,
+解析用 gmsh 本体 (它就是 .geo 的解释器 —— 例子里有变量/宏/Include,
 文本解析撑不住 bbox); **惰性 import**, ``import quantum_dsl`` 不拉起 gmsh (N0)。
 """
 

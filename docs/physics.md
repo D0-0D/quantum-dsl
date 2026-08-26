@@ -83,7 +83,7 @@ KQCircuits（IQM）默认 `metal_height = 0`；SQDMetal 2026 基准用 zero-thic
 **v3 为什么选 (b)**：当年断言"Palace 拒绝内部面上的 Terminal"。本机复检推翻了这个断言：Palace 0.16 对方案 (a)
 直接可解。v3 看到的 abort（`"A non-periodic face cannot have multiple boundary elements"`）在 (a) 路径上复现了，
 根因是 `.geo` 作者写的 Physical 组在 imprint 路径下**存活**到最终网格，与实现自己加的组重叠 → 同一几何面写出两条
-边界元。捕获作者组后 `removePhysicalGroups()` 即愈（`mesh.py:115`）。挖空路径下焊盘面被 extrude/cut **消耗**，
+边界元。捕获作者组后 `removePhysicalGroups()` 即愈（`mesh.py:114`）。挖空路径下焊盘面被 extrude/cut **消耗**，
 作者组变空，所以 v3 从未踩到——这也解释了两条路径的"玄学"差异。
 
 **ε-nudge 的来龙去脉**（为什么 v4 可以让它不存在）：方案 (b) 里带 ground 的设计要做"2 µm 金属板与衬底顶面精确
@@ -159,7 +159,7 @@ two_pads 实测（Palace 0.16，接地盒）。"偏差"列以 **v3 旧 golden** 
 
 `circuit_model.py`，公式口径经双重验证：对契约闭式 golden 逐位复算 + 文献核对（两轮独立检索，结论一致）。
 
-**约化与求逆**（`circuit_model.py:355-379`）：取被引用岛的子矩阵 C_S（契约要求全部 label 被认领，故 = 全矩阵），
+**约化与求逆**（`circuit_model.py:354-378`）：取被引用岛的子矩阵 C_S（契约要求全部 label 被认领，故 = 全矩阵），
 组结支路变换 φ = Bξ：接地单岛 θ = φ_a（选择列）；浮动双岛 θ = φ_a − φ_b 外加共模 σ = (φ_a + φ_b)/2。
 `C′ = Bᵀ C_S B` → **完整求逆取 θθ 块**：共模电荷守恒 = 0 的正确约化只在完整逆里体现（θθ 块的逆 ≠ 逆的 θθ 块；
 "删共模行列再求逆" = A⁻¹，仅 B = 0 时等价）——Yanay et al. [L4] Eq. 50–57 同口径。闭式检查点：岛 a, b 对地
@@ -216,13 +216,13 @@ Z0/λ_g 不含 Lk，ε_eff 打了膜厚 + TE 色散补丁而 C 没打（差 ~2.6
 
 | # | 防线 | 代码 | 实案 |
 |---|---|---|---|
-| 1 | fragment 后拓扑不变量：衬底恰 1 体；无负 mass；Σ体积 ≤ bbox 体积 ×1.001 | `mesh.py:159-183` | OCC 静默复制衬底体 / 产负面积面 / 整张界面误标 ground |
-| 2 | 3D 网格每条出口过非空断言（Delaunay → HXT 回退 → raise） | `mesh.py:258-275` | gmsh 静默空网格 → Palace 无信息 abort |
-| 3 | 捕获作者 Physical 组后立即 `removePhysicalGroups()`，实现自己的组是唯一输出 | `mesh.py:115` | §4 的双边界元 abort |
-| 4 | 面归属用 fragment 的 `out_map` 直接映射，不做 bbox 猜测；导体面不得泄漏到外边界 | `mesh.py:184-216` | 质心判据误归位；airbox 没包住导体 |
+| 1 | fragment 后拓扑不变量：衬底恰 1 体；无负 mass；Σ体积 ≤ bbox 体积 ×1.001 | `mesh.py:159-182` | OCC 静默复制衬底体 / 产负面积面 / 整张界面误标 ground |
+| 2 | 3D 网格每条出口过非空断言（Delaunay → HXT 回退 → raise） | `mesh.py:258-274` | gmsh 静默空网格 → Palace 无信息 abort |
+| 3 | 捕获作者 Physical 组后立即 `removePhysicalGroups()`，实现自己的组是唯一输出 | `mesh.py:114` | §4 的双边界元 abort |
+| 4 | 面归属用 fragment 的 `out_map` 直接映射，不做 bbox 猜测；导体面不得泄漏到外边界 | `mesh.py:184-215` | 质心判据误归位；airbox 没包住导体 |
 | 5 | config 引用的组号来自同一次 `build_mesh` 返回值 | `palace.py:62-88` | attribute 不存在于网格 |
 | 6 | 输入卫生：CSV 与 L_J/E_J 拒 NaN/Inf（`not (isfinite(v) and v > 0)`——1e400 溢出成 inf 能绕过 `<= 0`）；C 求逆前查反对称残差；奇异判据尺度相对（pivot ≤ 1e-12·max|C|） | `palace.py:126-130`, `circuit_model.py:216-222, 299-307, 163-174` | nan 静默写出整条结果 |
-| 7 | 语义完整性：未被任何 junction 认领的 Terminal **禁止静默接地**——要么 Schur 消掉要么 raise；`islands` 长度只能 1 或 2 | `circuit_model.py:346-352` | 静默接地把中介耦合 25 MHz 删成 0；双岛当单岛 C_Σ 错 1.70× 且测试全绿 |
+| 7 | 语义完整性：未被任何 junction 认领的 Terminal **禁止静默接地**——要么 Schur 消掉要么 raise；`islands` 长度只能 1 或 2 | `circuit_model.py:345-352` | 静默接地把中介耦合 25 MHz 删成 0；双岛当单岛 C_Σ 错 1.70× 且测试全绿 |
 
 ## 11. 分块拼装的适用边界（N9 / N14）
 

@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """拼装 (契约 N9): 多块电容矩阵按共享节点名累加, Schur 消掉未保留节点。
 
-quasi-lumped 近似 (qiskit-metal LOM 2.0 同款, 机制同构证据见
-.claude/assemble-lit-survey.md): 跨 cell 连通性 **只靠共享节点名**; 跨块直接
+quasi-lumped 近似 (qiskit-metal LOM 2.0 同款, 机制同构与适用边界见
+docs/physics.md §11): 跨 cell 连通性 **只靠共享节点名**; 跨块直接
 互容 = 结构性零 — 有意直接耦合的导体对必须同块共现 (SPEC「切块纪律」)。
 
 与 v3 不同, v4 契约用 **显式 keep 列表** (不做 junction/动力学节点推断):

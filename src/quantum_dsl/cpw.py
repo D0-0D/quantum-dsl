@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """CPW 解析集总 (契约 N10): 单位长度 L/C/G、Z0 与导波波长 (AGM 椭圆积分)。
 
-**自洽公式集** (2026-08-24 裁定, 见 physics-pipeline.md §2 与
-lom-conventions-survey.md §5), 每一式有独立文献出处:
+**自洽公式集** (2026-08-24 裁定, 见 docs/physics.md §9), 每一式有独立
+文献出处:
 
   * k0 共面 / k1 有限衬底 sinh 分支 — Simons Eq. (2.37)/(2.38)
     (背面接地版图是 tanh 分支, 不可混用);

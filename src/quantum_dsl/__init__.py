@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """quantum_dsl v4 — 超导量子芯片版图 DSL。
 
-契约 = SPEC.md, 可执行形式 = tests/test_spec.py。顶层 API 扁平 (SPEC「公共
-API」表); ``import quantum_dsl`` 保持轻量 —— gmsh/gdstk 只在用到的函数里
-惰性 import (契约 N0)。
+契约 = SPEC.md, 可执行形式 = tests/。顶层 API 扁平 (SPEC「公共 API」表);
+``import quantum_dsl`` 保持轻量 —— gmsh/gdstk 只在用到的函数里惰性 import
+(契约 N0)。
 """
 
 from __future__ import annotations

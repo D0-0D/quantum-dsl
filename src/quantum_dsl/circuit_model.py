@@ -2,7 +2,7 @@
 """电路模型 (契约 N8/N11): Maxwell 电容矩阵 → transmon Hamiltonian 参数。
 
 逆电容 LOM, 结支路坐标形式 (审后搬运自 v3 ``dsl/circuit_model.py``, 口径
-= .claude/physics-pipeline.md §2, 已对契约 golden 逐位复算):
+= docs/physics.md §8, 已对契约 golden 逐位复算):
 
 * 取被引用岛的子矩阵 ``C_S`` (这里契约要求全部 label 被认领, 故 = 全矩阵),
   组结支路变换 ``φ = B ξ``: 接地单岛 θ=φ_a (选择列); 浮动双岛 θ=φ_a−φ_b
@@ -13,13 +13,13 @@
 * ``C_Σ = 1/[C'⁻¹]_θθ,kk`` (dressed 有效电容, **不是** Maxwell 对角),
   ``E_C = e²/(2C_Σ)``, ``E_J = (ħ/2e)²/L_J``,
   ``f01 = (√(8E_C·E_J) − E_C)/h`` (**g 钉 f01 支**, 不是裸等离子频率 f_p ——
-  文献真实分叉, pipeline §2 已钉死), ``α = −E_C/h``。
+  文献真实分叉, docs/physics.md §8 已钉死), ``α = −E_C/h``。
 * 耦合 ``β = |C'⁻¹_ij|/√(C'⁻¹_ii·C'⁻¹_jj)`` (纯几何, 与磁通/E_J 无关),
   ``g = ½·β·√(f01_i·f01_j)``。|·| 只适合输出耦合强度; 多路径/环路哈密顿量
   必须保留 C⁻¹_ij 符号 (将来做时别搬这里的 abs)。
 * SQUID: ``E_J(φ) = (E_J1+E_J2)·hypot(cos πφ, d·sin πφ)``,
   ``d = (E_J1−E_J2)/(E_J1+E_J2)`` — 无奇点形式 (tan 写法在 φ=0.5 除零)。
-* 防线 (pipeline §8): 求逆前查反对称残差 ``‖C−Cᵀ‖_F/‖C‖_F`` (超 1e-6 即解
+* 防线 (docs/physics.md §10): 求逆前查反对称残差 ``‖C−Cᵀ‖_F/‖C‖_F`` (超 1e-6 即解
   本身有病, raise 而非对称化掩盖) 再 ``(C+Cᵀ)/2``; L_J/E_J 拒 nan/inf/≤0
   (``not (isfinite(v) and v>0)`` — nan 过得了 ``<=0``); 未被认领的 label
   禁止静默接地 (v3 实案: 静默接地删掉 25 MHz 中介耦合 / C_Σ 错 1.70×)。
@@ -124,7 +124,7 @@ def dispersive_shift_hz(g_hz: float, f_res_hz: float,
     Eq. (11)–(14) 取三能级; 含反旋转分母 1/(ω+ω_r))。
 
     ⚠ 引文注意: **不要**引成 Koch 2007 (3.9)/(3.10) — Koch 原式是 RWA 版
-    (无 ω+ω_r 项), qiskit-metal 源码注释就是这处误引的源头 (pipeline §2)。
+    (无 ω+ω_r 项), qiskit-metal 源码注释就是这处误引的源头 (docs/physics.md §8)。
 
         chi_0 = −2g²·f01/(f01² − f_r²)                      (|0⟩ 的 pull)
         chi_1 = g²·(1/(f01−f_r) − 2/(f12−f_r)
@@ -296,7 +296,7 @@ def solve_circuit_model(labels, maxwell_fF, junctions) -> CircuitModelResult:
                     f"maxwell_fF[{i}][{jcol}] = {maxwell_fF[i][jcol]} is not "
                     f"finite — refusing a nan/inf matrix")
 
-    # 防线 (pipeline §8.6): 反对称残差超阈值 = 解本身有病, 不能靠对称化掩盖。
+    # 防线 (physics.md §10 #6): 反对称残差超阈值 = 解本身有病, 不能靠对称化掩盖。
     asym = math.sqrt(sum((maxwell_fF[i][jc] - maxwell_fF[jc][i]) ** 2
                          for i in range(n) for jc in range(n)))
     norm = math.sqrt(sum(v * v for row in maxwell_fF for v in row))
@@ -342,7 +342,7 @@ def solve_circuit_model(labels, maxwell_fF, junctions) -> CircuitModelResult:
             node_idx.append(row)
         parsed.append((name, islands, _junction_e_j_joule(j)))
 
-    # 防线 (pipeline §8.7): 未认领 label 禁止静默接地。
+    # 防线 (physics.md §10 #7): 未认领 label 禁止静默接地。
     unclaimed = [lab for i, lab in enumerate(labels) if i not in claimed]
     if unclaimed:
         raise QuantumDslError(

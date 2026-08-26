@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Palace 静电 (契约 N6): config 生成 + 电容 CSV 解析。
 
-config 骨架 = golden 配方 (pipeline §5, proto/two_pads_sheet.py 活样例):
+config 骨架 = 回归锚配方 (docs/physics.md §5):
 ``Model.L0 = 1e-6`` 是仓库里**唯一**的 µm→m 换算点 (网格坐标 µm, 别处不乘
 不除); ``Solver.Order = 2`` 是承重件 (同网格 order 1 实测偏 +7.3%); 场输出
 默认关 (电容工作流只消费 terminal-C.csv)。
@@ -13,7 +13,7 @@ config 骨架 = golden 配方 (pipeline §5, proto/two_pads_sheet.py 活样例):
 
 CSV: Palace 输出 **SI 法拉** (terminal-C.csv 表头 "(F)"), fF = F × 1e15;
 mutual (SPICE) 矩阵由 Maxwell 代数导出 (Cm_ii = Σ_j C_ij, Cm_ij = −C_ij),
-不再依赖 terminal-Cm.csv。NaN/Inf 一律拒绝 (§8.6)。
+不再依赖 terminal-Cm.csv。NaN/Inf 一律拒绝 (physics.md §10 #6)。
 """
 
 from __future__ import annotations

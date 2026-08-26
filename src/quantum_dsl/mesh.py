@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """静电网格 (契约 N5): 零厚度导体片 imprint 为边界面组。
 
-配方 = .claude/physics-pipeline.md §3–§6 (golden 出处 = proto/two_pads_sheet.py
-实测), v4 与 v3 的分道处:
+配方 = docs/physics.md §3–§6 (回归锚出处见其 §7),
+v4 与 v3 的分道处:
 
 * 金属**不 extrude、不布尔减** —— 2D 焊盘面直接 fragment (imprint) 进衬底/
   真空界面, Terminal 挂内部边界面 (Palace essential Dirichlet, §4 已实测可解)。
@@ -16,7 +16,7 @@
 * 网格: 导体边缘电场 ∝ r^(−1/2) 奇异 → Distance+Threshold 尺寸场对**所有**
   导体边缘曲线细化 (metal + ground, 电容缝隙两侧都要进细化源), 渐变
   10→130 µm (golden 配方常数); Delaunay 失败回退 HXT。
-* 失效防线 (pipeline §8, 每条背后都有一次"无报错出错解"的实案):
+* 失效防线 (docs/physics.md §10, 每条背后都有一次"无报错出错解"的实案):
   作者 Physical 组捕获后立即清除 (imprint 路径下作者面存活, 组保留 → 同一面
   两条边界元, Palace ReadMesh 拒收); fragment 后拓扑不变量 (衬底恰 1 体 /
   无负体积 / Σ体积 ≤ bbox×1.001); 导体面不得泄漏到外边界; 每条出口过空网格
@@ -109,12 +109,12 @@ def build_mesh(geo_path, meta, out) -> Mesh:
                 f"build_mesh: {geo_path} has no metal:: surfaces — nothing to "
                 f"extract capacitance for")
 
-        # 防线 §8.3: 捕获后立即清除作者组 —— imprint 路径下作者面**存活**到
+        # 防线 (physics.md §10 #3): 捕获后立即清除作者组 —— imprint 路径下作者面**存活**到
         # 最终网格, 组保留会与实现组重叠 → 同一几何面两条边界元, Palace 拒收。
         gmsh.model.removePhysicalGroups()
 
         # jj 面与未被任何组认领的孤儿面 (分块过滤的残留几何) 一并删除。
-        # recursive=True 会连边界点/线删掉 —— fixtures 的面互不共享低维实体
+        # recursive=True 会连边界点/线删掉 —— 例子的面互不共享低维实体
         # (OCC Rectangle / 布尔结果各自独立), 共享时 fragment 之前也无共享需求。
         drop = [(2, t) for _, t in gmsh.model.getEntities(2)
                 if t in jj_faces or t not in claimed]
@@ -158,7 +158,7 @@ def build_mesh(geo_path, meta, out) -> Mesh:
 
         sub_vols = [t for d, t in out_map[1] if d == 3]
         vac_vols = sorted({t for d, t in out_map[0] if d == 3} - set(sub_vols))
-        # 防线 §8.1: 拓扑不变量 (实案: OCC 静默复制衬底体 / 产负 mass 实体)
+        # 防线 (physics.md §10 #1): 拓扑不变量 (实案: OCC 静默复制衬底体 / 产负 mass 实体)
         if len(sub_vols) != 1:
             raise QuantumDslError(
                 f"build_mesh: fragment produced {len(sub_vols)} substrate "
@@ -181,7 +181,7 @@ def build_mesh(geo_path, meta, out) -> Mesh:
                 f"build_mesh: total volume {vol_sum:.6g} exceeds model bbox "
                 f"volume {bbox_vol:.6g} — OCC duplicated material")
 
-        # 防线 §8.4: 面归属用 fragment 的 out_map 直接映射, 不做 bbox 猜测。
+        # 防线 (physics.md §10 #4): 面归属用 fragment 的 out_map 直接映射, 不做 bbox 猜测。
         idx = 2
         cond_faces: dict[str, list[int]] = {}
         for c in comp_order:
@@ -255,7 +255,7 @@ def build_mesh(geo_path, meta, out) -> Mesh:
         gmsh.option.setNumber("Mesh.MeshSizeMin", mesh_min)
         gmsh.option.setNumber("Mesh.MeshSizeMax", mesh_max)
 
-        # 防线 §8.2: 空网格守卫 + HXT 回退 (HXT 不能当全局默认, 部分几何反而败)
+        # 防线 (physics.md §10 #2): 空网格守卫 + HXT 回退 (HXT 不能当全局默认, 部分几何反而败)
         try:
             gmsh.model.mesh.generate(3)
             _, etags3, _ = gmsh.model.mesh.getElements(3)

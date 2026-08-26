@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "quantum-dsl"
-version = "4.0.0a0"
+version = "4.0.0"
 description = "Superconducting quantum-chip layout DSL: native Gmsh .geo + meta.yaml -> GDS / Palace electrostatics -> circuit model."
 readme = "README.md"
 requires-python = ">=3.13"
@@ -14,7 +14,6 @@ keywords = ["superconducting", "quantum", "eda", "gmsh", "palace", "gds"]
 dependencies = [
     "pyyaml>=5.4",
     "shapely>=2",
-    "numpy>=1.26",
 ]
 
 [project.optional-dependencies]
