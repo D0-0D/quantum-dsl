@@ -1,6 +1,7 @@
-# two_pads_blocks.meta.yaml — 同一几何按 component 边界切两块 (N14 分块契约)。
+# two_pads_blocks.meta.yaml — 同一几何按 component 切两块 (分块提取例子)。
 # 每块派生独立 block_<name>.geo 各自求解; 跨块只有共享节点名可表达耦合
-# (本例两块无共享节点, A↔B 互容在分块下必然丢 —— 固有代价, 见 SPEC.md)。
+# (本例两块无共享节点, A↔B 互容在分块下必然丢 —— 固有代价; build() 会对
+# 这种「几何邻近却从不共现」的导体对告警, 见 docs/physics.md「分块拼装」)。
 
 schema: quantum-dsl/meta/1
 

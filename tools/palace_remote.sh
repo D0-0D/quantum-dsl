@@ -4,10 +4,10 @@
 # (cwd = config 目录), 本脚本把 config+mesh 送到远端机、在那边跑、拉回 postpro。
 #
 # 用途: N15 sung 整片 order-2 重解 (~18M 未知量) 超出 WSL 15G 内存,
-# 按 plan.md「可在多核真机跑」上 64C/128G 云机 (SPEC 验收第 3 条)。
+# 上 384G 大内存机 (峰值内存 ~154 G, 128G 机必 OOM; 见 docs/physics.md「Palace 运行面」)。
 # 用法:
-#   PALACE_BIN=.claude/proto/palace_remote.sh QDSL_PALACE_NP=32 \
-#     QDSL_RUN_PALACE_SUNG=1 pytest tests/test_spec.py::TestN15SungPaper
+#   PALACE_BIN=tools/palace_remote.sh QDSL_PALACE_NP=32 \
+#     QDSL_RUN_PALACE_SUNG=1 pytest tests/test_live.py -k sung
 # 环境: QDSL_REMOTE_HOST (默认 c24a1), QDSL_REMOTE_PALACE (远端二进制路径)
 set -euo pipefail
 
