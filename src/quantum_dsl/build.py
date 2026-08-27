@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """编排 (契约 N13/N14/N7/N15): ``build(meta, out_dir, solve=)``。
 
-产物: GDS + mesh + Palace config + manifest (输入 sha256); ``extract.blocks``
+产物: GDS (+ ``<stem>.gds.png`` 预览) + mesh + Palace config + manifest (输入 sha256); ``extract.blocks``
 时另派生 ``block_<name>.geo`` (只含该块 component 的 Physical 组, 其余组整行
 删除 —— 几何留作孤儿面, build_mesh 会清) + 各块 mesh/config。
 
@@ -32,7 +32,7 @@ import yaml
 
 from .circuit_model import H_PLANCK, solve_circuit_model
 from .errors import QuantumDslError
-from .gds import build_gds
+from .gds import build_gds, render_gds_png
 from .geo import parse_physical_name
 from .mesh import build_mesh
 from .meta import Meta, load_meta
@@ -144,7 +144,7 @@ def _warn_structural_zero_coupling(blocks, bbox_by_comp, side_um) -> None:
 
 def build(meta, out_dir, solve: bool = False) -> dict:
     """meta (路径或 Meta) + 输出目录 → 产物路径 dict (键: gds/mesh/config/
-    manifest[/blocks][/capacitance/results])。"""
+    manifest[/blocks][/capacitance/results]; 有 gds 时另有 gds_png)。"""
     m = meta if isinstance(meta, Meta) else load_meta(meta)
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -154,7 +154,11 @@ def build(meta, out_dir, solve: bool = False) -> dict:
     outputs: list[Path] = []
     if (m.gds or {}).get("by_role"):        # 未声明 by_role = 不出 GDS 分叉
         result["gds"] = build_gds(m.geo_path, m, out / f"{stem}.gds")
-        outputs.append(result["gds"])
+        jj = m.gds["by_role"].get("jj")
+        result["gds_png"] = render_gds_png(
+            result["gds"], out / f"{stem}.gds.png",
+            jj_layers=(int(jj["layer"]),) if jj else ())
+        outputs += [result["gds"], result["gds_png"]]
     mesh = build_mesh(m.geo_path, m, out / f"{stem}.msh")
     cfg_path = out / f"{stem}.json"
     palace_config(mesh, m, cfg_path)

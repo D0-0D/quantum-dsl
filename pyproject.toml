@@ -17,10 +17,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# 网格分叉 (build_mesh / palace_config) 需要 gmsh; GDS 分叉需要 gdstk。
+# 网格分叉 (build_mesh / palace_config) 需要 gmsh; GDS 分叉需要 gdstk (+ pillow 出 PNG 预览)。
 # `import quantum_dsl` 不得拉起它们 (契约 N0)。
 gmsh = ["gmsh>=4.13"]
-gds = ["gdstk>=0.9.53"]
+gds = ["gdstk>=0.9.53", "pillow>=9"]
 test = ["pytest>=8"]
 
 [tool.setuptools.packages.find]

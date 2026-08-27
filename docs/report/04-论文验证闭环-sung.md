@@ -349,7 +349,7 @@ two_pads 同一回事。
 （v3 #22 的"静默掉 rank"在干净构建的 Palace 上 np = 4 / 32 均正常，是环境问题）；浮动双岛约化补上"未认领岛禁止静默接地"的防线；
 `Model.L0 = 1e-6` 成为唯一换算点；`build(solve=True)` 直接落 `results.yaml` + `manifest.yaml`；sung 升格为契约 N15 的 live 测试，
 Palace 调用可透明转发到远端大内存机（`tools/palace_remote.sh`）。**替代几何一行没改**——v4 的 `.geo` 是 v3 标定好的那一份重写成
-v4 命名约定。2026-08-26/27 新增：真拓扑例子（两版）、`qlib.geo` 的 `POLY` / `XMON` 宏、`tools/micrograph_to_geo.py`、`tools/gds_png.py`。
+v4 命名约定。2026-08-26/27 新增：真拓扑例子（两版）、`qlib.geo` 的 `POLY` / `XMON` 宏、`tools/micrograph_to_geo.py`、`build()` 随 GDS 出 `<stem>.gds.png` 预览（`tools/gds_png.py` 为其裁剪/换比例壳）。
 
 **论证。** 下面每一步都只用前面各节已经出现过的数字。
 
@@ -457,7 +457,7 @@ L 形槽和顶部走线），对比特–耦合器耦合**没有影响**。与 �
 | 替代几何：几何参数、pocket 重叠约定、v3 调参实录 | `examples/sung_2021_device.geo` 头注 |
 | 真拓扑参数化版（发布的例子）：~20 个量得的参数、两版对比、产品路径结果 | `examples/sung_2021_xmon.geo` / `.meta.yaml` 头注 |
 | 真拓扑描摹版：照片出处、比例、手工干预、描摹版全部结果 | `examples/sung_2021_xmon_traced.geo` / `.meta.yaml` 头注 |
-| 照片 → `.geo` 生成器（阈值 / 擦除 / 结常量、审计图） | `tools/micrograph_to_geo.py`；GDS → PNG：`tools/gds_png.py` |
+| 照片 → `.geo` 生成器（阈值 / 擦除 / 结常量、审计图） | `tools/micrograph_to_geo.py`；GDS → PNG：`build()` 产物 `<stem>.gds.png`（`quantum_dsl.gds.render_gds_png`；`tools/gds_png.py` 裁剪/换比例） |
 | qlib 宏：`PAD` / `POLY` / `XMON` / `CPW` / `JUNCTION` / `GROUND_CUTOUT`（含 `Call` 独占一行的解析器坑） | `examples/qlib.geo` |
 | 测量审计图、参数化版 GDS 渲染 | `docs/report/img/sung_2021_xmon_measurement.png`、`img/sung_2021_xmon_gds.png` |
 | 断言本体 | `tests/test_live.py::test_sung_2021_against_paper` |

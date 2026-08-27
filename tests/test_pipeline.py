@@ -109,15 +109,19 @@ def test_parse_capacitance_verbatim_csv_and_nan_guard(tmp_path):
 
 # ---------------------------------------------------------------- N13 编排
 def test_build_no_solve_artifacts_and_manifest(tmp_path):
-    """契约 N13: build(solve=False) 产 gds/mesh/config/manifest 四件,
-    manifest 记录输入的真 sha256。"""
+    """契约 N13: build(solve=False) 产 gds/gds_png/mesh/config/manifest,
+    manifest 记录输入的真 sha256 与全部产物; PNG 里金属与缝两色都在。"""
+    from PIL import Image
+
     from quantum_dsl import build
     r = build(TWO_PADS_META, tmp_path, solve=False)
-    for key in ("gds", "mesh", "config", "manifest"):
+    for key in ("gds", "gds_png", "mesh", "config", "manifest"):
         assert Path(r[key]).exists(), key
     manifest = yaml.safe_load(Path(r["manifest"]).read_text(encoding="utf-8"))
     geo_sha = hashlib.sha256((EXAMPLES / "two_pads.geo").read_bytes()).hexdigest()
     assert geo_sha in {e["sha256"] for e in manifest["inputs"]}
+    assert str(r["gds_png"]) in {e["path"] for e in manifest["outputs"]}
+    assert len(Image.open(r["gds_png"]).getcolors()) == 2
 
 
 # ---------------------------------------------------------------- N14 分块

@@ -17,7 +17,7 @@ export PYTHONPATH=src                       # 未 pip install 时
 
 python -m pytest tests/ -q                  # 28 passed, 2 skipped (~12 s)
 python -c "from quantum_dsl import build; print(build('examples/two_pads.meta.yaml', 'build/two_pads'))"
-                                            # GDS + 网格 + Palace config + manifest (~4 s, 不需要 Palace)
+                                            # GDS + GDS 预览 PNG + 网格 + Palace config + manifest (~4 s, 不需要 Palace)
 
 # 真实静电求解 (需要 Palace, PALACE_BIN 指向二进制; WSL 上 build() 自动注入 HWLOC_COMPONENTS=-gl)
 QDSL_RUN_PALACE=1 python -m pytest tests/test_live.py -k two_pads -q     # ~2 min, C 对 golden <2%

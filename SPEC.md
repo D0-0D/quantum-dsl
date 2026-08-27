@@ -81,7 +81,7 @@ Maxwell 互容, 必须**在至少一次求解中共现**; 共享节点只提供�
 | N10 CPW | `guided_wavelength(...)`/`lumped_cpw(...)`（AGM 椭圆积分; **自洽集**: Z0/λ_g 由总 L′=Lext+Lk 导出） | `test_physics.py::test_cpw_*` |
 | N11 子系统 | `resonator_lumped_lc(f, Z0, mode)`; `dispersive_shift_hz(g, f_r, f01, f12)` | `test_physics.py::test_resonator_lumped_lc_half_and_quarter_wave`, `::test_dispersive_shift_golden` |
 | N12 圆角 cell | `rounded_polygon(points, radius_um) → [(x,y)]`; `emit_geo(cells) → str`（load_geo 可回读） | `test_frontend.py::test_rounded_polygon_area`, `::test_emit_geo_roundtrip` |
-| N13 编排 | `build(meta, out, solve=False) → {gds, mesh, config, manifest}`（manifest 带输入 sha256） | `test_pipeline.py::test_build_no_solve_artifacts_and_manifest` |
+| N13 编排 | `build(meta, out, solve=False) → {gds, gds_png, mesh, config, manifest}`（manifest 带输入 sha256 与全部产物；`<stem>.gds.png` = GDS 预览） | `test_pipeline.py::test_build_no_solve_artifacts_and_manifest` |
 | N14 分块 | `extract.blocks` → 落盘 `block_<name>.geo`（只含该块 component）+ 各块 config; 跨块邻近告警 | `test_pipeline.py::test_extract_blocks_derived_and_scoped` |
 | N15 外部物理验证 | sung 例子（PRX 11.021058）live 解: C_Σ ×3 对论文 ±8%（2026-08-25 翻案: 原 ±5% 锚的 Elmer P1 档系偏置抵消产物, 账见例子 meta 头注与 `docs/physics.md` §12）, β_qc ±20%（gate `QDSL_RUN_PALACE_SUNG=1`; 排除项见例子 meta） | `test_live.py::test_sung_2021_against_paper` |
 

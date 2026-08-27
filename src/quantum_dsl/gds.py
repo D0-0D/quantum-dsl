@@ -8,6 +8,9 @@ role 不进 GDS (by_role 就是选择机制 —— jj 要进 GDS 就映射 jj)�
 面 → 多边形走 gmsh 2D 三角化 + gdstk 布尔并 (逐面): 对任意 OCC 面 (含布尔
 差挖出的带孔 ground) 都稳健; 直边多边形的角点是网格顶点, 逐字保真。
 gmsh/gdstk 惰性 import (N0)。
+
+``render_gds_png``: GDS → PNG 概览 (金属浅 / 衬底深 / jj 品红), build() 随 GDS 一起产
+``<stem>.gds.png``。带孔 ground 用 field − metal 布尔取真缝 (PIL 不会填孔)。PIL 惰性 import。
 """
 
 from __future__ import annotations
@@ -17,7 +20,9 @@ from pathlib import Path
 from .errors import QuantumDslError
 from .geo import parse_physical_name
 
-__all__ = ["build_gds"]
+__all__ = ["build_gds", "render_gds_png"]
+
+_METAL, _SUBSTRATE, _JJ = (225, 225, 225), (60, 60, 66), (255, 0, 200)
 
 
 def build_gds(geo_path, meta, out) -> Path:
@@ -85,4 +90,34 @@ def build_gds(geo_path, meta, out) -> Path:
                 cell.add(poly)
 
     lib.write_gds(str(out))
+    return out
+
+
+def render_gds_png(gds_path, out, jj_layers=(), px_per_um=None, bbox=None) -> Path:
+    """GDS → PNG。``jj_layers`` 的多边形画品红, 其余一律金属。``px_per_um=None`` →
+    长边 2000 px; ``bbox=((x0, y0), (x1, y1))`` µm 裁剪, 默认整个 cell。"""
+    import gdstk
+    from PIL import Image, ImageDraw
+
+    cell = gdstk.read_gds(str(gds_path)).top_level()[0]
+    polys = cell.get_polygons(apply_repetitions=True, include_paths=True, depth=None)
+    if not polys:
+        raise QuantumDslError(f"render_gds_png: {gds_path} has no polygons")
+    jj_layers = set(jj_layers)
+    metal = [p for p in polys if p.layer not in jj_layers]
+    (x0, y0), (x1, y1) = bbox or cell.bounding_box()
+    s = px_per_um or 2000 / max(x1 - x0, y1 - y0)
+    img = Image.new("RGB", (int((x1 - x0) * s) + 1, int((y1 - y0) * s) + 1), _METAL)
+    draw = ImageDraw.Draw(img)
+
+    def px(pts):
+        return [((x - x0) * s, (y1 - y) * s) for x, y in pts]
+
+    for gap in gdstk.boolean(gdstk.rectangle((x0, y0), (x1, y1)), metal, "not"):
+        draw.polygon(px(gap.points), fill=_SUBSTRATE)
+    for p in polys:
+        if p.layer in jj_layers:
+            draw.polygon(px(p.points), fill=_JJ)
+    out = Path(out)
+    img.save(out)
     return out

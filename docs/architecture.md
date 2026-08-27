@@ -20,6 +20,7 @@
   examples/two_pads.geo ───────────────┐
   (几何: OCC, µm, 四段 Physical 名)     │
                                        ├──► build_gds ──► two_pads.gds          ① GDS 分叉 (µm verbatim, 旁路网格)
+                                       │        └──► render_gds_png ──► two_pads.gds.png   (预览: 金属浅 / 缝深 / jj 品红)
   examples/two_pads.meta.yaml ─────────┤
   (材料 / airbox / mesh / solver /     │
    gds.by_role / circuit_model /       ├──► build_mesh ──► two_pads.msh         ② 3D 网格 (零厚度导体片 imprint)
@@ -70,14 +71,14 @@ C 矩阵行序 = `Mesh.labels` = `sorted(metal component)`，是全链唯一真�
 | `geo.py` | 80 | `parse_physical_name` 四段名校验；`load_geo` → `Geo(physicals, bbox_um)` | N2 |
 | `_gmsh.py` | 54 | 进程级共享 gmsh session 的 `geo_model()` 上下文管理器（见 §7） | — |
 | `meta.py` | 92 | `load_meta` → `Meta`；未知顶层键 raise；结参数加载时解析成数（`L_J` → H，`E_J` → Hz） | N3 |
-| `gds.py` | 88 | `build_gds`：面 → gmsh 粗三角化 → gdstk 布尔并 → GDS（`unit=1e-6`，µm 逐字） | N4 |
+| `gds.py` | 123 | `build_gds`：面 → gmsh 粗三角化 → gdstk 布尔并 → GDS（`unit=1e-6`，µm 逐字）；`render_gds_png`：GDS → PNG 预览（PIL 惰性 import） | N4 N13 |
 | `mesh.py` | 286 | `build_mesh`：合成计算域、一次 `fragment` 把导体面 imprint 进 z=0 界面、边缘尺寸场、失效防线、写 msh 2.2 | N5 |
 | `palace.py` | 135 | `palace_config`（`Model.L0=1e-6`，`Order=2`，Terminal 按 labels）；`parse_capacitance`（CSV 法拉 → fF，mutual 由 Maxwell 代数导出） | N6 |
 | `circuit_model.py` | 423 | `solve_circuit_model` 逆电容 LOM（含浮动双岛差模约化、SQUID）；`resonator_lumped_lc`；`dispersive_shift_hz`；物理常数 | N8 N11 |
 | `assemble.py` | 129 | `assemble(cells, keep)`：共享节点累加 + Schur 消元 | N9 |
 | `cpw.py` | 215 | `lumped_cpw` / `guided_wavelength` / `complete_elliptic_k`（AGM），自洽公式集 | N10 |
 | `cells.py` | 99 | `rounded_polygon`（shapely buffer 往返）；`emit_geo`（发射 OCC `.geo` 文本） | N12 |
-| `build.py` | 223 | `build(meta, out_dir, solve)` 编排 + manifest + 分块派生 + 跑 Palace + 写 `results.yaml` | N13 N14 N7 N15 |
+| `build.py` | 227 | `build(meta, out_dir, solve)` 编排 + manifest + 分块派生 + 跑 Palace + 写 `results.yaml` | N13 N14 N7 N15 |
 | `__init__.py` | 46 | 再导出；`import quantum_dsl` 不拉起 gmsh / gdstk / shapely | N0 |
 
 ### 依赖图
@@ -119,7 +120,8 @@ C 矩阵行序 = `Mesh.labels` = `sorted(metal component)`，是全链唯一真�
 | `dispersive_shift_hz(g, f_r, f01, f12)` | → χ（单边 cavity pull，Hz） | 共振时 raise |
 | `rounded_polygon(points, radius_um)` | → `[(x, y)]` | |
 | `emit_geo(cells)` | → `str`（`load_geo` 可回读） | |
-| `build(meta, out_dir, solve=False)` | → `{gds, mesh, config, manifest[, blocks][, capacitance, results]}` | 见 §6 |
+| `build(meta, out_dir, solve=False)` | → `{gds, gds_png, mesh, config, manifest[, blocks][, capacitance, results]}` | 见 §6 |
+| `render_gds_png(gds_path, out, jj_layers=(), px_per_um=None, bbox=None)` | → `Path` | 默认长边 2000 px；`tools/gds_png.py` 是其命令行壳 |
 | 常数 | `ELEM_CHARGE`, `H_PLANCK`, `HBAR`, `FLUX_QUANTUM_REDUCED` | SI-2019 |
 
 ## 6. `build()` 的产物
@@ -127,6 +129,7 @@ C 矩阵行序 = `Mesh.labels` = `sorted(metal component)`，是全链唯一真�
 ```
 <out_dir>/
 ├── <stem>.gds            gds.by_role 非空时
+├── <stem>.gds.png        同上, GDS 预览 (金属浅 / 缝深 / jj 层品红, 长边 2000 px)
 ├── <stem>.msh            msh 2.2, 坐标 µm
 ├── <stem>.json           Palace config (Model.Mesh 写相对文件名, cwd = 本目录)
 ├── manifest.yaml         {schema, inputs[{path, sha256}], outputs[{path, sha256}]}
