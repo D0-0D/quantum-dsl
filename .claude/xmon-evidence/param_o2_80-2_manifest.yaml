@@ -1,0 +1,13 @@
+schema: quantum-dsl/manifest/1
+inputs:
+- path: examples/sung_2021_xmon.meta.yaml
+  sha256: f09e76a09d9fd45a899ff24e9187ecaf39e4b99103c8402d94a54d74ca7a6247
+- path: examples/sung_2021_xmon.geo
+  sha256: 14777d46f7d02dd502be8261605ee82acd5f3035b8be3965ac8e96719dce131c
+outputs:
+- path: build/sung_2021_xmon/sung_2021_xmon.gds
+  sha256: ad5fe3220d9c8aa720309e542be2038eae9b3298f6243b142b368d4d856eb36a
+- path: build/sung_2021_xmon/sung_2021_xmon.msh
+  sha256: 17d30c8fa2a9d9b548d2ee09b362af300ef8cb27df6fa05b44a82bfa8ba93d66
+- path: build/sung_2021_xmon/sung_2021_xmon.json
+  sha256: 528dabfe7f77368509dd72e08e8212a16907abae9a349f3f822cb4bb5aaf1b1e

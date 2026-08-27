@@ -1,0 +1,67 @@
+Header
+  Mesh DB "." "emesh"
+End
+Simulation
+  Coordinate System = Cartesian 3D
+  Simulation Type = Steady State
+  Steady State Max Iterations = 1
+  Coordinate Scaling = 1.0e-6          ! mesh is in um -> meters (matches Palace Model.L0=1e-6)
+End
+Constants
+  Permittivity Of Vacuum = 8.8541878128e-12
+End
+Body 1
+  Name = "vacuum"
+  Equation = 1
+  Material = 1
+End
+Body 2
+  Name = "substrate"
+  Equation = 1
+  Material = 2
+End
+Material 1
+  Relative Permittivity = 1.0
+End
+Material 2
+  Relative Permittivity = 11.45
+End
+Equation 1
+  Active Solvers(1) = 1
+End
+Solver 1
+  Equation = "Stat Elec Solver"
+  Procedure = "StatElecSolve" "StatElecSolver"
+  Variable = Potential
+  Variable DOFs = 1
+  Calculate Capacitance Matrix = True
+  Capacitance Matrix Filename = "cap.dat"
+  Linear System Solver = Iterative
+  Linear System Iterative Method = BiCGStabl
+  Linear System Max Iterations = 5000
+  Linear System Convergence Tolerance = 1.0e-9
+  Linear System Preconditioning = ILU1
+  Linear System Residual Output = 0
+  Steady State Convergence Tolerance = 1.0e-7
+End
+! ground = boundary 2 -> capacitance body 0 (reference)
+Boundary Condition 1
+  Name = "ground"
+  Target Boundaries(1) = 2
+  Capacitance Body = 0
+End
+Boundary Condition 2
+  Name = "CPLR"
+  Target Boundaries(1) = 3
+  Capacitance Body = 1
+End
+Boundary Condition 3
+  Name = "QB1"
+  Target Boundaries(1) = 4
+  Capacitance Body = 2
+End
+Boundary Condition 4
+  Name = "QB2"
+  Target Boundaries(1) = 5
+  Capacitance Body = 3
+End

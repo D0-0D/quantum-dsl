@@ -9,7 +9,9 @@
 | `two_pads.{geo,meta.yaml}` | 两块分离的 80×80 µm 焊盘,各挂 10 nH 结 | 整条管线的最小闭环;**回归锚**(C 矩阵实测 golden 写在头注) | 单核 ~4 min,内存 <2 G |
 | `two_pads_blocks.meta.yaml` | 同一几何切成 A / B 两块 | 分块提取 `extract.blocks`,以及「跨块直接互容 = 结构性零」告警 | 不需要求解 |
 | `sung_2021_device.{geo,meta.yaml}` | Sung et al., PRX 11, 021058 三体 tunable-coupler 的简化重现 | **外部物理锚**:三个浮动(差分)transmon 的 C_Σ、β 对论文;`ground::` 角色 + 开放边界 + `Include` 宏库 | 18.5M 未知量,**峰值内存 ~154 G**,96 核 ~20 min |
-| `qlib.geo` | OCC 宏库:`PAD` / `CPW` / `JUNCTION` / `GROUND_CUTOUT` | 被 sung 例子 `Include`;写自己的版图时可复用(纯几何宏,Physical 名由调用点打) | — |
+| `sung_2021_xmon.{geo,meta.yaml}` | 同一论文器件的**真拓扑**(接地 Xmon ×2 + 梳齿 coupler),用 ~20 个从 Fig. 1(c) 照片量出的参数写成,无调参 | 对论文的**无调参预测**(分清「标定命中」与「预测精度」,见 `docs/report/04` §8);`XMON` 宏;接地单岛写法 `island:` | 80/2 order-2 ~13M tets,需 384 G 远端机 |
+| `sung_2021_xmon_traced.{geo,meta.yaml}` | 同一照片的逐点描摹(`tools/micrograph_to_geo.py` 生成,426 顶点,含视场内走线 / 读出槽 / SQUID 框) | 参数化版的保真参照(同粗网格差 C_Σ 1–4%、β_qc 0.4%);测量审计图 `docs/report/img/` 的来源;`POLY` 宏 | 15.4M tets,峰值 168 G |
+| `qlib.geo` | OCC 宏库:`PAD` / `POLY` / `XMON` / `CPW` / `JUNCTION` / `GROUND_CUTOUT` | 被 sung 例子 `Include`;写自己的版图时可复用(纯几何宏,Physical 名由调用点打;⚠ `Call X;` 独占一行) | — |
 
 ## 跑起来
 

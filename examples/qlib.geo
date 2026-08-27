@@ -11,6 +11,9 @@
 //
 // 提供的宏 (输入均为全局标量, 调用前赋值):
 //   PAD            cx, cy, w, h                 → 矩形焊盘 (中心 cx,cy, 宽 w 高 h)
+//   POLY           poly_xy() = {x0,y0, x1,y1,…} → 任意简单多边形 (直线边, 逆/顺时针皆可)
+//   XMON           cx, cy, xm_w, xm_L, xm_g       → 接地 Xmon 十字岛 (臂宽 xm_w, 端到端 xm_L) → sret;
+//                                                 同形外扩 xm_g 的刻蚀 moat 面 → mret (作者拿去 BooleanDifference 地)
 //   CPW            x1, y1, x2, y2, width        → 两点中心导体 (positive metal)
 //   JUNCTION       x1, y1, x2, y2, width        → JJ 矩形 (沿 p1→p2, 宽 width)
 //   GROUND_CUTOUT  sground, gx1,gy1,gx2,gy2,gw  → 在已存在的 ground 面 sground
@@ -20,6 +23,9 @@
 //
 // 注: GROUND_CUTOUT 会 Delete 工具面与原 ground 面, 把蚀刻后的面 tag 写进
 //     sret (作者随后用 sret 打 ground:: 标签)。
+// ⚠ 调用写法: `Call X;` 必须独占一行 —— gmsh 解析器会把同一行 Call 之后的语句在宏体
+//     执行*前*吃掉 (`Call PAD;  s = sret;` → "Unknown variable 'sret'", 2026-08-27 实测)。
+//     取 sret 的赋值另起一行。
 // =====================================================================
 
 SetFactory("OpenCASCADE");
@@ -36,6 +42,42 @@ _QLIB_INCLUDED = 1;
 Macro PAD
   sret = news;
   Rectangle(sret) = { cx - w/2, cy - h/2, 0, w, h };
+Return
+
+// ---------------------------------------------------------------------
+// POLY(poly_xy()) — 任意简单多边形。输入是平铺坐标表 {x0,y0, x1,y1, ...}
+// (用 = 整表赋值, 不要 += 累加: 解析器变量随 session 存活, 累加会把上一次
+// 解析的内容带进来)。逐点 newp、逐边 newl, 首尾相接成环。
+// ---------------------------------------------------------------------
+Macro POLY
+  _n = #poly_xy() / 2;
+  _p0 = newp;
+  For _i In {0:_n-1}
+    Point(newp) = { poly_xy(2*_i), poly_xy(2*_i+1), 0 };
+  EndFor
+  _l0 = newl;
+  For _i In {0:_n-2}
+    Line(newl) = { _p0 + _i, _p0 + _i + 1 };
+  EndFor
+  Line(newl) = { _p0 + _n - 1, _p0 };
+  _cl = newll; Curve Loop(_cl) = { _l0 : _l0 + _n - 1 };
+  sret = news; Plane Surface(sret) = { _cl };
+Return
+
+// ---------------------------------------------------------------------
+// XMON(cx, cy, xm_w, xm_L, xm_g) — 接地 Xmon: 两条等长矩形臂的并 = 岛 (sret);
+// 岛的十字形状向外均匀扩 xm_g = moat 面 (mret), 由作者从地里 BooleanDifference 掉。
+// 结不在这里画 (JUNCTION 宏, 臂端 → 地)。
+// ---------------------------------------------------------------------
+Macro XMON
+  _a = news; Rectangle(_a) = { cx - xm_L/2, cy - xm_w/2, 0, xm_L, xm_w };
+  _b = news; Rectangle(_b) = { cx - xm_w/2, cy - xm_L/2, 0, xm_w, xm_L };
+  _u() = BooleanUnion{ Surface{ _a }; Delete; }{ Surface{ _b }; Delete; };
+  sret = _u(0);
+  _c = news; Rectangle(_c) = { cx - xm_L/2 - xm_g, cy - xm_w/2 - xm_g, 0, xm_L + 2*xm_g, xm_w + 2*xm_g };
+  _d = news; Rectangle(_d) = { cx - xm_w/2 - xm_g, cy - xm_L/2 - xm_g, 0, xm_w + 2*xm_g, xm_L + 2*xm_g };
+  _m() = BooleanUnion{ Surface{ _c }; Delete; }{ Surface{ _d }; Delete; };
+  mret = _m(0);
 Return
 
 // ---------------------------------------------------------------------

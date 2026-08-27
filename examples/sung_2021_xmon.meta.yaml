@@ -1,0 +1,75 @@
+# =====================================================================
+# sung_2021_xmon.meta.yaml — Sung et al. PRX 11, 021058 的**实测版图**例子(Layer-1 sidecar)。
+#
+# 与 sung_2021_device.* 的区别: 那块是"按论文集总参数标定的替代几何"(三个浮动双 pad,
+# 尺寸在 v3 用 Elmer 调到论文 C_Σ); 这块是**从论文 Fig. 1(c) 显微照片直接矢量化**出来的
+# 论文真拓扑——两只接地 Xmon(十字岛) + 一个接地梳齿 coupler——尺寸没有任何旋钮, 结果是
+# 预测, 不是拟合。本 .geo 是**参数化**重建: ~20 个从照片量出的数字 (Xmon 臂宽/臂长/缝/中心, 梳齿宽/齿位/齿顶/
+# 梁/缝), 用 qlib 的 XMON 宏 + 齿位循环写成, 可读可调。逐点描摹版 (426 顶点, 含视场内走线、读出槽、SQUID 框) 是
+# sung_2021_xmon_traced.{geo,meta.yaml} (tools/micrograph_to_geo.py 生成, 不手改), 作保真参照与测量审计图来源。
+# 两版同粗网格 (160/10) order-1 对比: C_Σ −2.1 / −1.2 / −4.2% (QB1/CPLR/QB2), β_qc +0.4 / +0.4% ——
+# 参数化省掉的走线/读出槽/SQUID 框值 1–4% 的 C_Σ, 对比特–耦合器耦合无影响。
+#
+# ---------------------------------------------------------------------
+# 几何出处与精度
+#   照片: arXiv:2011.01261 e-print 里的 fig1_device_layout.pdf(与 PRX 版同一张 922×489 微照片);
+#   标尺是矢量: 100 µm = 15.83 pt, 图像 4.1667 px/pt ⇒ 1.516 µm/px, 视场 1398 × 741 µm。
+#   每条边 ±1 px ≈ ±1.5 µm(30 µm 臂宽 ±5%, 32 µm 缝 ±5%)。量得: Xmon 臂宽 30、臂端到端 340、
+#   臂–地缝 32; 梳齿 coupler 齿宽 24–26、齿间地指 20、缝 27、底梁 26, 中央 SQUID 支柱 26;
+#   两 Xmon 中心距 ≈ 703 µm, 相向臂端间 300 µm 全是地。
+#   (描摹版的手工干预与逐条误差账见 sung_2021_xmon_traced.meta.yaml 与 docs/report/04 §8.1/§8.2。)
+#   测量方法、审计图与误差预算: docs/report/04 §8.1/§8.2 + docs/report/img/sung_2021_xmon_measurement.png
+#   (阈值 143.5→120 时 C_Σ +2.5/+4.0/+6.1%, β −3/−6%: 阈值是主导误差, 最大 ~±6%; C_c 的 −30% 不可能来自测量)。
+#
+# 模型口径
+#   * 三个岛都接地(结/SQUID 一端接地) → circuit_model 用单岛写法 island: X。
+#   * 视场内的 XY / 磁通 / 读出耦合线截断在视场边缘, 当作地(它们在照片里就是地的一部分或
+#     被截断的中心导体); 空气桥是三维结构, 二维掩膜里当作地/缝。
+#   * 省略: 视场外的读出腔与线路、SQUID 环几何(E_J 取零磁通最大值)、金属厚度(零厚度片)。
+#
+# 论文报告值(与 sung_2021_device 头注同源, 全在 PRX 版附录):
+#   Table VI(数值仿真用电容, 三节点接地网络, 直接对应本例 mutual 矩阵):
+#     C_1 = 95, C_c = 228, C_2 = 98, C_1c = C_2c = 5.36, C_12 = 0.125 fF
+#     → 节点总电容(= Maxwell 对角 = 本例 C_Σ) 100.5 / 238.7 / 103.5 fF
+#     → β_qc = C_1c/√(C_1 C_c) = 0.0364, β_qq = 0.0013
+#   Fig. 7 图注(对磁通谱拟合): E_C/h = 0.195 / 0.085 / 0.190 GHz → C_Σ = 99.3 / 227.9 / 101.9 fF
+#     (与 Table VI 自算值差 −1.2 / −4.5 / −1.5%: 论文内部两套数字的散布, 是比较的地板)
+#   E_J/h: QB1 12.2 GHz(单结); CPLR 46+25、QB2 13+2.8 GHz(非对称 SQUID, 下面取零磁通和)。
+#   Table I: ω/2π = 4.16 / 5.45 / 4.00 GHz(idle), η/2π = −220 / −90 / −210 MHz,
+#     g_1c = 72.5、g_2c = 71.5、g_12 = 5.0 MHz(脚注 c: 在 ω_1 = ω_2 = ω_c = 4.16 GHz 处)。
+#
+# 这块版图**没有**判据——它是第一次无调参的论文版图预测, 结果先如实记录。
+#
+# 实测结果(参数化版, 无调参, 产品路径 build(solve=True) → build/sung_2021_xmon/results.yaml, 归档 .claude/xmon-evidence/):
+#   80/2 order-2 (build(solve=True) 产品路径, gpu4 np=32, 12.8M tets): C_Σ = 86.74 / 159.83 / 88.97 fF
+#     = 论文拟合值 ×0.874 / 0.701 / 0.873; β_qc = 0.0425 / 0.0409 (论文 0.0364, +12~17%); β_12 = 0.0032;
+#     E_C = 0.2233 / 0.1212 / 0.2177 GHz, f01 = 4.45 / 8.18 / 5.03 GHz。
+#     对描摹版契约级 (87.78 / 160.57 / 91.20): −1.2 / −0.5 / −2.4%, β −1.1 / −1.3% —— 与粗网格对比同一量级。
+#     原始 CSV / results / manifest 归档 .claude/xmon-evidence/param_o2_80-2_*。
+#   描摹版的全部结果 (80/2 o2、160/10 o2/o1、Elmer 交叉、阈值敏感) 见 sung_2021_xmon_traced.meta.yaml 头注。
+# ---------------------------------------------------------------------
+
+schema: quantum-dsl/meta/1
+geo: sung_2021_xmon.geo
+
+materials:
+  substrate: {eps_r: 11.45, thickness_um: 750}
+
+# 开放边界 + 片上 ground sheet(视场外扩 250 µm); airbox 沿用 sung_2021_device 实测档
+airbox: {top_um: 890, bottom_um: 1650, side_um: 200}
+
+mesh: {max_size_um: 80, min_size_um: 2}
+
+solver: {type: electrostatic, order: 2, outer_boundary: open}
+
+gds:
+  by_role:
+    metal:  {layer: 1,  datatype: 0}
+    ground: {layer: 1,  datatype: 0}
+    jj:     {layer: 20, datatype: 0}
+
+circuit_model:
+  qubits:
+    - {name: QB1,  island: QB1,  E_J: 12.2GHz}
+    - {name: CPLR, island: CPLR, E_J: 71GHz}
+    - {name: QB2,  island: QB2,  E_J: 15.8GHz}

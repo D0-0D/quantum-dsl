@@ -1,0 +1,50 @@
+# =====================================================================
+# sung_2021_xmon_traced.meta.yaml — 论文 Fig. 1(c) 照片**逐点描摹**版的 sidecar。参数与 sung_2021_xmon.meta.yaml
+# 完全相同, 只有 geo 不同: sung_2021_xmon_traced.geo 由 tools/micrograph_to_geo.py 从照片矢量化生成 (426 顶点, 含视场内
+# 走线、读出槽、SQUID 框; 不要手改, 改脚本常量再生成)。用途: 参数化例子 (sung_2021_xmon.geo) 的保真参照, 以及测量审计图
+# docs/report/img/sung_2021_xmon_measurement.png 的来源。论文报告值、拓扑口径见主 meta 头注, 不重复。
+#
+# 几何出处与精度
+#   照片: arXiv:2011.01261 e-print 里的 fig1_device_layout.pdf(与 PRX 版同一张 922×489 微照片);
+#   标尺是矢量: 100 µm = 15.83 pt, 图像 4.1667 px/pt ⇒ 1.516 µm/px, 视场 1398 × 741 µm。每条边 ±1 px ≈ ±1.5 µm。
+#   手工干预(全部记录在生成脚本 ERASE/JJ 常量里): 抹掉一处被阈值粘连到梳齿顶的线端(7×7 px);
+#   三个结按集总 jj:: 矩形补画(结引线低于分辨率)。测量方法与误差预算: docs/report/04 §8.1/§8.2。
+#
+# 实测结果(描摹版, 无调参; 80/2 契约级由手工重建 Mesh + palace_remote 得到, 原始 CSV 归档 .claude/xmon-evidence/):
+#   80/2 契约级(15.4M tets / ~20M 未知量, 峰值 168 G): C_Σ = 87.8 / 160.6 / 91.2 fF
+#     = 论文拟合值(99.3/227.9/101.9) ×0.884 / 0.705 / 0.895; β_qc = 0.043 / 0.041(论文 0.0364, +14~18%);
+#     α = −221 / −121 / −212 MHz(论文 η −220/−90/−210)。
+#   160/10 粗档: C_Σ = 92.0 / 169.3 / 95.6 fF —— 粗→细全体降 4~5%(order-2 从上收敛, 未收敛)。
+#   独立求解器交叉验证(同粗网格 P1): Palace order-1 与 ElmerFEM StatElecSolve 逐位一致
+#     (C_Σ = 108.5/204.6/113.4 fF 两者相同, 整 3x3 Maxwell 矩阵相对差 1.9e-7)——
+#     coupler 低电容是几何缺失, 不是 Palace/网格 bug。
+#   → 两只 Xmon 落论文 −11~12%, 梳齿 coupler −30%。与被 Elmer 标定到论文的替代几何
+#     (sung_2021_device, 落 ±3~6%)对照鲜明: 那块是拟合, 这块是预测。coupler 差得多是因为论文
+#     Table VI 的 C_c=228 fF 是集总模型总电容, 含本二维顶层照片没有的结构(读出爪/空气桥/环境),
+#     且梳齿细节在照片分辨率与本网格下最难解析。详见 docs/report/04 §8。
+# =====================================================================
+
+schema: quantum-dsl/meta/1
+geo: sung_2021_xmon_traced.geo
+
+materials:
+  substrate: {eps_r: 11.45, thickness_um: 750}
+
+# 开放边界 + 片上 ground sheet(视场外扩 250 µm); airbox 沿用 sung_2021_device 实测档
+airbox: {top_um: 890, bottom_um: 1650, side_um: 200}
+
+mesh: {max_size_um: 80, min_size_um: 2}
+
+solver: {type: electrostatic, order: 2, outer_boundary: open}
+
+gds:
+  by_role:
+    metal:  {layer: 1,  datatype: 0}
+    ground: {layer: 1,  datatype: 0}
+    jj:     {layer: 20, datatype: 0}
+
+circuit_model:
+  qubits:
+    - {name: QB1,  island: QB1,  E_J: 12.2GHz}
+    - {name: CPLR, island: CPLR, E_J: 71GHz}
+    - {name: QB2,  island: QB2,  E_J: 15.8GHz}
