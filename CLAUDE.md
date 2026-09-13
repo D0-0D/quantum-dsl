@@ -2,14 +2,15 @@
 
 Guidance for AI agents working in this repository.
 
-> **v4.0 已发布（2026-08-26）。** 契约 = [`SPEC.md`](SPEC.md)（N0–N15 ↔ `tests/`）。开工前读
+> **v4.0 已发布（2026-08-26）；N16 版图编排 2026-09-12 落地。** 契约 = [`SPEC.md`](SPEC.md)（N0–N16 ↔ `tests/`）。开工前读
 > `.claude/status.md` → `.claude/plan.md`（backlog）—— 不要臆测项目状态。碰 mesh / Palace / 物理公式 / 容差
 > 之前**必读** [`docs/physics.md`](docs/physics.md)；改代码前读 [`docs/architecture.md`](docs/architecture.md)。
 
 ## 项目
 
-`quantum_dsl` — 超导量子芯片版图 DSL（src-layout, `src/quantum_dsl/`, 1 950 行）:
-native Gmsh `.geo`（OCC, **µm**）+ `*.meta.yaml` sidecar → { gdstk→GDS · gmsh→mesh→Palace 静电→C 矩阵 }
+`quantum_dsl` — 超导量子芯片版图 DSL（src-layout, `src/quantum_dsl/`, ≈3 000 行）:
+native Gmsh `.geo`（OCC, **µm**）**或** 版图 `*.layout.yaml`（模板 = 局部坐标 `.geo` + yaml 接口, 与手写 `.geo` 同一 gmsh 模型混用,
+`layout.py` 编排; 设计稿 `docs/design/component-library.md`）+ `*.meta.yaml` sidecar → { gdstk→GDS · gmsh→mesh→Palace 静电→C 矩阵 }
 → 拼装（共享节点 + Schur）→ 电路模型（逆电容 LOM / SQUID / TL+χ / CPW）。
 绑定键 = Physical 名 `role::layer::component::primitive` 的 **component 段**（= 电学岛）。
 金属 = **零厚度片 imprint** 进衬底/真空界面（不是 v3 的挖空），Terminal 挂内部边界面。
@@ -22,7 +23,7 @@ native Gmsh `.geo`（OCC, **µm**）+ `*.meta.yaml` sidecar → { gdstk→GDS ·
 conda env **`qdsl313`**（Python 3.13 + gmsh + gdstk + shapely + pytest; `PALACE_BIN` 与 `HWLOC_COMPONENTS=-gl` 已持久化）:
 
 ```bash
-~/miniconda3/envs/qdsl313/bin/python -m pytest tests/ -q                       # 28 passed, 2 skipped, ~12 s
+~/miniconda3/envs/qdsl313/bin/python -m pytest tests/ -q                       # 33 passed, 2 skipped, ~23 s
 QDSL_RUN_PALACE=1 ~/miniconda3/envs/qdsl313/bin/python -m pytest tests/test_live.py -k two_pads -q   # ~2 min
 # sung 外部锚: QDSL_RUN_PALACE_SUNG=1 + PALACE_BIN=tools/palace_remote.sh + 384G 远端机 (峰值内存 154 G)
 ```

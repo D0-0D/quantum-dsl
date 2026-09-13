@@ -1,0 +1,11 @@
+# xmon — 接地 Xmon: 十字岛 + 同形 moat (蚀刻) + 北臂端结 + 可选读出耦合桨 (外挂面 RO, 电学归读出腔)。
+schema: quantum-dsl/template/1
+params: {arm_w: 30, arm_L: 340, gap: 32, jj_w: 2, ro: 1, ro_gap: 20, ro_pad_w: 20, ro_pad_h: 120, ro_w: 10}
+layers: {metal: conductor, jj: junction}
+islands: {island: {faces: island(), layer: metal}}
+external: {RO: {faces: ro_pad(), layer: metal, if: ro}}           # 由本模板画, net 由连到 RO 口的路由决定
+etch:
+  - {faces: moat(), layer: metal}
+  - {faces: ro_pocket(), layer: metal, if: ro}
+junction: {a: island, b: ground, x1: jj_x1, y1: jj_y1, x2: jj_x2, y2: jj_y2, width: jj_w, layer: jj}
+ports: {RO: {x: ro_x, y: 0, a: 0, w: ro_w, if: ro}}               # 端面中点 (局部), 外法向 rad, 宽 = CPW 宽

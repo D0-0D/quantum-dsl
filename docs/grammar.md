@@ -11,11 +11,11 @@
 
 | 层 | 文件 | 写什么 | 不写什么 |
 |---|---|---|---|
-| Layer-2 几何 | `<name>.geo` | 金属图形（面）、Physical 名、可复用宏 | 衬底、真空盒、网格尺寸——由 `build_mesh` 按 meta 合成 |
-| Layer-1 物理 | `<name>.meta.yaml` | 材料、计算域、网格、求解器、GDS 图层映射、结参数、分块 | 任何坐标 |
+| Layer-2 几何 | `<name>.geo` **或** `<name>.layout.yaml`（§4） | 金属图形（面）、Physical 名、可复用宏；版图 = 模板实例 + 手写 `.geo` 步骤 + 路由 | 衬底、真空盒、网格尺寸——由 `build_mesh` 按 meta 合成 |
+| Layer-1 物理 | `<name>.meta.yaml` | 材料、计算域、网格、求解器、层表 / GDS 图层映射、结参数、分块 | 任何坐标 |
 
-一份 meta 引用一份 geo（`geo:` 键，相对 meta 所在目录）。多份 meta 可以指向同一份 geo（例：
-`two_pads.meta.yaml` 与 `two_pads_blocks.meta.yaml`）。
+一份 meta 引用一份几何源（`geo:` 或 `layout:` 键，二选一，相对 meta 所在目录）。多份 meta 可以指向同一份几何
+（例：`two_pads.meta.yaml` 与 `two_pads_blocks.meta.yaml`）。
 
 ## 2. `.geo` 作者约定
 
@@ -33,11 +33,11 @@ Physical Surface("<role>::<layer>::<component>::<primitive>") = { <面 tag> };
 | 段 | 约束 | 含义 |
 |---|---|---|
 | `role` | `metal` · `ground` · `jj`（`substrate` / `port` / `symmetry` 语法合法，但 v4.0 的 `build_mesh` 不接受） | metal → 静电 Terminal；ground → 接地导体面；jj → 集总元件，只进 GDS，**从静电几何中删除** |
-| `layer` | 整数 | 图层分组信息（GDS 映射按 role 走，layer 段仅注释） |
+| `layer` | 整数或标识符 | 芯片层 id。meta 有 `layers:` 表时必须在表里，GDS 按层映射、role 须与层 kind 一致；无层表时仅注释（GDS 按 role） |
 | `component` | 非空标识符 | **电学岛（net）**。同名 = 同导体。它是电容矩阵行列标签、`circuit_model` 的 `island(s)`、`extract.blocks.components` 的键 |
 | `primitive` | 非空标识符 | 注释性质（pad / cpw / lead …） |
 
-不合约定的名字（段数 ≠ 4、role 不在集合里、layer 不是整数、空段）在 `load_geo` 就 raise。
+不合约定的名字（段数 ≠ 4、role 不在集合里、layer 既非整数也非标识符、空段）在 `load_geo` 就 raise。
 
 ### 2.2 最小例子（`examples/two_pads.geo`）
 
@@ -105,8 +105,8 @@ Physical Surface("metal::1::QB1_t::pad") = { sret };
 
 ## 3. `*.meta.yaml` 字段参考
 
-顶层只允许这 10 个键，出现别的键（typo）直接 raise：
-`schema` `geo` `materials` `airbox` `mesh` `solver` `gds` `circuit_model` `extract` `subsystems`。
+顶层只允许这 12 个键，出现别的键（typo）直接 raise：
+`schema` `geo` `layout` `layers` `materials` `airbox` `mesh` `solver` `gds` `circuit_model` `extract` `subsystems`。
 
 ### 3.1 骨架（`examples/two_pads.meta.yaml`）
 
@@ -138,7 +138,9 @@ circuit_model:
 | 键 | 类型 / 取值 | 必填 | 含义 |
 |---|---|---|---|
 | `schema` | `quantum-dsl/meta/1` | ✅ | 版本标识，其它值 raise |
-| `geo` | 文件名 | ✅ | Layer-2 几何，相对 meta 目录 |
+| `geo` / `layout` | 文件名 | 二选一 | Layer-2 几何：手写 `.geo`，或版图 `*.layout.yaml`（§4；`layout` 必须配 `layers`） |
+| `layers.<id>.kind` | `conductor` / `junction` / `drawing` | 用 `layout` 时必填 | 芯片层表。conductor 进静电网格（z = 0，目前唯一支持的导体平面）；junction 集总，进 GDS 不进网格；drawing 只进 GDS。别的键（如 z）raise |
+| `layers.<id>.gds` | `[layer, datatype]` | 可选 | 该层 → GDS 图层；有层表时 GDS 按层映射（`gds.by_role` 不再参与） |
 | `materials.substrate.eps_r` | float | ✅（`palace_config`） | 衬底相对介电常数（低温硅 11.45） |
 | `materials.substrate.thickness_um` | float | ✅（`build_mesh`） | 衬底厚度，衬底占 z ∈ [−thickness, 0] |
 | `airbox.top_um` | float | ✅ | 真空盒顶 z = +top |
@@ -181,7 +183,70 @@ extract:
 三个浮动 transmon（`islands` 列表）、`E_J` 用论文频率写法。文件头注是该例子"哪些量可对论文断言、哪些结构性排除"
 的单一出处。
 
-## 4. 常见坑
+## 4. 版图与模板（`*.layout.yaml`，schema `quantum-dsl/layout/1`）
+
+**版图 = 一个 gmsh 模型**。手写 `.geo` 与模板在同一模型里混用，靠 gmsh 本来就有的三条通道过界：解析器变量（编排器把参数、
+已放置实例的端口 `Q0_RO_x/y/a/w` 放进去，`.geo` 直接当变量用；`.geo` 算出的面表 / 端口 / 长度编排器读回）、OCC tag、Physical 名（两边各挂，累积）。
+设计依据：[`design/component-library.md`](design/component-library.md)。例子：`examples/two_pads.layout.yaml`（与手写 `two_pads.geo` 逐字等价）、
+`examples/xmon_readout.layout.yaml`（模板 + 手写 + 路由 + 地）。
+
+### 4.1 版图文件
+
+```yaml
+schema: quantum-dsl/layout/1
+templates: [lib]                                   # 模板搜索目录 (相对本文件; 每个模板 = <name>.geo + <name>.yaml, 或同名子目录)
+steps:                                             # 有序: 步骤顺序 = 依赖顺序, 引用不到的端口 raise
+  - {template: xmon, name: Q1, at: [0, 0], rot: 0, layers: {metal: m1, jj: jj}, E_J: 12.2GHz}   # 放置型
+  - {geo: launch.geo, ports: {F0: {port: f0(0), net: F0}}, etch: f0_etch()}                     # 手写 .geo (只增不改)
+  - {template: cpw_meander, name: R1, from: Q1.RO, to: F0, params: {R: 40, n_legs: 6, gap: 6},   # 连接型 (route: 同义)
+     length: {mode: quarter_wave, f_r: 7GHz, film_nm: 200}}
+ground: {sheet: {layer: m1, margin_um: 200}}       # 或 none (flip-chip): 建地矩形 = 该层导体 bbox ± margin, 减去全部蚀刻工具面
+```
+
+| 步骤键 | 含义 |
+|---|---|
+| `template` / `route` | 模板名；`name` = 实例名（= component 名；多岛模板为 `<name>_<岛键>`；嵌套加父前缀） |
+| `at` `rot` `mirror` | 放置型位姿：µm、**度**、`x`/`y`（沿局部轴镜像后再转） |
+| `from` `to` | 连接型：两个端口 `实例.端口`（或手写步骤声明的端口名）。局部坐标原点 = from 口、x 轴指向 to 口；两口必须正对、同宽、同层 |
+| `params` | 覆盖模板 `params` 默认值；未知参数 raise |
+| `layers` | 槽位 → 芯片层。省略时取同名芯片层；没有同名且该 kind 的芯片层唯一时取它；否则 raise。kind 不兼容 raise |
+| `E_J` / `L_J` / `squid` | 模板有 `junction` 时必给恰一个 → 自动进 `circuit_model.qubits`（与 meta 手写同名条目不一致 raise） |
+| `length` | 连接型路由定长：`{mode: quarter_wave|half_wave, f_r, film_nm}`（`cpw.guided_wavelength`，中心导体宽 = 端口宽，缝 = 模板参数 `gap`，衬底取 meta）或 `{mode: fixed, L: 900um}`；减去两端端口等效长度后注入模板变量 `L`；记入 `subsystems` |
+| `geo` | 手写 `.geo` 路径（相对版图文件）。可 `frame: Q1` 在该实例局部坐标下画；`ports:` 用输出变量声明端口（须 `net:`）；`etch:` 声明蚀刻工具面表 |
+
+**增量原则**：手写步骤只能加面——不 `Delete`、不对模板给的面做布尔。编排器快照前后已有面（质量、包围盒），变了就 raise。要改模板的形状，给模板加参数。
+
+### 4.2 模板 = `<name>.geo` + `<name>.yaml`
+
+`.geo` 在**局部坐标**画、**不打 Physical 名**、不定义 Macro（宏放 include-guard 的库里 `Include`）；把面 tag 表、端口、长度写进输出变量。
+YAML 是接口：
+
+```yaml
+schema: quantum-dsl/template/1
+kind: connect                                     # 可选: 连接型 (注入 D 两口距离, w 端口宽, L 目标长; 不得同名声明 params)
+params: {arm_w: 30, arm_L: 340, gap: 32, jj_w: 2, ro: 1}          # 默认值 (µm / 开关); 实例 params 覆盖
+layers: {metal: conductor, jj: junction}          # 槽位 → kind 要求 (层性质由芯片 meta.layers 决定)
+islands:  {island: {faces: island(), layer: metal}}                # 输出面表 → 岛 (component); 连接型多岛时 body: <键> 指明路由体
+external: {RO: {faces: ro_pad(), layer: metal, if: ro}}           # 本模板画、电学归连到该口的路由; 没人连 → raise
+etch:     [{faces: moat(), layer: metal}]                          # 蚀刻工具面 (ground: sheet 减去; none 时丢弃)
+junction: {a: island, b: ground, x1: jj_x1, y1: jj_y1, x2: jj_x2, y2: jj_y2, width: jj_w, layer: jj}   # b 可为另一岛键
+ports:    {RO: {x: ro_x, y: 0, a: 0, w: ro_w, leq: 0, if: ro}}   # 端面中点 (局部 µm), 外法向 (rad, .geo 口径), 宽, 等效长度
+          # 简写 "port(0)" = {x: port_x(0), y: port_y(0), a: port_a(0), w: port_w(0)}; 多岛时加 island: <键>
+outputs:  {length: cpw_length}                    # 记账量 (连接型定长时 length 必须 == 注入的 L)
+steps: [...]                                      # 可选: 嵌套子步骤 (同 5.1 语法; 子实例名 = <父>_<子>); 再导出:
+                                                  #   ports: {E: R.E}  external: {C: {inst: R}} (子实例的岛成为父的外挂面)
+```
+
+值可以是数字或 `.geo` 变量引用（`name` / `name(i)` / `name()`）。编排器 merge 前把所有引用的输出变量置 NaN，读回仍是 NaN → raise（漏赋值不静默）。
+
+### 4.3 端口、路由与 net
+
+- 端口 = 端面中点 + 外法向 + 宽 + 层 + 等效长度；谁画了那块面谁给端口。路由只接端口，宽度继承，两端宽不同 raise（taper 未实现）。
+- **路由是电连接**：路由体 + 两端外挂面并成一个 net。net 名：恰一个岛端 → 该岛；零岛端 → 步骤名；两个岛端 → raise。
+- 不同 net 的导体面同层相交 / 相切 = 短路 → raise（缺蚀刻或缝）。同 net 重叠放行。
+- 每块面必须被岛 / 外挂 / 蚀刻 / 结 / 手写 Physical 名之一认领，否则 raise。
+
+## 5. 常见坑
 
 1. **浮动 pad 写成同一 component** → 结被短路，C_Σ 错 1.7×，无报错。写成 `X_t` / `X_b`，meta 里 `islands: [X_t, X_b]`。
 2. **`L_J: 10`（无单位）** → raise。写 `10nH`。
@@ -192,3 +257,5 @@ extract:
 6. **报单网格数字**：复杂几何单网格带百分位级不确定度，报数前做两档网格（如 40/4 与 20/2）看相对变化。
 7. **`.geo` 注释里写示例 Physical 名**：可以（分块派生跳过 `//` 注释），但不要写成未注释的语句。
 8. **JJ 画成 metal**：会当导体桥把两块 pad 短路。role 用 `jj`（自动从静电几何删除）。
+9. **版图里两块金属挨上了**（pad 直接落在地上、忘了 `gap`/蚀刻）→ 编排器报 short。给模板 `gap` 参数或加 `etch`。
+10. **模板 `.geo` 里定义 Macro** → 第二次实例化 "Redefinition of function"。宏放 include-guard 库（见 `examples/lib/cpw_macros.geo`）。

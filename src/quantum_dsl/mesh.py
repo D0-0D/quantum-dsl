@@ -64,11 +64,14 @@ def _require(mapping: dict, key: str, where: str) -> float:
     return float(mapping[key])
 
 
-def build_mesh(geo_path, meta, out) -> Mesh:
-    """``.geo`` (µm) + Meta → 3D 网格 (msh 2.2, 坐标 µm)。空网格 raise。"""
-    geo_path = Path(geo_path)
-    if not geo_path.is_file():
-        raise QuantumDslError(f"build_mesh: no such file: {geo_path}")
+def build_mesh(source, meta, out) -> Mesh:
+    """几何源 (``.geo`` 路径或 Layout, µm) + Meta → 3D 网格 (msh 2.2, 坐标 µm)。空网格 raise。
+    meta 有 ``layers:`` 表时: drawing 层的面不进网格 (只进 GDS), role 必须与层 kind 一致。"""
+    from ._gmsh import geo_model, source_label
+
+    geo_path = source_label(source)
+    if not callable(source) and not Path(source).is_file():
+        raise QuantumDslError(f"build_mesh: no such file: {source}")
     out = Path(out)
     out.parent.mkdir(parents=True, exist_ok=True)
 
@@ -80,9 +83,10 @@ def build_mesh(geo_path, meta, out) -> Mesh:
     mesh_max = _require(meta.mesh, "max_size_um", "mesh")
     mesh_min = _require(meta.mesh, "min_size_um", "mesh")
 
-    from ._gmsh import geo_model
+    layers = meta.layers or {}
+    _role_kind = {"metal": "conductor", "ground": "conductor", "jj": "junction"}
 
-    with geo_model(geo_path) as gmsh:
+    with geo_model(source) as gmsh:
         # --- 作者 Physical 组: role 分拣 -------------------------------------
         conductors: dict[str, list[int]] = {}   # metal component → 面 tags
         grounds: list[int] = []
@@ -93,6 +97,17 @@ def build_mesh(geo_path, meta, out) -> Mesh:
             tags = [int(t) for t in
                     gmsh.model.getEntitiesForPhysicalGroup(dim, ptag)]
             claimed.update(tags)
+            if layers:
+                if phys.layer not in layers:
+                    raise QuantumDslError(
+                        f"build_mesh: {phys.name!r}: layer {phys.layer!r} not in meta.layers")
+                kind = layers[phys.layer]["kind"]
+                if kind == "drawing":
+                    jj_faces.update(tags)      # 只进 GDS: 与 jj 同路, 从静电几何删除
+                    continue
+                if _role_kind.get(phys.role) != kind:
+                    raise QuantumDslError(
+                        f"build_mesh: {phys.name!r}: role {phys.role!r} on a {kind} layer")
             if phys.role == "metal":
                 conductors.setdefault(phys.component, []).extend(tags)
             elif phys.role == "ground":

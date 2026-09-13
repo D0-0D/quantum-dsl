@@ -3,7 +3,7 @@
 > **本文档的定位**：给要**改代码**的人看。数据流、模块地图与依赖、把所有阶段串起来的绑定键、公共 API、
 > `build()` 的产物，以及几条不写就会被再踩一遍的设计原则。物理口径与数值依据在
 > [`physics.md`](physics.md)，输入文件语法在 [`grammar.md`](grammar.md)。
-> 行数与 `文件:行号` 为 v4.0（2026-08-26）实测。
+> 行数与 `文件:行号` 为 v4.0（2026-08-26）实测，N16 版图编排（2026-09-13）后复核。
 
 ---
 
@@ -40,6 +40,9 @@
 ```
 
 **读法**：左边两份文件是全部输入；①–③ 不需要 Palace，几秒完成；④⑤ 只在 `solve=True` 时发生。
+几何源也可以是**版图** `*.layout.yaml`（meta `layout:` 代替 `geo:`）：`compile_layout` 把模板实例（`.geo` + yaml）、
+手写 `.geo` 步骤与端口到端口的路由按顺序写进**同一个 gmsh 模型**，产出可调用的 `Layout`；`geo_model(layout)` 重放它，
+①② 不变；编排器顺手生成 `circuit_model.qubits`（结）与 `subsystems`（谐振器长度）。
 `cpw` / `resonator_lumped_lc` / `dispersive_shift_hz` 是独立的解析计算器，不在这条链上（手动调用）。
 
 ## 3. 绑定键：`role::layer::component::primitive`
@@ -62,24 +65,25 @@ C 矩阵行序 = `Mesh.labels` = `sorted(metal component)`，是全链唯一真�
 
 ## 4. 模块地图
 
-`src/quantum_dsl/`，14 个文件，1 950 行。顶层 API 扁平（`__init__.py` 全部再导出），内部按阶段分文件。
+`src/quantum_dsl/`，15 个文件，≈3 000 行（2026-09-12，含 N16 版图编排器）。顶层 API 扁平（`__init__.py` 全部再导出），内部按阶段分文件。
 
 | 模块 | 行 | 职责 | 契约 |
 |---|---|---|---|
 | `errors.py` | 10 | 唯一异常 `QuantumDslError`（所有可预期失败：输入非法 / 解析失败 / 物理不适定） | N0 |
 | `units.py` | 70 | `parse_length` → µm（裸数 = µm）；`parse_quantity` → SI（**必须带单位**） | N1 |
-| `geo.py` | 80 | `parse_physical_name` 四段名校验；`load_geo` → `Geo(physicals, bbox_um)` | N2 |
-| `_gmsh.py` | 54 | 进程级共享 gmsh session 的 `geo_model()` 上下文管理器（见 §7） | — |
-| `meta.py` | 92 | `load_meta` → `Meta`；未知顶层键 raise；结参数加载时解析成数（`L_J` → H，`E_J` → Hz） | N3 |
-| `gds.py` | 123 | `build_gds`：面 → gmsh 粗三角化 → gdstk 布尔并 → GDS（`unit=1e-6`，µm 逐字）；`render_gds_png`：GDS → PNG 预览（PIL 惰性 import） | N4 N13 |
-| `mesh.py` | 286 | `build_mesh`：合成计算域、一次 `fragment` 把导体面 imprint 进 z=0 界面、边缘尺寸场、失效防线、写 msh 2.2 | N5 |
+| `geo.py` | 84 | `parse_physical_name` 四段名校验（层段整数或标识符）；`load_geo(source)` → `Geo(physicals, bbox_um)` | N2 |
+| `_gmsh.py` | 70 | 进程级共享 gmsh session 的 `geo_model(source)` 上下文管理器（source = `.geo` 路径或可调用 `Layout`，见 §7） | — |
+| `layout.py` | 869 | **N16 版图编排器**：`compile_layout(meta) → Layout`；模板加载（`.geo` + yaml）、有序步骤（放置 / 连接 / 手写）、层槽位映射、端口与 net 认领、定长路由、`ground: sheet`、纪律校验（NaN 置毒、增量原则、短路、归属、全名唯一） | N16 |
+| `meta.py` | 132 | `load_meta` → `Meta`；`geo`/`layout` 二选一；`layers` 层表校验；未知顶层键 raise；结参数加载时解析成数（`L_J` → H，`E_J` → Hz） | N3 N16 |
+| `gds.py` | 143 | `build_gds`：面 → gmsh 粗三角化（圆弧 180 段/2π）→ gdstk 布尔并 → GDS（`unit=1e-6`，µm 逐字；映射按 `layers` 表或 `gds.by_role`）；`render_gds_png`：GDS → PNG 预览（PIL 惰性 import） | N4 N13 |
+| `mesh.py` | 301 | `build_mesh`：合成计算域、一次 `fragment` 把导体面 imprint 进 z=0 界面、边缘尺寸场、失效防线、写 msh 2.2；有层表时 drawing 层不进网格、role 须与层 kind 一致 | N5 |
 | `palace.py` | 135 | `palace_config`（`Model.L0=1e-6`，`Order=2`，Terminal 按 labels）；`parse_capacitance`（CSV 法拉 → fF，mutual 由 Maxwell 代数导出） | N6 |
 | `circuit_model.py` | 423 | `solve_circuit_model` 逆电容 LOM（含浮动双岛差模约化、SQUID）；`resonator_lumped_lc`；`dispersive_shift_hz`；物理常数 | N8 N11 |
 | `assemble.py` | 129 | `assemble(cells, keep)`：共享节点累加 + Schur 消元 | N9 |
 | `cpw.py` | 215 | `lumped_cpw` / `guided_wavelength` / `complete_elliptic_k`（AGM），自洽公式集 | N10 |
 | `cells.py` | 99 | `rounded_polygon`（shapely buffer 往返）；`emit_geo`（发射 OCC `.geo` 文本） | N12 |
-| `build.py` | 227 | `build(meta, out_dir, solve)` 编排 + manifest + 分块派生 + 跑 Palace + 写 `results.yaml` | N13 N14 N7 N15 |
-| `__init__.py` | 46 | 再导出；`import quantum_dsl` 不拉起 gmsh / gdstk / shapely | N0 |
+| `build.py` | 264 | `build(meta, out_dir, solve)` 编排（几何源 = `.geo` 或 `compile_layout`）+ manifest + 分块派生 + 跑 Palace + 写 `results.yaml` | N13 N14 N7 N15 N16 |
+| `__init__.py` | 48 | 再导出；`import quantum_dsl` 不拉起 gmsh / gdstk / shapely | N0 |
 
 ### 依赖图
 
@@ -88,12 +92,12 @@ C 矩阵行序 = `Mesh.labels` = `sorted(metal component)`，是全链唯一真�
              ▲
    units ◄── meta                         circuit_model ◄── assemble (借 _invert_matrix)
              ▲                                 ▲
-   geo ◄── cells, gds, mesh                    │
+   geo ◄── cells, gds, mesh, layout            │
     │                                          │
    _gmsh (惰性 import gmsh)                    │
              ▲                                 │
-             └── gds, mesh, palace ────────────┴──► build   (唯一顶点)
-   cpw  (孤立: 只被 __init__ 导出)
+             └── gds, mesh, palace, layout ────┴──► build   (唯一顶点)
+   cpw  ◄── layout (定长路由用 guided_wavelength)
 ```
 
 **读法**：箭头指向被依赖方。无环；`build` 是唯一编排者；`cpw` 与 `cells` 没有内部消费者。
@@ -106,10 +110,10 @@ C 矩阵行序 = `Mesh.labels` = `sorted(metal component)`，是全链唯一真�
 |---|---|---|
 | `parse_length(v)` | `"0.5mm"` / `5` → `500.0` / `5.0`（µm） | 裸数 = µm |
 | `parse_quantity(s)` | `"10nH"` → `1e-8`（SI） | 裸数拒绝 |
-| `load_geo(path)` | → `Geo(.physicals[Physical(name, role, layer, component, primitive)], .bbox_um)` | 用 gmsh 解析（fixtures 有变量/宏/Include） |
-| `load_meta(path)` | → `Meta`（字段 = SPEC 词汇；`geo_path` 已相对 meta 目录解析） | |
-| `build_gds(geo_path, meta, out)` | → `Path` | `gds.by_role` 是选择机制 |
-| `build_mesh(geo_path, meta, out)` | → `Mesh(.path, .labels, .conductor_groups, .domain_groups, .boundary_groups, .num_cells, .num_volume_cells, .conductor_bbox_um)` | 空网格 raise |
+| `load_geo(source)` | → `Geo(.physicals[Physical(name, role, layer, component, primitive)], .bbox_um)` | source = `.geo` 路径或 `Layout`；用 gmsh 解析（fixtures 有变量/宏/Include） |
+| `load_meta(path)` | → `Meta`（字段 = SPEC 词汇；`geo_path` / `layout_path` 已相对 meta 目录解析；`layers` 层表已归一） | |
+| `build_gds(source, meta, out)` | → `Path` | source = `.geo` 路径或 `Layout`；映射（`layers.*.gds` 或 `gds.by_role`）就是选择机制 |
+| `build_mesh(source, meta, out)` | → `Mesh(.path, .labels, .conductor_groups, .domain_groups, .boundary_groups, .num_cells, .num_volume_cells, .conductor_bbox_um)` | 空网格 raise |
 | `palace_config(mesh, meta, out)` | → `dict`（同时写 JSON） | |
 | `parse_capacitance(postpro_dir, labels)` | → `Cap(.labels, .maxwell_fF, .mutual_fF)` | NaN/Inf raise |
 | `solve_circuit_model(labels, maxwell_fF, junctions)` | → `CircuitModelResult(.qubits[QubitResult], .couplings[CouplingResult])` | junction = `{name, islands:[1 或 2 个], L_J│E_J│squid}` |
@@ -120,7 +124,8 @@ C 矩阵行序 = `Mesh.labels` = `sorted(metal component)`，是全链唯一真�
 | `dispersive_shift_hz(g, f_r, f01, f12)` | → χ（单边 cavity pull，Hz） | 共振时 raise |
 | `rounded_polygon(points, radius_um)` | → `[(x, y)]` | |
 | `emit_geo(cells)` | → `str`（`load_geo` 可回读） | |
-| `build(meta, out_dir, solve=False)` | → `{gds, gds_png, mesh, config, manifest[, blocks][, capacitance, results]}` | 见 §6 |
+| `build(meta, out_dir, solve=False)` | → `{gds, gds_png, mesh, config, manifest[, layout][, blocks][, capacitance, results]}` | 见 §6 |
+| `compile_layout(meta)` | → `Layout`（可调用几何源；`.qubits` `.subsystems` `.ports` `.inputs`；`.for_block(components)`） | meta 须有 `layout:` + `layers:`；编译一遍即做全部校验 |
 | `render_gds_png(gds_path, out, jj_layers=(), px_per_um=None, bbox=None)` | → `Path` | 默认长边 2000 px；`tools/gds_png.py` 是其命令行壳 |
 | 常数 | `ELEM_CHARGE`, `H_PLANCK`, `HBAR`, `FLUX_QUANTUM_REDUCED` | SI-2019 |
 
@@ -128,12 +133,12 @@ C 矩阵行序 = `Mesh.labels` = `sorted(metal component)`，是全链唯一真�
 
 ```
 <out_dir>/
-├── <stem>.gds            gds.by_role 非空时
+├── <stem>.gds            有 GDS 映射时 (layers.*.gds 或 gds.by_role); stem = geo 或 layout 文件名
 ├── <stem>.gds.png        同上, GDS 预览 (金属浅 / 缝深 / jj 层品红, 长边 2000 px)
 ├── <stem>.msh            msh 2.2, 坐标 µm
 ├── <stem>.json           Palace config (Model.Mesh 写相对文件名, cwd = 本目录)
 ├── manifest.yaml         {schema, inputs[{path, sha256}], outputs[{path, sha256}]}
-├── block_<name>.geo/.msh/.json ×N        extract.blocks 时
+├── block_<name>.geo/.msh/.json ×N        extract.blocks 时 (版图路线不派生 .geo, 在模型内按 component 过滤)
 ├── postpro/terminal-C.csv (+ Cm/Cinv)    solve=True: Palace 输出 (SI 法拉)
 └── results.yaml                          solve=True
 ```
@@ -150,6 +155,7 @@ hamiltonian:
 
 分块（`extract.blocks`）在 v4.0 里只做到**派生 + 各块 mesh/config**；把各块 Palace 结果喂给
 `assemble()` 再喂 `solve_circuit_model()` 是调用方的事（`build(solve=True)` 只解整片）。
+版图路线下返回 dict 另有 `layout`（`Layout` 记账：`qubits` / `subsystems` / `ports` / `inputs`），`results.yaml` 多一段 `subsystems`。
 
 ## 7. 设计原则（每条背后都有一次事故）
 
@@ -165,7 +171,7 @@ hamiltonian:
    （`not (isfinite(v) and v > 0)`——nan 能穿过 `<= 0`）；C 求逆前先查反对称残差 `‖C−Cᵀ‖/‖C‖ > 1e-6` 即 raise，
    不靠对称化掩盖。
 5. **显式而非推断**：`assemble` 用显式 `keep` 列表，不做 junction/动力学节点推断；分块 `components` 与派生几何
-   的实际 metal net 不一致 raise（`build.py:179-183`）。
+   的实际 metal net 不一致 raise（`build.py:218-222`）。
 6. **golden 不锚参考实现，只锚物理与闭式**：N10 曾照抄 qiskit-metal 输出为 golden，把其已知错误锚成了需求，已翻案。
 
 ## 8. 与 v3 的差异
@@ -173,11 +179,11 @@ hamiltonian:
 | | v3（`v3` 分支） | v4（`main`） |
 |---|---|---|
 | 平台 | Python 3.10 + qiskit_metal | Python ≥ 3.13，**无 qiskit_metal**（3.13 下装不上，平台即护栏） |
-| 几何前端 | `.metal.yaml` → QDesign 路径 + native `.geo` 双前端 + YAML 模板引擎 | 只有 native `.geo`（+ `emit_geo` 从 Python 发射） |
+| 几何前端 | `.metal.yaml` → QDesign 路径 + native `.geo` 双前端 + YAML 模板引擎（几何原语 DSL） | native `.geo`（+ `emit_geo`），以及 **版图编排**：模板 = 局部坐标 `.geo` + yaml 接口，实例化在 `*.layout.yaml`，与手写 `.geo` 同一 gmsh 模型混用 |
 | 金属表示 | 面 extrude 成 2 µm 板 → 从真空布尔减（挖空）→ ε-nudge / scale-ladder 对策 | **零厚度片 imprint**：无布尔减，共面构造性精确 |
 | 单位 | 网格缩放到米，`L0 = 1` | 网格 µm，`L0 = 1e-6` |
 | meta 词汇 | `simulation.gmsh.*` 嵌套 | 扁平 `quantum-dsl/meta/1` |
 | 浮动 transmon | 不支持（issue #20） | 支持（`islands: [a, b]`，完整求逆取 θθ 块） |
 | 电容拼装 | 推断 keep 节点 | 显式 `keep` |
 | CPW | qiskit-metal 逐行（Z0/λ_g 不含 Lk） | 自洽集（Z0/λ_g 由总 L′C′ 导出） |
-| 代码量 | ~9.8k 行测试 + 大量适配层 | 1 950 行 src + 5 个测试文件 |
+| 代码量 | ~9.8k 行测试 + 大量适配层 | ≈3 000 行 src（含 870 行版图编排器）+ 6 个测试文件 |

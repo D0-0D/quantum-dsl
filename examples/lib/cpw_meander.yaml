@@ -1,0 +1,11 @@
+# cpw_meander — 端口到端口的定长蛇形 CPW (连接型: from/to 两个正对端口, 宽度继承端口)。
+# 步骤上给 length: {mode: quarter_wave|half_wave, f_r: 7GHz, film_nm: 200} 或 {mode: fixed, L: 4000um};
+# 编排器按 cpw.guided_wavelength (中心导体宽 = 端口宽, 缝 = gap, 衬底取 meta.materials.substrate) 算目标长,
+# 减去两端端口的等效长度后注入 L; 模板画完回报 length, 不一致即 raise。
+schema: quantum-dsl/template/1
+kind: connect
+params: {R: 40, n_legs: 8, gap: 6}
+layers: {metal: conductor}
+islands: {cpw: {faces: cpw_centre(), layer: metal}}     # 路由体: 与两端并成一个 net (net 名来自岛端, 无岛端则用步骤名)
+etch: [{faces: cpw_etch(), layer: metal}]
+outputs: {length: cpw_length}

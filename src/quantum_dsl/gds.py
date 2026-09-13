@@ -2,8 +2,9 @@
 """GDS 分叉 (契约 N4): ``.geo`` → GDS, µm verbatim, 旁路网格。
 
 坐标 **µm 逐字** (gdstk Library ``unit=1e-6``), 不缩放 (SPEC「不双重缩放」)。
-映射 = meta ``gds.by_role`` (role → {layer, datatype}); 不在 by_role 里的
-role 不进 GDS (by_role 就是选择机制 —— jj 要进 GDS 就映射 jj)。
+映射两种口径: meta 有 ``layers:`` 表时按 **层** (Physical 名第 2 段 → ``layers[id].gds``,
+没给 gds 的层不进 GDS); 否则按 ``gds.by_role`` (role → {layer, datatype}); 不在映射里的
+面不进 GDS (映射就是选择机制 —— jj 要进 GDS 就映射 jj)。几何源 = ``.geo`` 路径或版图 Layout。
 
 面 → 多边形走 gmsh 2D 三角化 + gdstk 布尔并 (逐面): 对任意 OCC 面 (含布尔
 差挖出的带孔 ground) 都稳健; 直边多边形的角点是网格顶点, 逐字保真。
@@ -20,58 +21,76 @@ from pathlib import Path
 from .errors import QuantumDslError
 from .geo import parse_physical_name
 
-__all__ = ["build_gds", "render_gds_png"]
+__all__ = ["build_gds", "render_gds_png", "gds_map", "jj_gds_layers"]
 
 _METAL, _SUBSTRATE, _JJ = (225, 225, 225), (60, 60, 66), (255, 0, 200)
 
 
-def build_gds(geo_path, meta, out) -> Path:
-    """``.geo`` + Meta → GDS 文件路径。"""
-    geo_path = Path(geo_path)
-    if not geo_path.is_file():
-        raise QuantumDslError(f"build_gds: no such file: {geo_path}")
-    by_role = (meta.gds or {}).get("by_role") or {}
-    if not by_role:
+def gds_map(meta) -> dict:
+    """GDS 映射: ``{("layer", id) | ("role", role): (layer, datatype)}``; 空 = 不出 GDS。"""
+    if meta.layers:
+        return {("layer", lid): spec["gds"] for lid, spec in meta.layers.items() if "gds" in spec}
+    return {("role", r): (int(spec["layer"]), int(spec.get("datatype", 0)))
+            for r, spec in ((meta.gds or {}).get("by_role") or {}).items()}
+
+
+def jj_gds_layers(meta) -> tuple[int, ...]:
+    """预览里画品红的 GDS 层号: junction 层 (层表) 或 by_role.jj。"""
+    if meta.layers:
+        return tuple(spec["gds"][0] for spec in meta.layers.values()
+                     if spec["kind"] == "junction" and "gds" in spec)
+    jj = ((meta.gds or {}).get("by_role") or {}).get("jj")
+    return (int(jj["layer"]),) if jj else ()
+
+
+def build_gds(source, meta, out) -> Path:
+    """几何源 (``.geo`` 路径或 Layout) + Meta → GDS 文件路径。"""
+    from ._gmsh import geo_model, source_label
+
+    label = source_label(source)
+    if not callable(source) and not Path(source).is_file():
+        raise QuantumDslError(f"build_gds: no such file: {source}")
+    gmap = gds_map(meta)
+    if not gmap:
         raise QuantumDslError(
-            "build_gds: meta.gds.by_role is empty — map at least one role "
-            "(e.g. metal: {layer: 1, datatype: 0})")
+            "build_gds: no GDS mapping — give layers.<id>.gds: [layer, datatype] or "
+            "gds.by_role (e.g. metal: {layer: 1, datatype: 0})")
     out = Path(out)
     out.parent.mkdir(parents=True, exist_ok=True)
 
     import gdstk
 
-    from ._gmsh import geo_model
-
-    with geo_model(geo_path) as gmsh:
-        groups = []                     # (Physical, [face tags])
+    with geo_model(source) as gmsh:
+        groups = []                     # (Physical, (layer, datatype), [face tags])
         for dim, ptag in gmsh.model.getPhysicalGroups(2):
             phys = parse_physical_name(gmsh.model.getPhysicalName(dim, ptag))
-            if phys.role in by_role:
-                groups.append((phys, [int(t) for t in
+            spec = gmap.get(("layer", phys.layer)) or gmap.get(("role", phys.role))
+            if spec is not None:
+                groups.append((phys, spec, [int(t) for t in
                                gmsh.model.getEntitiesForPhysicalGroup(dim, ptag)]))
         if not groups:
             raise QuantumDslError(
-                f"build_gds: no surfaces in {geo_path} match gds.by_role "
-                f"roles {sorted(by_role)}")
+                f"build_gds: no surfaces in {label} match the GDS mapping {sorted(gmap)}")
 
-        # 粗三角化只为提取多边形轮廓 (尺寸=domain 级 → 三角形最少)。
+        # 粗三角化只为提取多边形轮廓 (尺寸=domain 级 → 直边三角形最少)。
         # gmsh.option 是全局的 (进程级共享 session) — 依赖的选项全部显式设。
+        # 圆弧按 180 段/2π 采样: 90° 弧 45 段, 面积误差 ≲1e-4; 设 0 时一段 90° 弧只剩 2 段折线,
+        # 46 段弧的蛇形面积错 1.8% (2026-08-27 实测)。FromPoints / ExtendFromBoundary 必须关: 否则弧端
+        # ~1.4 µm 的尺寸沿直边与面内传染, 1.7 mm 地平面变成百万三角形 + gdstk 并 >5 min。
         gmsh.option.setNumber("Mesh.MeshSizeMin", 0)
         gmsh.option.setNumber("Mesh.MeshSizeMax", 1e9)
-        gmsh.option.setNumber("Mesh.MeshSizeFromCurvature", 0)
-        gmsh.option.setNumber("Mesh.MeshSizeExtendFromBoundary", 1)
-        gmsh.option.setNumber("Mesh.MeshSizeFromPoints", 1)
+        gmsh.option.setNumber("Mesh.MeshSizeFromCurvature", 180)
+        gmsh.option.setNumber("Mesh.MeshSizeExtendFromBoundary", 0)
+        gmsh.option.setNumber("Mesh.MeshSizeFromPoints", 0)
         gmsh.option.setNumber("Mesh.ElementOrder", 1)
         gmsh.model.mesh.generate(2)
         tags, coords, _ = gmsh.model.mesh.getNodes()
         xy = {int(t): (coords[3 * i], coords[3 * i + 1])
               for i, t in enumerate(tags)}
 
-        lib = gdstk.Library(name=geo_path.stem, unit=1e-6, precision=1e-9)
-        cell = lib.new_cell(geo_path.stem)
-        for phys, faces in groups:
-            spec = by_role[phys.role]
-            layer, dtype = int(spec["layer"]), int(spec.get("datatype", 0))
+        lib = gdstk.Library(name=out.stem, unit=1e-6, precision=1e-9)
+        cell = lib.new_cell(out.stem)
+        for phys, (layer, dtype), faces in groups:
             tris = []
             for f in faces:
                 etypes, _, enodes = gmsh.model.mesh.getElements(2, f)
@@ -89,7 +108,8 @@ def build_gds(geo_path, meta, out) -> Path:
                                       layer=layer, datatype=dtype):
                 cell.add(poly)
 
-    lib.write_gds(str(out))
+    # GDSII 单多边形上限 8190 点 (gdstk 默认 199 会把长圆弧蛇形切成几十片; 几何不变但一岛一多边形更好查)。
+    lib.write_gds(str(out), max_points=8190)
     return out
 
 

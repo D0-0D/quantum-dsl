@@ -13,9 +13,10 @@
 |---|---|---|
 | [`architecture.md`](architecture.md) | **架构**：数据流、模块地图与依赖图、绑定键、公共 API、`build()` 产物、设计原则、与 v3 的差异 | 上手开发；改任何模块之前 |
 | [`physics.md`](physics.md) | **物理口径与数值决策**：为什么静电就够、零厚度片 imprint、单位与 `Model.L0`、`Order=2`、网格收敛实测、LOM/SQUID/χ/CPW 公式与逐式出处、失效防线、分块拼装边界、sung 外部验证、Palace 运行面 | 碰 mesh / Palace / 公式 / 容差之前**必读** |
-| [`grammar.md`](grammar.md) | **语法参考**：`.geo` 作者约定 + `*.meta.yaml` 全字段（类型、默认值、必填）+ 最小可跑例子 + 常见坑 | 写版图 / 写 sidecar 的人 |
+| [`grammar.md`](grammar.md) | **语法参考**：`.geo` 作者约定 + `*.meta.yaml` 全字段（类型、默认值、必填）+ **版图与模板**（`*.layout.yaml`、模板 yaml 接口、端口 / 路由 / net 规则）+ 常见坑 | 写版图 / 写 sidecar / 写模板的人 |
+| [`design/component-library.md`](design/component-library.md) | **元件库设计稿 v3.1**：为什么是「一个 gmsh 模型 + `.geo`/模板混用 + 层按映射重定位」，查实（业界端口契约、等效长度物理、gmsh fork 评估、混用探针）与实现偏差 | 想改编排器 / 加模板之前 |
 | [`report/`](report/README.md) | **汇报材料四篇**：01 展示用 · 02 备问用（贴真实代码逐段讲）· 03 现场演示手册（命令 + 预期输出 + 故障预案）· 04 论文验证的完整账：照片量出的真版图（测量误差、order 1/2、粗细网格、Elmer 同网格交叉、差距归因）+ 替代几何为何 ±3～6% | 对外汇报、答辩、复现 |
-| [`../SPEC.md`](../SPEC.md) | **契约**：目标与边界、Layer-1 词汇、公共 API 表（N0–N15 ↔ 测试）、验收 | 加需求 / 改测试时 |
+| [`../SPEC.md`](../SPEC.md) | **契约**：目标与边界、Layer-1 词汇、公共 API 表（N0–N16 ↔ 测试）、验收 | 加需求 / 改测试时 |
 | [`../examples/README.md`](../examples/README.md) | 例子清单、跑法、预期输出、怎么写自己的例子 | 第一次跑 |
 
 ## 安装
@@ -37,7 +38,7 @@ Palace（静电求解器）不是 pip 依赖：`build(solve=True)` 通过环境�
 P=~/miniconda3/envs/qdsl313/bin/python
 export PYTHONPATH=src
 
-$P -m pytest tests/ -q                       # 28 passed, 2 skipped (live 默认关)
+$P -m pytest tests/ -q                       # 33 passed, 2 skipped (live 默认关)
 $P -c "from quantum_dsl import build; print(build('examples/two_pads.meta.yaml', 'build/two_pads'))"
                                              # GDS + 3D 网格 + Palace config + manifest, ~4 s
 QDSL_RUN_PALACE=1 $P -m pytest tests/test_live.py -k two_pads -q   # 真实求解回归 (~2 min)

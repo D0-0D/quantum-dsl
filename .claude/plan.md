@@ -1,11 +1,18 @@
 # quantum_dsl — Plan
 
-v4.0 契约(SPEC N0–N15)已全部满足并发布。下面是**尚未做**的方向, 都对应仍 open 的
+v4.0 契约(SPEC N0–N15)已全部满足并发布; N16 版图编排 2026-09-12 落地。下面是**尚未做**的方向, 都对应仍 open 的
 GitHub issue 或 v4 实测中暴露的边界;按需立项, 不是排期。
 Legend: `[ ]` not started · `[~]` in progress · `[x]` done。
 
 ## Backlog
 
+- [x] **N16 版图编排 (元件库框架 v3.1 落地)**(2026-09-12, 提交于 2026-09-13): `layout.py` 编排器 + 词汇(`layout:`/`layers:`) + 模板库 `examples/lib/`
+      + 两个例子 + 6 条测试; 文档 grammar §4 / architecture / SPEC / examples README 同步。设计稿 `docs/design/component-library.md` 头部记落地偏差。
+      未做(按需): `py:` 逃生口、`nets:` 覆盖、taper、多层 ground 角色输出。
+- [ ] **Chen 2025 (Nat. Phys. 21, 1489) 圆盘比特模板 → 3×3 grid**: 在 N16 框架上写 `disc_transmon`(圆盘切缝双岛 + 五个爪子模板嵌套 + 结)、
+      `bar_coupler`(连接型: 条 + 五边形 + 结, `body: bar`), 几何核实 `docs/design/paper-chen2025-geometry.md`(2.50 µm/px, pitch 1383,
+      SI §D 11 个电容为锚, flip-chip d≈5 µm 经 `airbox.top_um`, `ground: none`)。**待拍板**: 直接 Q–Q 耦合保不保(整片 vs 分块 + 对称性 5 解)、
+      读出结构进不进 phase 1、等效长度/爪电容来源(依赖工艺栈)。session `2609121024`、`2609121155`。
 - [ ] **`targets:` 块**(issue #23): meta 里声明期望的 C / E_C / g, `build(solve=True)`
       在 results.yaml 里报偏差。N15 的「对论文 ±8%」现在写死在测试里, 应该是用户
       可声明的数据。
@@ -22,7 +29,7 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done。
       组合(0.16.1 覆盖 bug)。
 - [ ] **域尺寸扫**: sung 例子 airbox 取自 v3 实测档, two_pads 的 side=80 是刻意
       小型化;给真实器件报数前应做 1×/1.5×/2× 扫(C 变化 <0.2–0.5% 验收)。
-- [ ] **CI**: 默认 `pytest -q` 在 CI 上就是 30 passed / 2 skipped, 只需 Python 3.13 +
+- [ ] **CI**: 默认 `pytest -q` 在 CI 上就是 33 passed / 2 skipped, 只需 Python 3.13 +
       `pip install -e '.[gmsh,gds,test]'`(gmsh 装得起, Palace 装不起——live 正好 skip)。
 - [ ] **N15 求解产物缓存**: 一次 build 现已同时断言 C_Σ 与 β(不再重复求解);
       若要在同一 results.yaml 上加更多断言, 直接读 `v4-dev` 分支

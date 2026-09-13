@@ -1,0 +1,11 @@
+# xmon_readout.layout.yaml — 框架演示: xmon 模板 (岛 + moat + 结 + 读出桨) → 定长蛇形 CPW → 手写发射焊盘, 平面工艺地。
+#   Q1.RO (桨外沿, 宽 10) ──cpw_meander (λ/4 @ 7 GHz, 减去两端等效长度)──► F0 (手写 .geo 声明的端口)
+# 读出腔 net = F0 (唯一的岛端: 手写焊盘是岛, 桨是外挂面; 路由体与桨并入 F0)。ground: sheet 建地并减去全部蚀刻工具面。
+schema: quantum-dsl/layout/1
+templates: [lib]
+steps:
+  - {template: xmon, name: Q1, at: [0, 0], layers: {metal: m1, jj: jj}, E_J: 12.2GHz}
+  - {geo: xmon_readout_launch.geo, ports: {F0: {port: f0(0), net: F0}}, etch: f0_etch()}
+  - {template: cpw_meander, name: R1, from: Q1.RO, to: F0, params: {R: 40, n_legs: 6, gap: 6},
+     length: {mode: quarter_wave, f_r: 7GHz, film_nm: 200}}
+ground: {sheet: {layer: m1, margin_um: 200}}

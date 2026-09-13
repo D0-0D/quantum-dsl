@@ -1,0 +1,9 @@
+# two_pads.layout.yaml — 与手写 two_pads.geo 逐字等价的版图写法: 两个 pad 模板实例。
+# 模板槽位 metal → 芯片层 1 (two_pads_layout.meta.yaml 的 layers 表), 实例名 = component:
+# 产出 Physical 名 metal::1::A::pad / metal::1::B::pad, GDS 与网格标签与手写版相同 (tests/test_layout.py)。
+schema: quantum-dsl/layout/1
+templates: [lib]
+steps:
+  - {template: pad, name: A, at: [-80, 0], layers: {metal: 1}}    # params 取模板默认 80×80
+  - {template: pad, name: B, at: [80, 0],  layers: {metal: 1}}
+ground: none

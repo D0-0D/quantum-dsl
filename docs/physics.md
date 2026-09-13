@@ -19,7 +19,7 @@
 | L0 | Palace `Model.L0` = 网格坐标单位折算米的系数 |
 | LOM | lumped-oscillator model：用 C⁻¹ + 约瑟夫森电感推 qubit 参数 |
 | PEC | 理想电导体 |
-| N0–N15 | 契约条目编号（[`../SPEC.md`](../SPEC.md)），测试 docstring 首行回指 |
+| N0–N16 | 契约条目编号（[`../SPEC.md`](../SPEC.md)），测试 docstring 首行回指 |
 
 ## 1. 我们在算什么，为什么静电就够
 

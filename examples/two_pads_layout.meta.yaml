@@ -1,0 +1,17 @@
+# two_pads_layout.meta.yaml — two_pads 的版图路线 sidecar: geo: 换成 layout: + layers: 表, 其余与 two_pads.meta.yaml 相同。
+schema: quantum-dsl/meta/1
+
+layout: two_pads.layout.yaml
+layers:
+  1: {kind: conductor, gds: [1, 0]}     # 芯片层 id 可以是整数 (Physical 名第 2 段), 也可以是标识符
+
+materials:
+  substrate: {eps_r: 11.45, thickness_um: 100}
+airbox: {top_um: 120, bottom_um: 120, side_um: 80}
+mesh: {max_size_um: 40, min_size_um: 4}
+solver: {type: electrostatic, order: 2}
+
+circuit_model:
+  qubits:
+    - {name: A, island: A, L_J: 10nH}
+    - {name: B, island: B, L_J: 10nH}

@@ -33,14 +33,16 @@ __all__ += [
     "assemble", "guided_wavelength", "lumped_cpw",
 ]
 
-# V4-2 几何分叉 (gmsh/gdstk 惰性 import 在各函数内) + V4-4 cells + V4-5 编排
+# V4-2 几何分叉 (gmsh/gdstk 惰性 import 在各函数内) + V4-4 cells + N16 版图 + V4-5 编排
 from .gds import build_gds, render_gds_png
 from .mesh import Mesh, build_mesh
 from .palace import Cap, palace_config, parse_capacitance
 from .cells import emit_geo, rounded_polygon
+from .layout import Layout, Port, compile_layout
 from .build import build
 
 __all__ += [
     "build_gds", "render_gds_png", "Mesh", "build_mesh", "Cap", "palace_config",
     "parse_capacitance", "rounded_polygon", "emit_geo", "build",
+    "Layout", "Port", "compile_layout",
 ]

@@ -1,6 +1,6 @@
 # quantum_dsl v4 — 契约
 
-本文是 v4 的需求契约；`tests/` 是它的**可执行形式**——每条契约（N0–N15）对应一到数条测试，
+本文是 v4 的需求契约；`tests/` 是它的**可执行形式**——每条契约（N0–N16）对应一到数条测试，
 测试 docstring 首行回指编号。加需求 = 先在这里加一行、再加测试。物理依据在
 [`docs/physics.md`](docs/physics.md)，语法在 [`docs/grammar.md`](docs/grammar.md)。
 
@@ -10,9 +10,11 @@
   mesh（gmsh）→ Palace 静电 → 电容矩阵 } → 拼装（共享节点 + Schur）→ 电路模型
   （逆电容 LOM: E_C/f01/α/g、SQUID、TL 谐振器 + χ、CPW 解析）→ 结果/清单落盘。
   外加: 参数化**圆角多边形** cell → `.geo`。
+  **N16 版图编排**（2026-09-12）: 模板 = 局部坐标 `.geo` + yaml 接口（岛 / 外挂面 / 蚀刻 / 结 / 端口 / 层槽位），
+  实例化在 `*.layout.yaml` 有序步骤（放置 / 连接 / 手写 `.geo`）里，全部写进**同一个 gmsh 模型**；层按芯片 `layers:` 表
+  重定位；路由从端口出发、定长、并 net；编排器生成 `circuit_model.qubits` / `subsystems`。设计稿 `docs/design/component-library.md`。
 - **不做**（v3 舍弃项）: qiskit_metal 依赖（任何形式）、`.metal.yaml` 纯 YAML→QDesign 路径、
-  emit-yaml 老库、v3 组件模板引擎（YAML 模板 DSL）。
-  qubit 参数化 cell 库（transmon_pocket 等）不进本契约——以后需要时按 cells API 另立项。
+  emit-yaml 老库、v3 组件模板引擎（YAML 几何原语 DSL）。不发射 `.geo` 文本作模板、不 fork gmsh。
 - **平台**: Python ≥ 3.13。核心依赖只有 `pyyaml`/`shapely`; `gmsh`/`gdstk` 是
   optional extra, `import quantum_dsl` 不得拉起它们。
 
@@ -33,7 +35,7 @@
 
 ```yaml
 schema: quantum-dsl/meta/1
-geo: two_pads.geo                    # Layer-2 几何
+geo: two_pads.geo                    # Layer-2 几何 (或 layout: x.layout.yaml + layers: {m1: {kind: conductor, gds: [1, 0]}, ...}, 见 grammar §4)
 materials:
   substrate: {eps_r: 11.45, thickness_um: 100}
 airbox: {top_um: 120, bottom_um: 120, side_um: 80}
@@ -72,8 +74,8 @@ Maxwell 互容, 必须**在至少一次求解中共现**; 共享节点只提供�
 | N1 单位 | `parse_length("0.5mm")→500.0(µm)`; `parse_quantity("10nH")→1e-8(SI)` | `test_frontend.py::test_parse_length_to_um`, `::test_parse_quantity_to_si_requires_unit` |
 | N2 geo 加载 | `load_geo(path) → Geo(.physicals[Physical(name,role,layer,component,primitive)], .bbox_um)` | `test_frontend.py::test_load_geo_*` |
 | N3 meta 加载 | `load_meta(path) → Meta`（上表词汇; 未知顶层键 raise） | `test_frontend.py::test_load_meta_*` |
-| N4 GDS | `build_gds(geo_path, meta, out) → Path`（µm verbatim, by_role 映射） | `test_pipeline.py::test_build_gds_two_pads_roundtrip` |
-| N5 mesh | `build_mesh(geo_path, meta, out) → Mesh(.labels, .conductor_groups, .num_cells…)`（零厚度导体片 imprint 为边界面组; 空网格 raise） | `test_pipeline.py::test_build_mesh_two_pads` |
+| N4 GDS | `build_gds(source, meta, out) → Path`（µm verbatim; source = `.geo` 路径或 Layout; 映射按 `layers` 表或 by_role） | `test_pipeline.py::test_build_gds_two_pads_roundtrip` |
+| N5 mesh | `build_mesh(source, meta, out) → Mesh(.labels, .conductor_groups, .num_cells…)`（零厚度导体片 imprint 为边界面组; 空网格 raise） | `test_pipeline.py::test_build_mesh_two_pads` |
 | N6 Palace | `palace_config(mesh, meta, out) → dict`; `parse_capacitance(postpro, labels) → Cap(.labels, .maxwell_fF, .mutual_fF)` | `test_pipeline.py::test_palace_config_shape`, `::test_parse_capacitance_verbatim_csv_and_nan_guard` |
 | N7 live 解 | `build(meta, out, solve=True)`（gate `QDSL_RUN_PALACE=1`）C 对 golden <2%, f01 <3% | `test_live.py::test_two_pads_end_to_end` |
 | N8 电路模型 | `solve_circuit_model(labels, maxwell_fF, junctions) → .qubits/.couplings(g, β)`（dict 入参; 浮动双岛差模约化; SQUID; nan 拒绝） | `test_physics.py::test_single_island_closed_form` 等 6 条 |
@@ -84,10 +86,11 @@ Maxwell 互容, 必须**在至少一次求解中共现**; 共享节点只提供�
 | N13 编排 | `build(meta, out, solve=False) → {gds, gds_png, mesh, config, manifest}`（manifest 带输入 sha256 与全部产物；`<stem>.gds.png` = GDS 预览） | `test_pipeline.py::test_build_no_solve_artifacts_and_manifest` |
 | N14 分块 | `extract.blocks` → 落盘 `block_<name>.geo`（只含该块 component）+ 各块 config; 跨块邻近告警 | `test_pipeline.py::test_extract_blocks_derived_and_scoped` |
 | N15 外部物理验证 | sung 例子（PRX 11.021058）live 解: C_Σ ×3 对论文 ±8%（2026-08-25 翻案: 原 ±5% 锚的 Elmer P1 档系偏置抵消产物, 账见例子 meta 头注与 `docs/physics.md` §12）, β_qc ±20%（gate `QDSL_RUN_PALACE_SUNG=1`; 排除项见例子 meta） | `test_live.py::test_sung_2021_against_paper` |
+| N16 版图编排 | `compile_layout(meta) → Layout`（可调用几何源, `.qubits/.subsystems/.ports/.inputs`）; meta `layout:`+`layers:`; 模板 `.geo`+yaml; 手写 `.geo` 步骤只增不改; 路由只接正对端口、宽度继承、定长闭合 `guided_wavelength`; 编排器纪律全部 raise（NaN 置毒 / 短路 / 未认领面 / 未连接外挂面 / 全名唯一 / 层 kind） | `test_layout.py` 全部 6 条（等价性、混用 + 路由 + 地、嵌套再导出、纪律、词汇） |
 
 ## 验收
 
-1. Python 3.13 下 `pytest tests/ -q` **0 failed**（live 两条默认 skip）。
+1. Python 3.13 下 `pytest tests/ -q` **0 failed**（33 passed, live 两条默认 skip）。
 2. `QDSL_RUN_PALACE=1` 下 N7 通过（Palace 0.16, WSL; ⚠ 必须 `HWLOC_COMPONENTS=-gl`）。
 3. `QDSL_RUN_PALACE_SUNG=1` 下 N15 通过（整片 order 2, 18.5M 未知量, 峰值内存 ~154 G,
    须 384G 级机器; N7 锚配方可复现, N15 锚论文真值——角色互补, 都要）。

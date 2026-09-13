@@ -23,17 +23,30 @@ from pathlib import Path
 
 from .errors import QuantumDslError
 
-__all__ = ["geo_model"]
+__all__ = ["geo_model", "source_label"]
 
 _counter = itertools.count()
 
 
+def source_label(source) -> str:
+    """错误信息 / 文件名里用的几何源标签: 路径原样, 版图取其 layout 文件名。"""
+    if callable(source):
+        return str(getattr(source, "path", getattr(source, "__name__", "layout")))
+    return str(source)
+
+
 @contextlib.contextmanager
-def geo_model(path):
-    """把 ``.geo`` 解析进一个一次性的新 model, 退出时移除该 model。"""
-    path = Path(path)
-    if not path.is_file():
-        raise QuantumDslError(f"no such file: {path}")
+def geo_model(source):
+    """把几何源写进一个一次性的新 model, 退出时移除该 model。
+
+    ``source`` = ``.geo`` 路径 (merge) 或 **可调用** ``builder(gmsh)`` (版图编排器
+    :class:`~quantum_dsl.layout.Layout`: 在当前 model 里重放全部步骤)。下游三个消费者
+    (load_geo / build_gds / build_mesh) 只读 2D Physical 组, 对几何从哪来透明。"""
+    path = None
+    if not callable(source):
+        path = Path(source)
+        if not path.is_file():
+            raise QuantumDslError(f"no such file: {path}")
     import gmsh  # 惰性: N0 import 纯度
 
     if not gmsh.isInitialized():
@@ -43,10 +56,13 @@ def geo_model(path):
     gmsh.model.add(name)
     gmsh.model.setCurrent(name)
     try:
-        try:
-            gmsh.merge(str(path))
-        except Exception as exc:
-            raise QuantumDslError(f"gmsh cannot parse {path}: {exc}") from exc
+        if path is None:
+            source(gmsh)
+        else:
+            try:
+                gmsh.merge(str(path))
+            except Exception as exc:
+                raise QuantumDslError(f"gmsh cannot parse {path}: {exc}") from exc
         gmsh.model.occ.synchronize()
         yield gmsh
     finally:

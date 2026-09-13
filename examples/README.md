@@ -12,6 +12,9 @@
 | `sung_2021_xmon.{geo,meta.yaml}` | 同一论文器件的**真拓扑**(接地 Xmon ×2 + 梳齿 coupler),用 ~20 个从 Fig. 1(c) 照片量出的参数写成,无调参 | 对论文的**无调参预测**(分清「标定命中」与「预测精度」,见 `docs/report/04` §8);`XMON` 宏;接地单岛写法 `island:` | 80/2 order-2 ~13M tets,需 384 G 远端机 |
 | `sung_2021_xmon_traced.{geo,meta.yaml}` | 同一照片的逐点描摹(`tools/micrograph_to_geo.py` 生成,426 顶点,含视场内走线 / 读出槽 / SQUID 框) | 参数化版的保真参照(同粗网格差 C_Σ 1–4%、β_qc 0.4%);测量审计图 `docs/report/img/` 的来源;`POLY` 宏 | 15.4M tets,峰值 168 G |
 | `qlib.geo` | OCC 宏库:`PAD` / `POLY` / `XMON` / `CPW` / `JUNCTION` / `GROUND_CUTOUT` | 被 sung 例子 `Include`;写自己的版图时可复用(纯几何宏,Physical 名由调用点打;⚠ `Call X;` 独占一行) | — |
+| `two_pads.layout.yaml` + `two_pads_layout.meta.yaml` | 同一 two_pads, 用**版图**写: 两个 `pad` 模板实例 | 版图路线的最小例子: 与手写 `.geo` 逐字等价(GDS / 网格标签相同, 测试断言) | 同 two_pads |
+| `xmon_readout.{layout.yaml,meta.yaml}` + `xmon_readout_launch.geo` | `xmon` 模板(岛 + moat + 结 + 读出桨) → λ/4 定长蛇形 `cpw_meander` → 手写发射焊盘, `ground: sheet` | 框架演示: 模板 / 手写 `.geo` / 路由在同一模型混用; 结自动进 circuit_model; 路由 net 认领; 长度闭环 | 粗网格秒级(演示件) |
+| `lib/` | 模板库: `pad`、`xmon`、`cpw_meander`(各 = `.geo` 局部坐标几何 + `.yaml` 接口)+ `cpw_macros.geo`(include-guard 宏库) | 写自己的模板照抄: `.geo` 不打名、不定义 Macro, 输出变量在 yaml 里指名 | — |
 
 ## 跑起来
 
@@ -41,6 +44,11 @@ sung 例子的跑法(远端大内存机)见 [`../docs/report/03-复现与演示.
 Demo F;`tools/palace_remote.sh` 是把 Palace 调用透明转到远端的 `PALACE_BIN` 垫片。
 
 ## 写自己的例子
+
+版图路线(推荐, 语法 `docs/grammar.md` §4): `lib/` 里挑模板, 写 `<name>.layout.yaml`(steps: 放置 / 连接 / 手写 `.geo`)+ meta(`layout:` + `layers:` 表),
+`build()` 一样跑。缺的形状先手写 `geo:` 步骤(只增不改), 用顺手了再升级成模板(`.geo` + `.yaml`)。
+
+手写路线:
 
 1. 画 `.geo`:每个语义面挂 `Physical Surface("role::layer::component::primitive")`,
    role ∈ {metal, ground, jj};**component 段 = 电学岛(net)**,浮动 transmon 的两块 pad

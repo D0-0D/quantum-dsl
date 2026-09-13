@@ -11,6 +11,7 @@ Physical 名 ``"<role>::<layer>::<component>::<primitive>"``。**component 段 =
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -27,7 +28,7 @@ class Physical:
 
     name: str
     role: str
-    layer: int
+    layer: int | str      # 纯数字 → int; 否则标识符 (meta ``layers:`` 表的 id)
     component: str
     primitive: str
 
@@ -52,11 +53,13 @@ def parse_physical_name(name: str) -> Physical:
     if role not in ROLES:
         raise QuantumDslError(
             f"Physical name {name!r}: role {role!r} not in {sorted(ROLES)}")
-    try:
-        layer = int(layer_s)
-    except ValueError:
+    if layer_s.isdigit():
+        layer: int | str = int(layer_s)
+    elif re.fullmatch(r"[A-Za-z_]\w*", layer_s):
+        layer = layer_s
+    else:
         raise QuantumDslError(
-            f"Physical name {name!r}: layer {layer_s!r} is not an integer") from None
+            f"Physical name {name!r}: layer {layer_s!r} must be an integer or an identifier")
     if not component or not primitive:
         raise QuantumDslError(
             f"Physical name {name!r}: empty component/primitive segment")
@@ -64,15 +67,16 @@ def parse_physical_name(name: str) -> Physical:
                     component=component, primitive=primitive)
 
 
-def load_geo(path) -> Geo:
-    """加载 ``.geo``, 返回 Physical 组与 µm 包围盒。名字不合约定即 raise。
+def load_geo(source) -> Geo:
+    """加载 ``.geo`` (或版图 :class:`~quantum_dsl.layout.Layout`), 返回 Physical 组与
+    µm 包围盒。名字不合约定即 raise。
 
     解析进一次性 model (进程级共享 gmsh session, 见 ``_gmsh.geo_model``
     docstring —— 宏库 include guard 只有这个口径下可靠)。"""
-    path = Path(path)
     from ._gmsh import geo_model
 
-    with geo_model(path) as gmsh:
+    path = Path(getattr(source, "path", source)) if not callable(source) or hasattr(source, "path") else source
+    with geo_model(source) as gmsh:
         physicals = tuple(
             parse_physical_name(gmsh.model.getPhysicalName(dim, tag))
             for dim, tag in gmsh.model.getPhysicalGroups())

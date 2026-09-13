@@ -1,0 +1,7 @@
+# pad — 矩形焊盘 (一个岛, 四个边中点端口)。几何在 pad.geo (局部坐标), 这里是接口。
+schema: quantum-dsl/template/1
+params: {w: 80, h: 80, gap: 0}                 # µm; gap > 0 时出蚀刻 pocket (接地芯片用)
+layers: {metal: conductor}                     # 槽位 → 实例上 layers: {metal: <芯片层>} 重定位
+islands: {pad: {faces: pad_faces(), layer: metal}}
+etch: [{faces: pocket(), layer: metal, if: gap}]
+ports: {E: port(0), N: port(1), W: port(2), S: port(3)}   # 简写 = {x: port_x(i), y: port_y(i), a: port_a(i), w: port_w(i)}
