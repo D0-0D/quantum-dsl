@@ -203,15 +203,15 @@ ground: sheet: {layer: a, margin_um: 250}            # 或 none (flip-chip)
 
 ---
 
-## 3. Chen 2025 落进框架（数字见 B 报告）
+## 3. Chen 2025 落进框架（**已落地**，2026-09-13 / N17；下表 = 实际实现，数字见 B 报告）
 
 | 步骤 | 内容 |
 |---|---|
-| `disc_transmon`（`.geo` + YAML；圆盘切缝 + 五个爪子模板嵌套） | 岛 `a/b`；爪 E/N/W/S/RO 为外挂面（参数开关，边缘比特不画），端口在爪外弧中点（宽 = 条宽 30）；结在圆心跨缝；槽位 metal / jj |
-| `bar_coupler`（连接型） | 条 port→port + 五边形 + 结；路由规则把两端爪并入条的 net；纵向键 = 横向键 `rot 90 + mirror` |
-| 读出 | `route: cpw_meander from Q.RO`，λ/4 定长减 leq；焊盘（bump 接地）作模板的 `ground` 角色输出或 `geo:` 步手写 |
-| 3×3 | 9 + 12 个模板步骤的显式列表；`ground: none`；层表 `{a: conductor, e: junction}`；`airbox.top_um: 5` = 载片地 |
-| 验证 | SI §D 的 6×6 Maxwell，`d` 唯一拟合量（B 报告 §5） |
+| `disc_transmon`（`.geo` + YAML） | 圆盘切缝成两半 `a/b`（`BooleanIntersection` 两个半平面），爪在同一个 `.geo` 里用 `LIB_CPW_ARC` + `LIB_CPW` 画（**没有**嵌套子模板——嵌套可行但这里用不上）；爪 **E/N/W/S 四只**为外挂面（`if: claw_*` 开关，边缘比特关掉），**无 RO 爪**（读出不进 phase 1）；端口在颈**外端**中点（不是弧中点），宽 = `bar_w` 30；结在圆心跨缝；槽位 metal / jj |
+| `bar_coupler`（连接型） | 条 port→port + 五边形 + 条–板间的结；`body: bar` 指明路由体，路由规则把两端爪并入条的 net，五边形 = `<实例>_pent`；纵向键 = 横向键加 **`mirror: x`**（不是 `rot 90 + mirror`：连接型的位姿完全由两个端口给定，写 `rot:` 会 raise） |
+| 读出 | **未做**（phase 1 不含）。计划：`route: cpw_meander from Q.RO`，λ/4 定长减 leq；焊盘（bump 接地）作模板的 `ground` 角色输出或 `geo:` 步手写 |
+| 3×3 | 9 + 12 个模板步骤的显式列表；`ground: none`；层表 `{ta: conductor, jj: junction}`；`airbox.top_um: 5` = 载片地 |
+| 验证 | SI §D 的 6×6 Maxwell，`d` 唯一拟合量（B 报告 §5）。⚠ 块会把块内比特伸向**块外**耦合器的爪一并删掉（H01 少 5 只）→ 对地项系统性偏低，见 `../physics.md` §13 |
 
 ---
 

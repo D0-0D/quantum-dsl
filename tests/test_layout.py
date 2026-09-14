@@ -208,3 +208,87 @@ def test_meta_layers_table_and_identifier_layer_segment(tmp_path):
                  encoding="utf-8")
     m = load_meta(p)
     assert m.layers == {"a": {"kind": "conductor", "gds": (1, 0)}, "e": {"kind": "junction"}}
+
+
+
+def test_layout_guards_close_silent_paths(tmp_path):
+    """契约 N16 纪律 (2026-09-13 代码审查补): 下面每一条都曾**静默**通过并产出错的电容 ——
+    连接型步骤吞掉 at:/rot:; mirror: y 翻转路由轴本身; if: 指向未声明的参数被当成「关闭」;
+    模板子字典键拼错; kind 拼错; body: 伪造岛键; 外挂端口背后没有面; port(i) 简写逃过 NaN 置毒;
+    Include 的宏库不进 manifest。"""
+    from quantum_dsl import QuantumDslError, compile_layout, load_meta
+    layers = {"m": {"kind": "conductor", "gds": [1, 0]}}
+
+    def compile_steps(steps: str):
+        doc = {"schema": "quantum-dsl/layout/1", "templates": [".", LIB.as_posix()],
+               "steps": yaml.safe_load(steps), "ground": "none"}
+        (tmp_path / "chip.layout.yaml").write_text(yaml.safe_dump(doc), encoding="utf-8")
+        return compile_layout(load_meta(_meta(tmp_path, "chip.layout.yaml", layers)))
+
+    def tpl(name="t", **over):
+        doc = {"schema": "quantum-dsl/template/1", "params": {"w": 10, "en": 1},
+               "layers": {"metal": "conductor"},
+               "islands": {"i": {"faces": "f()", "layer": "metal"}},
+               "external": {"E": {"faces": "g()", "layer": "metal", "if": "en"}},
+               "ports": {"E": {"port": "port(0)", "if": "en"}}}
+        doc.update(over)
+        _write(tmp_path / f"{name}.yaml", yaml.safe_dump(doc))
+
+    # 岛 (0..w) 与外挂面 (w+5..2w+5) 隔 5 um 不短路; 端口在外挂面外沿, 宽 = w
+    _write(tmp_path / "t.geo", """
+        SetFactory("OpenCASCADE");
+        s = news; Rectangle(s) = {0, -w/2, 0, w, w};  f() = {s};
+        port_x() = {2*w + 5};  port_y() = {0};  port_a() = {0};  port_w() = {w};
+        If (en != 0)
+          e = news; Rectangle(e) = {w + 5, -w/2, 0, w, w};  g() = {e};
+        EndIf
+        """)
+    tpl()
+    pair = ("- {template: t, name: A, layers: {metal: m}%s}\n"
+            "- {template: t, name: B, layers: {metal: m}, at: [500, 0], rot: 180}\n")
+    route = ("- {template: cpw_meander, name: C, from: A.E, to: B.E, "
+             "params: {R: 25, n_legs: 4, gap: 6}, length: {mode: fixed, L: 800um}%s}\n")
+    base = pair % "" + route % ""
+    lay = compile_steps(base)
+    assert lay.subsystems[0]["length_drawn_um"] == pytest.approx(800.0)
+    assert "cpw_macros.geo" in {q.name for q in lay.inputs}     # Include 的宏库也是几何来源
+
+    # 连接型步骤: at:/rot: 曾被静默丢弃; mirror: y 曾把路由画向 from 口的反方向
+    with pytest.raises(QuantumDslError, match=r"not \['at', 'rot'\]"):
+        compile_steps(pair % "" + route % ", rot: 45, at: [9, 9]")
+    with pytest.raises(QuantumDslError, match="only take mirror: x"):
+        compile_steps(pair % "" + route % ", mirror: y")
+
+    # if: 指向未声明的参数 → 曾等于「关闭」
+    tpl(external={"E": {"faces": "g()", "layer": "metal", "if": "enn"}})
+    with pytest.raises(QuantumDslError, match="is not a param"):
+        compile_steps(base)
+    # 子字典键拼错 (iff) → 曾静默丢掉整条守卫
+    tpl(ports={"E": {"port": "port(0)", "iff": "en"}})
+    with pytest.raises(QuantumDslError, match="unknown key"):
+        compile_steps(base)
+    # body: 在模板上伪造岛键 → 曾让结绑到没画过的 component
+    tpl(body="bar")
+    with pytest.raises(QuantumDslError, match="not an island key"):
+        compile_steps(base)
+    # kind 拼错 → 连接型曾静默降级成放置型
+    tpl(kind="connnect")
+    with pytest.raises(QuantumDslError, match="must be 'connect'"):
+        compile_steps(base)
+
+    # 端口守卫与外挂面守卫不同步 → 路由曾「连」到一块根本没画出来的金属上
+    tpl(ports={"E": {"port": "port(0)"}})
+    with pytest.raises(QuantumDslError, match="no face was drawn behind it"):
+        compile_steps(pair % ", params: {en: 0}" + route % "")
+
+    # port(i) 简写: gmsh 变量是进程级的, 条件赋值下会留着上一个实例的坐标 —— 必须被置毒抓到
+    _write(tmp_path / "u.geo", """
+        SetFactory("OpenCASCADE");
+        s = news; Rectangle(s) = {0, -w/2, 0, w, w};  f() = {s};
+        If (en != 0)
+          port_x() = {2*w + 5};  port_y() = {0};  port_a() = {0};  port_w() = {w};
+        EndIf
+        """)
+    tpl("u", external={}, ports={"E": {"port": "port(0)"}})
+    with pytest.raises(QuantumDslError, match="unset"):
+        compile_steps("- {template: u, name: A, layers: {metal: m}, params: {en: 0}}\n")

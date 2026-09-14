@@ -31,7 +31,7 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done。
       组合(0.16.1 覆盖 bug)。
 - [ ] **域尺寸扫**: sung 例子 airbox 取自 v3 实测档, two_pads 的 side=80 是刻意
       小型化;给真实器件报数前应做 1×/1.5×/2× 扫(C 变化 <0.2–0.5% 验收)。
-- [ ] **CI**: 默认 `pytest -q` 在 CI 上就是 35 passed / 2 skipped, 只需 Python 3.13 +
+- [ ] **CI**: 默认 `pytest -q` 在 CI 上就是 37 passed / 2 skipped, 只需 Python 3.13 +
       `pip install -e '.[gmsh,gds,test]'`(gmsh 装得起, Palace 装不起——live 正好 skip)。
 - [ ] **N15 求解产物缓存**: 一次 build 现已同时断言 C_Σ 与 β(不再重复求解);
       若要在同一 results.yaml 上加更多断言, 直接读 `v4-dev` 分支

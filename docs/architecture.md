@@ -139,6 +139,7 @@ C 矩阵行序 = `Mesh.labels` = `sorted(metal component)`，是全链唯一真�
 ├── <stem>.json           Palace config (Model.Mesh 写相对文件名, cwd = 本目录)
 ├── manifest.yaml         {schema, inputs[{path, sha256}], outputs[{path, sha256}]}
 ├── block_<name>.geo/.msh/.json ×N        extract.blocks 时 (版图路线不派生 .geo, 在模型内按 component 过滤)
+│                                        build(blocks=[...]) = 只做这几块, 不出整片; solve 时另有 block_<name>.results.yaml
 ├── postpro/terminal-C.csv (+ Cm/Cinv)    solve=True: Palace 输出 (SI 法拉)
 └── results.yaml                          solve=True
 ```

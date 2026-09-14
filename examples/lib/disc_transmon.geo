@@ -25,12 +25,12 @@ _on() = { claw_E, claw_N, claw_W, claw_S };
 For _k In {0:3}
   If (_on(_k) != 0)
     _th = _k * Pi/2;
-    acx = 0;  acy = 0;  R = _rc;  a0 = _th - claw_deg*Pi/180;  a1 = _th + claw_deg*Pi/180;  width = claw_t;
-    Call CPW_ARC;
-    _arc = sret;
-    x1 = _rc*Cos(_th);  y1 = _rc*Sin(_th);  x2 = _r1*Cos(_th);  y2 = _r1*Sin(_th);  width = bar_w;
-    Call CPW;
-    _u() = BooleanUnion{ Surface{ _arc }; Delete; }{ Surface{ sret }; Delete; };   // OCC 不合并成一块面 (弧 + 颈外段两面共边), 整表导出
+    _lib_cx = 0;  _lib_cy = 0;  _lib_R = _rc;  _lib_a0 = _th - claw_deg*Pi/180;  _lib_a1 = _th + claw_deg*Pi/180;  _lib_w = claw_t;
+    Call LIB_CPW_ARC;
+    _arc = _lib_s;
+    _lib_x1 = _rc*Cos(_th);  _lib_y1 = _rc*Sin(_th);  _lib_x2 = _r1*Cos(_th);  _lib_y2 = _r1*Sin(_th);  _lib_w = bar_w;
+    Call LIB_CPW;
+    _u() = BooleanUnion{ Surface{ _arc }; Delete; }{ Surface{ _lib_s }; Delete; };   // OCC 不合并成一块面 (弧 + 颈外段两面共边), 整表导出
     If (_k == 0)  faces_E() = _u();  EndIf
     If (_k == 1)  faces_N() = _u();  EndIf
     If (_k == 2)  faces_W() = _u();  EndIf

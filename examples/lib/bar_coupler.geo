@@ -7,6 +7,16 @@ SetFactory("OpenCASCADE");
 _bar = news; Rectangle(_bar) = { 0, -w/2, 0, D, w };
 bar() = { _bar };
 _xc = D - pent_off;  _y0 = w/2 + pent_gap;
+// 前置守卫: pent_off 是绝对 µm 而 D 由端口间距注入, pitch 一小 (或 dia/claw_t/stub 一大) 就把五边形
+// 连同结端点推到条外 —— _junction 只查长度 > 0, 于是会静默记下一个不碰任何条金属的结。
+If (pent_h <= pent_wall || pent_w <= 0 || pent_gap <= 0)
+  Error("bar_coupler: need pent_h (%g) > pent_wall (%g), pent_w (%g) > 0, pent_gap (%g) > 0",
+        pent_h, pent_wall, pent_w, pent_gap);
+EndIf
+If (_xc - pent_w/2 < 0 || _xc + pent_w/2 > D)
+  Error("bar_coupler: pentagon centre %g (= D - pent_off) with width %g does not fit over the bar x in [0, %g] — raise the pitch or lower pent_off (%g)",
+        _xc, pent_w, D, pent_off);
+EndIf
 _p1 = newp; Point(_p1) = { _xc - pent_w/2, _y0, 0 };
 _p2 = newp; Point(_p2) = { _xc + pent_w/2, _y0, 0 };
 _p3 = newp; Point(_p3) = { _xc + pent_w/2, _y0 + pent_wall, 0 };

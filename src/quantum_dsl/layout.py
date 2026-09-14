@@ -49,7 +49,15 @@ _TEMPLATE_KEYS = frozenset({"schema", "kind", "params", "layers", "islands", "ex
 _STEP_KEYS = frozenset({"template", "route", "geo", "name", "at", "rot", "mirror", "from",
                         "to", "params", "layers", "length", "frame", "ports", "etch",
                         "E_J", "L_J", "squid"})
+_ENTRY_KEYS = {          # 模板各段每条目的合法键 (拼错 = 静默丢语义, 必须查)
+    "islands": frozenset({"faces", "layer"}),
+    "external": frozenset({"faces", "layer", "if", "inst"}),
+    "etch": frozenset({"faces", "layer", "if"}),
+    "ports": frozenset({"port", "x", "y", "a", "w", "layer", "leq", "if", "island"}),
+    "junction": frozenset({"a", "b", "x1", "y1", "x2", "y2", "width", "layer"}),
+}
 _REF = re.compile(r"^([A-Za-z_]\w*)(?:\((\d*)\))?$")
+_INCLUDE = re.compile(r'(?m)^\s*Include\s+"([^"]+)"')
 _TOL = 1e-6          # µm; 面快照 / 端口正对 / 相交判定的公差
 
 _ID = (1.0, 0.0, 0.0, 1.0, 0.0, 0.0)    # 2D 仿射 (a, b, c, d, tx, ty): x' = a x + b y + tx
@@ -164,7 +172,21 @@ def _load_template(name: str, tdirs) -> _Template:
                 geo = yml.with_suffix(".geo")
                 geo = geo if geo.is_file() else None
                 if geo is None and not doc.get("steps"):
-                    raise QuantumDslError(f"template {yml}: needs {geo.name} or steps:")
+                    raise QuantumDslError(
+                        f"template {yml}: needs {yml.with_suffix('.geo').name} or steps:")
+                if doc.get("kind") not in (None, "connect"):
+                    raise QuantumDslError(
+                        f"template {yml}: kind {doc['kind']!r} must be 'connect' (a placement "
+                        f"template omits kind:)")
+                for sec, allowed in _ENTRY_KEYS.items():
+                    val = doc.get(sec)
+                    if isinstance(val, dict) and sec == "junction":
+                        _check_keys(val, allowed, f"template {yml}: junction")
+                    elif isinstance(val, (dict, list)):
+                        items = val.items() if isinstance(val, dict) else enumerate(val)
+                        for key, spec in items:
+                            if isinstance(spec, dict):
+                                _check_keys(spec, allowed, f"template {yml}: {sec}.{key}")
                 for slot, kind in (doc.get("layers") or {}).items():
                     if kind not in LAYER_KINDS:
                         raise QuantumDslError(
@@ -186,6 +208,35 @@ def _refs(value) -> list[str]:
     if isinstance(value, list):
         return [n for v in value for n in _refs(v)]
     return []
+
+
+def _included(geo: Path, seen: set[Path]) -> list[Path]:
+    """``.geo`` 递归 ``Include`` 到的文件: 宏库也是几何来源, 必须进 manifest 溯源。"""
+    out: list[Path] = []
+    try:
+        text = geo.read_text(encoding="utf-8")
+    except OSError:
+        return out
+    for m in _INCLUDE.finditer(text):
+        q = (geo.parent / m.group(1)).resolve()
+        if q in seen or not q.is_file():
+            continue
+        seen.add(q)
+        out.append(q)
+        out += _included(q, seen)
+    return out
+
+
+def _port_refs(ports) -> list[str]:
+    """``ports:`` 段真正读回的 .geo 变量名: 先展开 ``port(i)`` 简写 (否则简写逃过置毒,
+    模板条件赋值时会读到上一个实例的坐标)。"""
+    out: list[str] = []
+    for spec in (ports or {}).values():
+        if isinstance(spec, str) and "." in spec:
+            continue                       # 嵌套再导出 (子实例端口), 不是 .geo 变量
+        out += _refs({k: v for k, v in _port_spec(spec).items()
+                      if k not in ("net", "island")})
+    return out
 
 
 def _port_spec(spec) -> dict:
@@ -232,6 +283,14 @@ class Layout:
         self.subsystems: list[dict] = []
         self.inputs: list[Path] = []
         self.ports: dict[str, Port] = {}
+
+    def _add_input(self, path: Path | None) -> None:
+        if path is None:
+            return
+        extra = _included(path, {path.resolve()}) if path.suffix == ".geo" else []
+        for q in [path] + extra:
+            if q not in self.inputs:
+                self.inputs.append(q)
 
     def for_block(self, components) -> "Layout":
         """分块: 只给 ``components`` 里的 component 挂 Physical 名 (其余面成孤儿, build_mesh 清)。"""
@@ -380,8 +439,7 @@ class Layout:
         if full in self.poses:
             raise QuantumDslError(f"{where}: instance name {full!r} used twice")
         for f in (tpl.path, tpl.geo):
-            if f is not None and f not in self.inputs:
-                self.inputs.append(f)
+            self._add_input(f)
 
         params = dict(tpl.doc.get("params") or {})
         extra = sorted(set(step.get("params") or {}) - set(params))
@@ -403,6 +461,10 @@ class Layout:
         inject: dict[str, float] = {}
         target = None
         if connect:
+            bad = sorted({"at", "rot"} & set(step))
+            if bad:
+                raise QuantumDslError(f"{where}: connect steps take from:/to:/mirror:, not "
+                                      f"{bad} — the pose comes from the two ports")
             ends, pose, D, w = self._connect_pose(step, where)
             net = self._net(ends, full, where)          # 路由体的 component = net, 结记账前就定
             for k in ("D", "w", "L"):
@@ -425,49 +487,60 @@ class Layout:
         single = len(islands) == 1
         for key in islands:
             comps[key] = full if single else f"{full}_{key}"
-        body = tpl.doc.get("body") or (next(iter(islands)) if single else None)
-        if connect and islands and body not in islands:
-            raise QuantumDslError(f"{where}: connect template with {len(islands)} islands "
-                                  f"needs body: <island key>")
-        if connect and body:
+        body = tpl.doc.get("body")
+        if body is None and single:
+            body = next(iter(islands))
+        if body is not None and body not in islands:
+            raise QuantumDslError(f"{where}: body: {body!r} is not an island key of "
+                                  f"{tpl.name} {sorted(islands)}")
+        if connect:
+            if body is None:
+                raise QuantumDslError(f"{where}: connect template with {len(islands)} islands "
+                                      f"needs body: <island key>")
             comps[body] = net
 
         out: dict[str, float] = {}
         if tpl.geo:
             new = self._run_geo(tpl, params, inject, pose, where)
 
-            def enabled(spec):            # 可选部件: if: <param> 非零才读
-                return "if" not in spec or params.get(spec["if"], 0) != 0
+            def enabled(spec, what):      # 可选部件: if: <param> 非零才读
+                g = spec.get("if")
+                if g is None:
+                    return True
+                if g not in params:
+                    raise QuantumDslError(f"{where}: {what} if: {g!r} is not a param of "
+                                          f"{tpl.name} {sorted(params)}")
+                return params[g] != 0
             for key, spec in islands.items():
                 for t in self._tags(spec.get("faces"), new, f"{where} islands.{key}"):
                     self._claim(t, "metal", lmap, spec, comps[key], key, where)
             for key, spec in (tpl.doc.get("external") or {}).items():
-                if enabled(spec):
+                if enabled(spec, f"external.{key}"):
                     for t in self._tags(spec.get("faces"), new, f"{where} external.{key}"):
                         self._claim(t, "metal", lmap, spec, None, key, where, ext=(full, key))
-            for spec in tpl.doc.get("etch") or []:
-                if enabled(spec):
+            for i, spec in enumerate(tpl.doc.get("etch") or []):
+                if enabled(spec, f"etch[{i}]"):
                     layer = self._slot(spec, lmap, where)
                     for t in self._tags(spec.get("faces"), new, f"{where} etch"):
                         self.etch.append((layer, t))
             for key, spec in (tpl.doc.get("ports") or {}).items():
                 spec = _port_spec(spec)
-                if not enabled(spec):
+                if not enabled(spec, f"ports.{key}"):
                     continue
                 x, y = _apply(pose, self._num(spec["x"], where), self._num(spec["y"], where))
                 ext = (full, key) if key in (tpl.doc.get("external") or {}) else None
-                net = None
+                pnet = None                      # 端口所属岛; 不要遮蔽路由体的 net
                 if ext is None:
-                    ikey = spec.get("island", body if body else None)
+                    ikey = spec.get("island", body)
                     if ikey not in comps:
                         raise QuantumDslError(f"{where}: port {key!r} needs island: <key> "
                                               f"(template has islands {sorted(comps)})")
-                    net = comps[ikey]
+                    pnet = comps[ikey]
                 self.ports[f"{full}.{key}"] = Port(
                     x=x, y=y, a=_apply_angle(pose, self._num(spec["a"], where)),
                     w=self._num(spec["w"], where), layer=self._slot(spec, lmap, where,
                                                                     default=lmap and next(iter(lmap))),
-                    leq=self._num(spec.get("leq", 0), where), net=net, ext=ext)
+                    leq=self._num(spec.get("leq", 0), where), net=pnet, ext=ext)
             for key, ref in (tpl.doc.get("outputs") or {}).items():
                 out[key] = self._num(ref, where)
             j = tpl.doc.get("junction")
@@ -509,8 +582,9 @@ class Layout:
     def _run_geo(self, tpl: _Template, params, inject, pose, where) -> list[int]:
         doc = tpl.doc
         poison = set()
-        for section in ("islands", "external", "etch", "junction", "ports", "outputs"):
+        for section in ("islands", "external", "etch", "junction", "outputs"):
             poison.update(_refs(doc.get(section)))
+        poison.update(_port_refs(doc.get("ports")))
         poison -= set(params) | set(inject)
         nan = float("nan")
         for v in poison:
@@ -619,8 +693,13 @@ class Layout:
                                   f"a taper is not implemented — match the widths")
         if p.layer != q.layer:
             raise QuantumDslError(f"{where}: ports on different layers ({p.layer!r} vs {q.layer!r})")
+        mirror = step.get("mirror")
+        if mirror not in (None, False, "x"):
+            raise QuantumDslError(
+                f"{where}: connect steps only take mirror: x (flip across the from->to axis); "
+                f"mirror: {mirror!r} would reverse the axis itself and draw away from {step['to']}")
         pose = _compose((1, 0, 0, 1, p.x, p.y),
-                        _pose([0, 0], math.degrees(axis), step.get("mirror")))   # mirror: x 翻到轴另一侧
+                        _pose([0, 0], math.degrees(axis), mirror))   # mirror: x 翻到轴另一侧
         return ((step["from"], p), (step["to"], q)), pose, D, p.w
 
     def _length(self, spec, w, params, ends, where) -> dict:
@@ -675,9 +754,14 @@ class Layout:
         for ref, p in ends:
             if p.ext is None:
                 continue
-            for t, f in self.faces.items():
-                if f.ext == p.ext:
-                    self.faces[t] = _Face(f.role, f.layer, net, f.primitive)
+            hit = [t for t, f in self.faces.items() if f.ext == p.ext]
+            if not hit:
+                raise QuantumDslError(
+                    f"{where}: port {ref!r} is external but no face was drawn behind it — the "
+                    f"port's if: guard and the external part's if: guard disagree")
+            for t in hit:
+                f = self.faces[t]
+                self.faces[t] = _Face(f.role, f.layer, net, f.primitive)
             for pk, q in list(self.ports.items()):
                 if q.ext == p.ext:
                     self.ports[pk] = Port(q.x, q.y, q.a, q.w, q.layer, q.leq, net, None)
@@ -692,8 +776,7 @@ class Layout:
         if not path.is_file():
             raise QuantumDslError(f"{where}: no such file: {path}")
         where = f"{where} ({path.name})"
-        if path not in self.inputs:
-            self.inputs.append(path)
+        self._add_input(path)
         pose = ctx.pose
         if "frame" in step:
             if step["frame"] not in self.poses:
@@ -703,7 +786,7 @@ class Layout:
         self._inject_ports()
         snap = {t: (self.occ.getMass(2, t), self.gmsh.model.getBoundingBox(2, t))
                 for _, t in self.gmsh.model.getEntities(2)}
-        for v in _refs(step.get("etch")) + _refs(step.get("ports")):
+        for v in _refs(step.get("etch")) + _port_refs(step.get("ports")):
             self.P.setNumber(v, [float("nan")])
         new, pnew = self._merge(path, where)
         for t, (mass, bb) in snap.items():

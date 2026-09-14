@@ -139,3 +139,19 @@ def test_extract_blocks_derived_and_scoped(tmp_path):
     assert len(r["blocks"]) == 2
     for blk in r["blocks"]:
         assert Path(blk["config"]).exists()
+
+
+def test_build_blocks_only_skips_the_whole_chip(tmp_path):
+    """契约 N14: ``build(blocks=[...])`` 只做指定的块 —— 跳过整片网格/config (整片可能比
+    单块大两个数量级, 本机跑不动, 否则「单块可解」只能靠手抄脚本); 每块 Palace 输出目录
+    互不覆盖; 块名拼错 raise。"""
+    import json
+
+    from quantum_dsl import QuantumDslError, build
+    r = build(BLOCKS_META, tmp_path, blocks=["A"])
+    assert "mesh" not in r and "config" not in r          # 整片被跳过
+    assert not list(tmp_path.glob("two_pads*.msh"))
+    assert [b["name"] for b in r["blocks"]] == ["A"] and r["blocks"][0]["labels"] == ("A",)
+    assert json.loads((tmp_path / "block_A.json").read_text())["Problem"]["Output"] == "postpro_block_A"
+    with pytest.raises(QuantumDslError, match="unknown block name"):
+        build(BLOCKS_META, tmp_path / "x", blocks=["A", "Nope"])

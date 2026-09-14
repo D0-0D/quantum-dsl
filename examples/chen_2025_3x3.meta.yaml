@@ -17,6 +17,11 @@ solver: {type: electrostatic, order: 2, outer_boundary: ground}
 
 # 分块 = SI §D 的「孤立 QCQ」口径: 每块 = 两比特四半盘 + 一条 + 一板 (6 terminal), 可逐项对 SI 的 11 个电容;
 # 整片 42 导体一次求解才是全阵列 (上云); 块两两共享比特几何, **不能**拿去 assemble() 叠加 (会重复计入比特对地电容)。
+# ⚠ 块只保留下列 component, 其余面在 build_mesh 里当孤儿删掉 —— 包括块内比特伸向块外耦合器的爪
+#   (H01 块少 5 只: Q01.N/S, Q11.E/N/S), 每只约 6944 µm²、距盘边 12 µm, 而载片地只隔 5 µm。
+#   于是块解出的对地电容系统性偏低; 拿它对 SI §D 时这条偏差必须一起说 (docs/physics.md §13)。
+# ⚠ build() 会报 24 条「结构性零互容」告警 (耦合器两两相距 155.6 µm < side_um 300 却从不同块) —— 属实, 不是误报:
+#   SI 的孤立 QCQ 口径本来就不含耦合器间的直接互容。要它就得整片解。
 extract:
   blocks:
     - {name: H00, components: [Q00_a, Q00_b, H00, H00_pent, Q10_a, Q10_b]}

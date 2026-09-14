@@ -173,7 +173,10 @@ extract:
     - {name: B, components: [B]}
 ```
 
-产出 `block_A.geo/.msh/.json`、`block_B.*`。切块纪律：**有意直接耦合的导体对必须同块共现**——跨块直接互容
+产出 `block_A.geo/.msh/.json`、`block_B.*`（各自的 Palace 输出目录 `postpro_block_<name>`）。只要某几块就
+`build(m, out, blocks=["A"])`：跳过整片网格，`solve=True` 时逐块跑 Palace 并写 `block_<name>.results.yaml`。
+块集合**重叠**（同一导体整块出现在多块里）会告警——那样的块只能单独读，不能 `assemble()`。
+切块纪律：**有意直接耦合的导体对必须同块共现**——跨块直接互容
 在拼装模型里是结构性零（不是小量，见 physics.md「分块拼装」）。`build()` 对"几何邻近（bbox 间距 < `airbox.side_um`）
 却从不共现"的导体对发 `UserWarning`；本例 A↔B 相距 80 µm 就会触发。
 
@@ -207,8 +210,8 @@ ground: {sheet: {layer: m1, margin_um: 200}}       # 或 none (flip-chip): 建�
 | 步骤键 | 含义 |
 |---|---|
 | `template` / `route` | 模板名；`name` = 实例名（= component 名；多岛模板为 `<name>_<岛键>`；嵌套加父前缀） |
-| `at` `rot` `mirror` | 放置型位姿：µm、**度**、`x`/`y`（沿局部轴镜像后再转） |
-| `from` `to` | 连接型：两个端口 `实例.端口`（或手写步骤声明的端口名）。局部坐标原点 = from 口、x 轴指向 to 口；两口必须正对、同宽、同层。连接型也吃 `mirror: x`（模板翻到轴另一侧，如 `bar_coupler` 的五边形侧） |
+| `at` `rot` `mirror` | **放置型**位姿：µm、**度**、`x`/`y`（沿局部轴镜像后再转）。连接型步骤写 `at`/`rot` 即 raise（位姿由两个端口给定） |
+| `from` `to` | 连接型：两个端口 `实例.端口`（或手写步骤声明的端口名）。局部坐标原点 = from 口、x 轴指向 to 口；两口必须正对、同宽、同层。连接型只吃 `mirror: x`（模板翻到轴另一侧，如 `bar_coupler` 的五边形侧）；`mirror: y` 会翻转 from→to 轴本身、把几何画到 `to` 口的反方向，故 raise |
 | `params` | 覆盖模板 `params` 默认值；未知参数 raise |
 | `layers` | 槽位 → 芯片层。省略时取同名芯片层；没有同名且该 kind 的芯片层唯一时取它；否则 raise。kind 不兼容 raise |
 | `E_J` / `L_J` / `squid` | 模板有 `junction` 时必给恰一个 → 自动进 `circuit_model.qubits`（与 meta 手写同名条目不一致 raise） |

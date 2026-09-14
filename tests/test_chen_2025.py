@@ -18,7 +18,7 @@ COARSE = {"max_size_um": 300, "min_size_um": 20}       # 测试用秒级网格; 
 def test_chen_2025_3x3_layout_compiles_to_21_junctions_and_paper_geometry(tmp_path):
     """契约 N17: (a) 9 个浮动比特 (islands [Q_a, Q_b]) + 12 个浮动耦合器 (islands [C, C_pent]) 自动进 circuit_model,
     连接型模板的路由体 component 就是 net 名 (结记账与 Physical 名一致); (b) 24 个爪端口全部被耦合器消费;
-    (c) GDS 面积对照片参数: 半盘 = (π·195² − 70·弦)/2, 五边形 378×(125 + 175/2), 条 30×849, 24 只爪; (d) 手性: 横向
+    (c) GDS 面积对照片参数: 半盘 = 圆缺 195²·acos(35/195) − 35·√(195²−35²), 五边形 378×(125 + 175/2), 条 30×849, 24 只爪; (d) 手性: 横向
     五边形在条 +y 侧靠东侧比特, 纵向 (mirror: x) 在条 +x 侧靠上方比特, 中心距该比特 540。"""
     import gdstk
 
@@ -39,10 +39,10 @@ def test_chen_2025_3x3_layout_compiles_to_21_junctions_and_paper_geometry(tmp_pa
     metal = [p for p in cell.polygons if p.layer == 1]
     jj = [p for p in cell.polygons if p.layer == 20]
     assert len(metal) == 18 + 12 * 4 and len(jj) == 21
-    half = (math.pi * 195 ** 2 - 70 * 2 * math.sqrt(195 ** 2 - 35 ** 2)) / 2
+    half = 195 ** 2 * math.acos(35 / 195) - 35 * math.sqrt(195 ** 2 - 35 ** 2)   # 圆缺闭式: 弦距心 35
     def n_with_area(target, rel):
         return sum(abs(p.area() - target) <= rel * target for p in metal)
-    assert n_with_area(half, 5e-3) == 18                                    # 圆弧采样 ≲0.4%
+    assert n_with_area(half, 1e-3) == 18                                    # 圆弧采样 ≲0.1%
     assert n_with_area(378 * 125 + 378 * 175 / 2, 1e-6) == 12               # 五边形: 直边逐字
     assert n_with_area(30 * (1383 - 2 * 267), 1e-6) == 12                   # 条: 30 × 849
     assert n_with_area(40 * (2 * math.radians(20)) * 227 + 20 * 30, 2e-2) == 24   # 爪: 弧 (中心线半径 227) + 颈外段

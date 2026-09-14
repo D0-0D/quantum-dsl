@@ -126,6 +126,29 @@ def _bbox_gap_um(a, b) -> float:
     return math.hypot(dx, dy)
 
 
+def _warn_overlapping_blocks(blocks) -> None:
+    """块集合本该切分芯片。重叠 = 同一导体在多块里**整块**重新求解, 其自电容会被
+    ``assemble()`` 按共享节点无条件累加 (跨切口的共享节点才是它的本意) —— 这样的块
+    只能单独读, 不能拼。"""
+    where: dict = {}
+    for blk in blocks:
+        for c in blk["components"]:
+            where.setdefault(c, []).append(blk.get("name"))
+    dup = {c: bs for c, bs in where.items() if len(bs) > 1}
+    if dup:
+        warnings.warn(
+            "extract.blocks: " + "; ".join(
+                f"{c!r} appears in {len(bs)} blocks ({', '.join(map(str, bs))})"
+                for c, bs in sorted(dup.items())[:6])
+            + (" …" if len(dup) > 6 else "")
+            + " — the blocks overlap instead of partitioning the chip, so each block "
+              "re-solves that conductor in full. Read such blocks one at a time; passing "
+              "them to assemble() double-counts the shared conductors' self-capacitance. "
+              "Note also that every block drops the conductors outside it, so neighbours "
+              "that sit close to a kept conductor are absent from its solved environment.",
+            stacklevel=3)
+
+
 def _warn_structural_zero_coupling(blocks, bbox_by_comp, side_um) -> None:
     cohabit = set()
     for blk in blocks:
@@ -161,10 +184,46 @@ def _merge_qubits(meta_qubits: list, generated: list) -> list:
     return merged
 
 
-def build(meta, out_dir, solve: bool = False) -> dict:
+def _results_doc(cap, subsystems, qubits) -> dict:
+    """求解产物 ``results.yaml`` 的**唯一** schema (整片与分块共用)。
+    调用方自己决定传哪些 subsystems / qubits (分块只传标签落在块里的那些)。"""
+    doc: dict = {"capacitance": {"labels": list(cap.labels),
+                                 "maxwell_fF": cap.maxwell_fF,
+                                 "mutual_fF": cap.mutual_fF}}
+    if subsystems:
+        doc["subsystems"] = subsystems
+    if qubits:
+        model = solve_circuit_model(cap.labels, cap.maxwell_fF,
+                                    _junctions_from_meta({"qubits": qubits}))
+        doc["hamiltonian"] = {
+            "method": model.method,
+            "qubits": [{**asdict(q), "islands": list(q.islands)}
+                       for q in model.qubits],
+            "couplings": [asdict(c) for c in model.couplings],
+        }
+    return doc
+
+
+def _in_scope(items, labels, key) -> list:
+    """只留下全部 island / net 都落在 ``labels`` 里的条目 (分块求解用)。"""
+    out = []
+    for it in items:
+        need = set(it.get("islands") or ([it[key]] if it.get(key) else []))
+        if need and need <= set(labels):
+            out.append(it)
+    return out
+
+
+def build(meta, out_dir, solve: bool = False, blocks=None) -> dict:
     """meta (路径或 Meta) + 输出目录 → 产物路径 dict (键: gds/mesh/config/
     manifest[/blocks][/capacitance/results]; 有 gds 时另有 gds_png; 版图路线另有
-    layout (Layout 记账: qubits / subsystems / ports))。"""
+    layout (Layout 记账: qubits / subsystems / ports))。
+
+    ``blocks`` = ``extract.blocks`` 里的块名列表 (或 ``"all"``) 时**只做这些块**:
+    跳过整片网格与 config (整片可能比单块大两个数量级, 本机跑不动), 于是 ``mesh`` /
+    ``config`` 键不出现; ``solve=True`` 会逐块跑 Palace 并写 ``block_<name>.results.yaml``
+    (schema 与整片的 ``results.yaml`` 相同), 结果挂在 ``result["blocks"][i]`` 上。
+    ``blocks=None`` (默认) = 原行为: 整片 + 各块网格/config, 只求解整片。"""
     m = meta if isinstance(meta, Meta) else load_meta(meta)
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -185,23 +244,37 @@ def build(meta, out_dir, solve: bool = False) -> dict:
     else:
         src, stem, inputs = m.geo_path, m.geo_path.stem, [m.path, m.geo_path]
 
+    blocks_spec = (m.extract or {}).get("blocks") or []
+    if blocks is not None:
+        names = [b.get("name") for b in blocks_spec]
+        if not blocks_spec:
+            raise QuantumDslError("build: blocks= given but meta has no extract.blocks")
+        want = list(names) if blocks == "all" else list(blocks)
+        unknown = [n for n in want if n not in names]
+        if unknown:
+            raise QuantumDslError(
+                f"build: unknown block name(s) {unknown}; extract.blocks has {names}")
+        blocks_spec = [b for b in blocks_spec if b.get("name") in want]
+
     outputs: list[Path] = []
     if gds_map(m):                          # 无 GDS 映射 = 不出 GDS 分叉
         result["gds"] = build_gds(src, m, out / f"{stem}.gds")
         result["gds_png"] = render_gds_png(
             result["gds"], out / f"{stem}.gds.png", jj_layers=jj_gds_layers(m))
         outputs += [result["gds"], result["gds_png"]]
-    mesh = build_mesh(src, m, out / f"{stem}.msh")
-    cfg_path = out / f"{stem}.json"
-    palace_config(mesh, m, cfg_path)
-    result.update({"mesh": mesh.path, "config": cfg_path})
-    outputs += [mesh.path, cfg_path]
+    mesh = cfg_path = None
+    if blocks is None:      # blocks= 指定时不出整片: 整片网格可能比单块大两个数量级
+        mesh = build_mesh(src, m, out / f"{stem}.msh")
+        cfg_path = out / f"{stem}.json"
+        palace_config(mesh, m, cfg_path)
+        result.update({"mesh": mesh.path, "config": cfg_path})
+        outputs += [mesh.path, cfg_path]
 
-    blocks_spec = (m.extract or {}).get("blocks") or []
     if blocks_spec:
-        side_um = float(m.airbox.get("side_um", 0))
-        _warn_structural_zero_coupling(blocks_spec, mesh.conductor_bbox_um,
-                                       side_um)
+        _warn_overlapping_blocks(blocks_spec)
+        if mesh is not None:            # 邻近告警要整片的导体 bbox; blocks= 时没有
+            _warn_structural_zero_coupling(blocks_spec, mesh.conductor_bbox_um,
+                                           float(m.airbox.get("side_um", 0)))
         result["blocks"] = []
         for blk in blocks_spec:
             name, comps = blk.get("name"), list(blk.get("components") or ())
@@ -221,9 +294,10 @@ def build(meta, out_dir, solve: bool = False) -> dict:
                     f"the derived geometry has metal nets "
                     f"{list(bmesh.labels)} — typo in components?")
             bcfg = out / f"block_{name}.json"
-            palace_config(bmesh, m, bcfg)
+            palace_config(bmesh, m, bcfg, output=f"postpro_block_{name}")
             result["blocks"].append(
-                {"name": name, "geo": bgeo, "mesh": bmesh.path, "config": bcfg})
+                {"name": name, "geo": bgeo, "mesh": bmesh.path, "config": bcfg,
+                 "labels": bmesh.labels})
             outputs += ([bgeo] if bgeo else []) + [bmesh.path, bcfg]
 
     manifest_path = out / "manifest.yaml"
@@ -239,26 +313,26 @@ def build(meta, out_dir, solve: bool = False) -> dict:
     result["manifest"] = manifest_path
 
     if solve:
-        _run_palace(cfg_path)
-        cap = parse_capacitance(out / "postpro", labels=mesh.labels)
-        result["capacitance"] = cap
-        doc: dict = {"capacitance": {"labels": list(cap.labels),
-                                     "maxwell_fF": cap.maxwell_fF,
-                                     "mutual_fF": cap.mutual_fF}}
-        if subsystems:
-            doc["subsystems"] = subsystems
-        if circuit_model.get("qubits"):
-            model = solve_circuit_model(
-                cap.labels, cap.maxwell_fF,
-                _junctions_from_meta(circuit_model))
-            doc["hamiltonian"] = {
-                "method": model.method,
-                "qubits": [{**asdict(q), "islands": list(q.islands)}
-                           for q in model.qubits],
-                "couplings": [asdict(c) for c in model.couplings],
-            }
-        results_path = out / "results.yaml"
-        results_path.write_text(yaml.safe_dump(doc, sort_keys=False),
-                                encoding="utf-8")
-        result["results"] = results_path
+        all_qubits = list(circuit_model.get("qubits") or [])
+        if cfg_path is not None:                       # 整片
+            _run_palace(cfg_path)
+            cap = parse_capacitance(out / "postpro", labels=mesh.labels)
+            result["capacitance"] = cap
+            results_path = out / "results.yaml"
+            results_path.write_text(
+                yaml.safe_dump(_results_doc(cap, subsystems, all_qubits),
+                               sort_keys=False), encoding="utf-8")
+            result["results"] = results_path
+        for entry in result.get("blocks", []) if blocks is not None else []:
+            _run_palace(entry["config"])
+            bcap = parse_capacitance(out / f"postpro_block_{entry['name']}",
+                                     labels=entry["labels"])
+            entry["capacitance"] = bcap
+            bres = out / f"block_{entry['name']}.results.yaml"
+            bres.write_text(
+                yaml.safe_dump(_results_doc(
+                    bcap, _in_scope(subsystems, bcap.labels, "name"),
+                    _in_scope(all_qubits, bcap.labels, "island")), sort_keys=False),
+                encoding="utf-8")
+            entry["results"] = bres
     return result

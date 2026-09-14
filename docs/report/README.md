@@ -19,7 +19,7 @@ cd /home/administrator/quantum_dsl          # 或任何 checkout 了 main 的目
 source ~/miniconda3/etc/profile.d/conda.sh && conda activate qdsl313
 export PYTHONPATH=src
 
-python -m pytest tests/ -q                  # 33 passed, 2 skipped, ~23 s (2026-09-13; v4.0 时 28 条)
+python -m pytest tests/ -q                  # 37 passed, 2 skipped, ~30 s (2026-09-13; v4.0 时 28 条)
 python -c "from quantum_dsl import build; print(build('examples/two_pads.meta.yaml', 'build/report/two_pads'))"
                                             # GDS + 网格 + Palace config + manifest, ~4 s
 QDSL_RUN_PALACE=1 python -m pytest tests/test_live.py -k two_pads -q    # 真实求解回归 (~2 min, 开场前先跑)

@@ -15,7 +15,7 @@
 pip install -e '.[gmsh,gds,test]'          # 或用本机 conda env qdsl313
 export PYTHONPATH=src                       # 未 pip install 时
 
-python -m pytest tests/ -q                  # 33 passed, 2 skipped (~23 s)
+python -m pytest tests/ -q                  # 37 passed, 2 skipped (~30 s)
 python -c "from quantum_dsl import build; print(build('examples/two_pads.meta.yaml', 'build/two_pads'))"
                                             # GDS + GDS 预览 PNG + 网格 + Palace config + manifest (~4 s, 不需要 Palace)
 

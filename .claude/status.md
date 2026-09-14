@@ -18,19 +18,25 @@
    从 ×1.1–1.45 落到 ×0.9–1.2；互容始终只有 SI 的一半（×0.4–0.5）⇒ 缺口在缝 / 间隙几何或 SI 模型口径，**不在 d**。派生 E_C(q) 220→259 MHz、
    g_qc 66→85 MHz，夹住 SI 自身闭合值（209 / 71）与设计值（185 / 90）——量级检验，不是命中。账 `.claude/session/2609131337.md`，
    产物 `.claude/chen-evidence/`，物理口径 `docs/physics.md` §13。
-4. **怎么跑**：`~/miniconda3/envs/qdsl313/bin/python -m pytest tests/ -q` → **35 passed / 2 skipped**（~25 s；live 两条要 Palace）。
-   Chen 例子：`compile_layout` 0.7 s、`build_gds` 1 s、单块网格 22 s；整片 `build(solve=False)` 会按 100/4 给全片出网格（~9M tets），
-   看图请直接 `build_gds` + `render_gds_png`（`build/chen_2025_3x3/*.png` 是本次渲染）。
+4. **怎么跑**：`~/miniconda3/envs/qdsl313/bin/python -m pytest tests/ -q` → **37 passed / 2 skipped**（~30 s；live 两条要 Palace）。
+   Chen 例子：`compile_layout` 0.7 s、`build_gds` 1 s、单块网格 22 s。只要块就 `build(m, out, blocks=["H01"])`
+   （2026-09-13 加：跳过整片网格，`solve=True` 时逐块跑 Palace 并写 `block_<name>.results.yaml`）；不带 `blocks=` 的
+   `build(solve=False)` 会按 100/4 给全片出网格（~9M tets）。看图直接 `build_gds` + `render_gds_png`
+   （PNG 落在 gitignore 的 `build/` 下，本地跑一次即有，仓库里没有）。
 5. **下一步**（`plan.md`「Chen 2025 phase 2」）：缝宽 / 盘–爪 / 条–板间隙灵敏度 → 再谈 d 单量拟合；整片 42 导体上云一次解
    （QCQ 块两两共享比特几何，**不能** `assemble()` 叠加）；读出爪 / 45° 焊盘 / λ/4 蛇形；网格两档收敛。
 6. **开放决策**：等效长度 / 爪电容来源（依赖工艺栈）；读出焊盘进不进版图（浮岛无结，静电前须 Schur 消掉或标 `ground::`）。
+7. **代码审查已修**（2026-09-13 晚，`.claude/session/2609132030.md`）：`layout.py` 9 处静默路径全部改成 raise（net 遮蔽、`port(i)` 逃过 NaN 置毒、
+   连接型 `mirror: y` / `at:` / `rot:`、外挂端口背后无面、`if:` 指未声明参数、子字典键与 `kind` 不校验、`body:` 伪造岛键、`Include` 不进 manifest）；
+   `examples/lib` 的宏名与入参加 `LIB_`/`_lib_` 前缀（与 `qlib.geo` 的 `Macro CPW` 撞名会炸掉整个 session，裸名入参会漏给后续手写步骤）；
+   `bar_coupler.geo` 加前置守卫。**⚠ §13 的 QCQ 块数字有已知系统偏差**：块会把块内比特伸向块外耦合器的爪一起删掉（H01 少 5 只），对地项偏低。
 
 ## At a glance
 
 | | |
 |---|---|
 | 版本 | **v4.0 已发布**(tag `v4.0`, 2026-08-26) + N16(2026-09-12) + N17(2026-09-13)。`main` = 产品;`v3` = 旧实现(只读参考);`v4-dev` = 开发痕迹与原始调研存档(session logs / codex 取证 / N15 原始 CSV / 原型脚本) |
-| 契约 | [`SPEC.md`](../SPEC.md)(N0–N17 需求索引)↔ `tests/`(35 passed / 2 skipped;live 两条各自实测通过一次) |
+| 契约 | [`SPEC.md`](../SPEC.md)(N0–N17 需求索引)↔ `tests/`(37 passed / 2 skipped;live 两条各自实测通过一次) |
 | 文档 | [`docs/README.md`](../docs/README.md) 是入口;物理口径与数值决策在 `docs/physics.md`(§13 = flip-chip 与 Chen 首解),汇报材料在 `docs/report/`(04 = sung 论文验证闭环账) |
 | 测试跑法 | `~/miniconda3/envs/qdsl313/bin/python -m pytest tests/ -q`;live 加 `QDSL_RUN_PALACE=1`(~4 min);sung 加 `QDSL_RUN_PALACE_SUNG=1 PALACE_BIN=tools/palace_remote.sh QDSL_REMOTE_HOST=<64C+/384G 机> QDSL_PALACE_NP=32`(峰值内存 154 G, 128G 机必 OOM) |
 | 实测锚 | two_pads C 对 `[[24.5324,-1.9472],[-1.9472,24.5353]]` fF <2%;sung 对 PRX 11.021058: C_Σ ×0.940–0.969(±8% 内), β_qc +8%(±20% 内);Chen QCQ 对 SI §D: 见上 3 |

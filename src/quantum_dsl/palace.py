@@ -40,8 +40,11 @@ class Cap:
     mutual_fF: list[list[float]]
 
 
-def palace_config(mesh, meta, out) -> dict:
-    """Mesh + Meta → Palace 静电 config (dict, 同时写 JSON 到 ``out``)。"""
+def palace_config(mesh, meta, out, output: str = "postpro") -> dict:
+    """Mesh + Meta → Palace 静电 config (dict, 同时写 JSON 到 ``out``)。
+
+    ``output`` = Palace 的 ``Problem.Output`` (相对 config 所在目录)。分块时每块用
+    自己的目录, 否则同一 ``out`` 下的多个 config 会互相覆盖 postpro。"""
     solver = meta.solver or {}
     stype = solver.get("type", "electrostatic")
     if stype != "electrostatic":
@@ -72,7 +75,7 @@ def palace_config(mesh, meta, out) -> dict:
 
     out = Path(out)
     cfg = {
-        "Problem": {"Type": "Electrostatic", "Verbose": 2, "Output": "postpro"},
+        "Problem": {"Type": "Electrostatic", "Verbose": 2, "Output": output},
         "Model": {"L0": 1e-6, "Mesh": mesh.path.name},
         "Domains": {"Materials": [
             {"Attributes": [mesh.domain_groups["substrate"]],

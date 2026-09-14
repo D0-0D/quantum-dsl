@@ -3,9 +3,10 @@
 // 输出: cpw_centre() 中心导体面表, cpw_etch() 缝工具面表 (宽 w + 2 gap, 同一路径), cpw_length 记账长度 (== L)。
 SetFactory("OpenCASCADE");
 Include "cpw_macros.geo";
-x1 = 0; y1 = 0; x2 = D; y2 = 0; width = w; cpw_L = L;
-Call CPW_MEANDER;
-cpw_centre() = cpw_faces();  cpw_length = cpw_len;
-width = w + 2*gap;
-Call CPW_MEANDER;
-cpw_etch() = cpw_faces();
+_lib_x1 = 0; _lib_y1 = 0; _lib_x2 = D; _lib_y2 = 0; _lib_w = w;
+_lib_R = R; _lib_n = n_legs; _lib_L = L;
+Call LIB_CPW_MEANDER;
+cpw_centre() = _lib_faces();  cpw_length = _lib_mlen;
+_lib_w = w + 2*gap;
+Call LIB_CPW_MEANDER;
+cpw_etch() = _lib_faces();
