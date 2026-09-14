@@ -297,5 +297,5 @@ Elmer 作第二后端（#25，路径已验证）；描摹器亚像素边缘拟�
 | 真版图例子的会话记录（测量、Elmer 交叉、参数化、产品路径 build） | `.claude/session/2608261955.md` |
 | 替代几何：论文报告值、可断言 / 排除项、v3 调参实录、契约断言 | `examples/sung_2021_device.{geo,meta.yaml}` 头注、`tests/test_live.py::test_sung_2021_against_paper`、`docs/physics.md` §12、`v4-dev:.claude/n15-evidence/` |
 | v3 Elmer 旁路全过程 | `v3` 分支 `.claude/session/2607280204.md` §3、§5b、§7 |
-| 物理口径：网格与阶、逆电容 LOM、Palace 运行面、精度参照系 | `docs/physics.md` §6、§8、§13 |
+| 物理口径：网格与阶、逆电容 LOM、Palace 运行面、精度参照系 | `docs/physics.md` §6、§8、§14 |
 | 论文 | PRX 11, 021058：Table I（p.9）、Fig. 7 图注（p.9）、Table VI（p.27）、Fig. 1(c) 照片（p.2）；照片原图取自 arXiv e-print `fig1_device_layout.pdf` |

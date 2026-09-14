@@ -1,6 +1,6 @@
 # quantum_dsl v4 — 契约
 
-本文是 v4 的需求契约；`tests/` 是它的**可执行形式**——每条契约（N0–N16）对应一到数条测试，
+本文是 v4 的需求契约；`tests/` 是它的**可执行形式**——每条契约（N0–N17）对应一到数条测试，
 测试 docstring 首行回指编号。加需求 = 先在这里加一行、再加测试。物理依据在
 [`docs/physics.md`](docs/physics.md)，语法在 [`docs/grammar.md`](docs/grammar.md)。
 
@@ -87,6 +87,7 @@ Maxwell 互容, 必须**在至少一次求解中共现**; 共享节点只提供�
 | N14 分块 | `extract.blocks` → 落盘 `block_<name>.geo`（只含该块 component）+ 各块 config; 跨块邻近告警 | `test_pipeline.py::test_extract_blocks_derived_and_scoped` |
 | N15 外部物理验证 | sung 例子（PRX 11.021058）live 解: C_Σ ×3 对论文 ±8%（2026-08-25 翻案: 原 ±5% 锚的 Elmer P1 档系偏置抵消产物, 账见例子 meta 头注与 `docs/physics.md` §12）, β_qc ±20%（gate `QDSL_RUN_PALACE_SUNG=1`; 排除项见例子 meta） | `test_live.py::test_sung_2021_against_paper` |
 | N16 版图编排 | `compile_layout(meta) → Layout`（可调用几何源, `.qubits/.subsystems/.ports/.inputs`）; meta `layout:`+`layers:`; 模板 `.geo`+yaml; 手写 `.geo` 步骤只增不改; 路由只接正对端口、宽度继承、定长闭合 `guided_wavelength`; 编排器纪律全部 raise（NaN 置毒 / 短路 / 未认领面 / 未连接外挂面 / 全名唯一 / 层 kind） | `test_layout.py` 全部 6 条（等价性、混用 + 路由 + 地、嵌套再导出、纪律、词汇） |
+| N17 Chen 2025 圆盘比特 → 3×3 | 模板 `disc_transmon`（两半盘 + 跨缝结 + 可选爪外挂面 E/N/W/S）与 `bar_coupler`（连接型: 条 + 五边形 + 结, 两端爪并入条的 net; 连接型步骤吃 `mirror:`）; 例子 `chen_2025_3x3.layout.yaml`（9 + 12 步, 21 个结条目自动生成, 载片地 = `airbox.top_um`, `extract.blocks` = 12 个 SI 口径 QCQ 块）; 几何 = `docs/design/paper-chen2025-geometry.md` 照片量出值 | `test_chen_2025.py` 2 条（几何 / 手性 / 记账一致; QCQ 块 = 6 terminal + 盒顶地） |
 
 ## 验收
 

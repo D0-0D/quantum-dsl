@@ -1,0 +1,33 @@
+# chen_2025_3x3.layout.yaml — Chen et al. 2025 (Nat. Phys. 21, 1489) 圆盘比特方格阵列的 3×3 切片: 9 个 disc_transmon + 12 个 bar_coupler,
+# 只有比特与耦合器 (读出爪 / 焊盘 / 载片走线不在 phase 1)。晶格常数 1383 µm (照片 E–W 量出, N–S 同值为推断), Q<i><j> 在 (i·1383, j·1383)。
+# 爪由比特画: 外圈比特没邻居的方向 claw_*: 0 (画了没人连编排器会 raise)。横向 H<i><j>: Q<i><j>.E → Q<i+1><j>.W, 五边形在 +y 侧、距东侧比特 540;
+# 纵向 V<i><j>: Q<i><j>.N → Q<i><j+1>.S, mirror: x → 五边形在 +x 侧、距上方比特 540 (照片手性, docs/design/paper-chen2025-geometry.md §4)。
+# 结: E_J 由 SI §D 设计值反推 (ω_q 4.1 GHz, α −185 MHz → E_J 12.4 GHz; ω_c 5.2 GHz, E_C(c) 171 MHz → 21.1 GHz); 器件是 SQUID, 静电不看磁通轴。
+# 顶片无地 (flip-chip): ground: none, 载片地 = meta airbox.top_um = 5。
+# 模板本身就是 .geo (lib/disc_transmon.geo, lib/bar_coupler.geo, 局部坐标); 要混入手写几何就加一步, 例如 Q00 的 45° 读出焊盘:
+#   - {geo: readout_pad.geo, frame: Q00}     # 在 Q00 局部坐标下 merge; 文件里自己打 Physical Surface("metal::ta::RP00::pad"), 只增不改
+schema: quantum-dsl/layout/1
+templates: [lib]
+steps:
+  - {template: disc_transmon, name: Q00, at: [0, 0], layers: {metal: ta, jj: jj}, E_J: 12.4GHz, params: {claw_W: 0, claw_S: 0}}
+  - {template: disc_transmon, name: Q10, at: [1383, 0], layers: {metal: ta, jj: jj}, E_J: 12.4GHz, params: {claw_S: 0}}
+  - {template: disc_transmon, name: Q20, at: [2766, 0], layers: {metal: ta, jj: jj}, E_J: 12.4GHz, params: {claw_E: 0, claw_S: 0}}
+  - {template: disc_transmon, name: Q01, at: [0, 1383], layers: {metal: ta, jj: jj}, E_J: 12.4GHz, params: {claw_W: 0}}
+  - {template: disc_transmon, name: Q11, at: [1383, 1383], layers: {metal: ta, jj: jj}, E_J: 12.4GHz}
+  - {template: disc_transmon, name: Q21, at: [2766, 1383], layers: {metal: ta, jj: jj}, E_J: 12.4GHz, params: {claw_E: 0}}
+  - {template: disc_transmon, name: Q02, at: [0, 2766], layers: {metal: ta, jj: jj}, E_J: 12.4GHz, params: {claw_W: 0, claw_N: 0}}
+  - {template: disc_transmon, name: Q12, at: [1383, 2766], layers: {metal: ta, jj: jj}, E_J: 12.4GHz, params: {claw_N: 0}}
+  - {template: disc_transmon, name: Q22, at: [2766, 2766], layers: {metal: ta, jj: jj}, E_J: 12.4GHz, params: {claw_E: 0, claw_N: 0}}
+  - {template: bar_coupler, name: H00, from: Q00.E, to: Q10.W, layers: {metal: ta, jj: jj}, E_J: 21.1GHz}
+  - {template: bar_coupler, name: H10, from: Q10.E, to: Q20.W, layers: {metal: ta, jj: jj}, E_J: 21.1GHz}
+  - {template: bar_coupler, name: H01, from: Q01.E, to: Q11.W, layers: {metal: ta, jj: jj}, E_J: 21.1GHz}
+  - {template: bar_coupler, name: H11, from: Q11.E, to: Q21.W, layers: {metal: ta, jj: jj}, E_J: 21.1GHz}
+  - {template: bar_coupler, name: H02, from: Q02.E, to: Q12.W, layers: {metal: ta, jj: jj}, E_J: 21.1GHz}
+  - {template: bar_coupler, name: H12, from: Q12.E, to: Q22.W, layers: {metal: ta, jj: jj}, E_J: 21.1GHz}
+  - {template: bar_coupler, name: V00, from: Q00.N, to: Q01.S, mirror: x, layers: {metal: ta, jj: jj}, E_J: 21.1GHz}
+  - {template: bar_coupler, name: V10, from: Q10.N, to: Q11.S, mirror: x, layers: {metal: ta, jj: jj}, E_J: 21.1GHz}
+  - {template: bar_coupler, name: V20, from: Q20.N, to: Q21.S, mirror: x, layers: {metal: ta, jj: jj}, E_J: 21.1GHz}
+  - {template: bar_coupler, name: V01, from: Q01.N, to: Q02.S, mirror: x, layers: {metal: ta, jj: jj}, E_J: 21.1GHz}
+  - {template: bar_coupler, name: V11, from: Q11.N, to: Q12.S, mirror: x, layers: {metal: ta, jj: jj}, E_J: 21.1GHz}
+  - {template: bar_coupler, name: V21, from: Q21.N, to: Q22.S, mirror: x, layers: {metal: ta, jj: jj}, E_J: 21.1GHz}
+ground: none

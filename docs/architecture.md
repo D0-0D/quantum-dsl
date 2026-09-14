@@ -73,7 +73,7 @@ C 矩阵行序 = `Mesh.labels` = `sorted(metal component)`，是全链唯一真�
 | `units.py` | 70 | `parse_length` → µm（裸数 = µm）；`parse_quantity` → SI（**必须带单位**） | N1 |
 | `geo.py` | 84 | `parse_physical_name` 四段名校验（层段整数或标识符）；`load_geo(source)` → `Geo(physicals, bbox_um)` | N2 |
 | `_gmsh.py` | 70 | 进程级共享 gmsh session 的 `geo_model(source)` 上下文管理器（source = `.geo` 路径或可调用 `Layout`，见 §7） | — |
-| `layout.py` | 869 | **N16 版图编排器**：`compile_layout(meta) → Layout`；模板加载（`.geo` + yaml）、有序步骤（放置 / 连接 / 手写）、层槽位映射、端口与 net 认领、定长路由、`ground: sheet`、纪律校验（NaN 置毒、增量原则、短路、归属、全名唯一） | N16 |
+| `layout.py` | 868 | **N16 版图编排器**：`compile_layout(meta) → Layout`；模板加载（`.geo` + yaml）、有序步骤（放置 / 连接 / 手写）、层槽位映射、端口与 net 认领、定长路由、`ground: sheet`、纪律校验（NaN 置毒、增量原则、短路、归属、全名唯一） | N16 |
 | `meta.py` | 132 | `load_meta` → `Meta`；`geo`/`layout` 二选一；`layers` 层表校验；未知顶层键 raise；结参数加载时解析成数（`L_J` → H，`E_J` → Hz） | N3 N16 |
 | `gds.py` | 143 | `build_gds`：面 → gmsh 粗三角化（圆弧 180 段/2π）→ gdstk 布尔并 → GDS（`unit=1e-6`，µm 逐字；映射按 `layers` 表或 `gds.by_role`）；`render_gds_png`：GDS → PNG 预览（PIL 惰性 import） | N4 N13 |
 | `mesh.py` | 301 | `build_mesh`：合成计算域、一次 `fragment` 把导体面 imprint 进 z=0 界面、边缘尺寸场、失效防线、写 msh 2.2；有层表时 drawing 层不进网格、role 须与层 kind 一致 | N5 |

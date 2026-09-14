@@ -9,10 +9,12 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done。
 - [x] **N16 版图编排 (元件库框架 v3.1 落地)**(2026-09-12, 提交于 2026-09-13): `layout.py` 编排器 + 词汇(`layout:`/`layers:`) + 模板库 `examples/lib/`
       + 两个例子 + 6 条测试; 文档 grammar §4 / architecture / SPEC / examples README 同步。设计稿 `docs/design/component-library.md` 头部记落地偏差。
       未做(按需): `py:` 逃生口、`nets:` 覆盖、taper、多层 ground 角色输出。
-- [ ] **Chen 2025 (Nat. Phys. 21, 1489) 圆盘比特模板 → 3×3 grid**: 在 N16 框架上写 `disc_transmon`(圆盘切缝双岛 + 五个爪子模板嵌套 + 结)、
-      `bar_coupler`(连接型: 条 + 五边形 + 结, `body: bar`), 几何核实 `docs/design/paper-chen2025-geometry.md`(2.50 µm/px, pitch 1383,
-      SI §D 11 个电容为锚, flip-chip d≈5 µm 经 `airbox.top_um`, `ground: none`)。**待拍板**: 直接 Q–Q 耦合保不保(整片 vs 分块 + 对称性 5 解)、
-      读出结构进不进 phase 1、等效长度/爪电容来源(依赖工艺栈)。session `2609121024`、`2609121155`。
+- [x] **Chen 2025 (Nat. Phys. 21, 1489) 圆盘比特模板 → 3×3 grid**(2026-09-13, N17): `examples/lib/disc_transmon` / `bar_coupler` +
+      `examples/chen_2025_3x3.{layout,meta}.yaml` + `tests/test_chen_2025.py` 2 条; 顺手修了连接型路由体 net 命名时序与连接型 `mirror:`。
+      phase 1 只有比特 + 耦合器 (读出不进); 分块 = 12 个 SI 口径 QCQ (6 terminal), 本机 8 rank 可解一块 (75 万 tets)。session `2609131337`。
+- [ ] **Chen 2025 phase 2**: ① 整片 42 导体一次解 (上云; 块共享比特几何, 不能 assemble 叠加); ② d 单量拟合 (用 C04 五边形) + 其余 10 个 SI 电容作预测;
+      ③ 网格两档 + gap ±3 µm + 蓝宝石 ε 9.4/11.5 灵敏度; ④ 读出爪 (225°) / 45° 方焊盘 / λ/4 蛇形 (`cpw_meander` 现成) — 等效长度来源仍开放;
+      ⑤ 5 µm 薄板厚度方向的 Box 尺寸场 (session 2609121024 的 G7, 粗网格实测能跑, 报数前再评估)。
 - [ ] **`targets:` 块**(issue #23): meta 里声明期望的 C / E_C / g, `build(solve=True)`
       在 results.yaml 里报偏差。N15 的「对论文 ±8%」现在写死在测试里, 应该是用户
       可声明的数据。
@@ -29,7 +31,7 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done。
       组合(0.16.1 覆盖 bug)。
 - [ ] **域尺寸扫**: sung 例子 airbox 取自 v3 实测档, two_pads 的 side=80 是刻意
       小型化;给真实器件报数前应做 1×/1.5×/2× 扫(C 变化 <0.2–0.5% 验收)。
-- [ ] **CI**: 默认 `pytest -q` 在 CI 上就是 33 passed / 2 skipped, 只需 Python 3.13 +
+- [ ] **CI**: 默认 `pytest -q` 在 CI 上就是 35 passed / 2 skipped, 只需 Python 3.13 +
       `pip install -e '.[gmsh,gds,test]'`(gmsh 装得起, Palace 装不起——live 正好 skip)。
 - [ ] **N15 求解产物缓存**: 一次 build 现已同时断言 C_Σ 与 β(不再重复求解);
       若要在同一 results.yaml 上加更多断言, 直接读 `v4-dev` 分支

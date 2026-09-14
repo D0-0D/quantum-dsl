@@ -1,0 +1,12 @@
+# bar_coupler — Chen 2025 条形浮动耦合器 (连接型: 两端接 disc_transmon 的爪端口 E→W 或 N→S): 条 + 五边形板 + 条–板间的结。
+# 两端爪 (比特画的外挂面) + 条并成一个 net (= 步骤名), 五边形 = <步骤名>_pent; 结 → circuit_model 浮动条目 islands: [<步骤名>, <步骤名>_pent]。
+# 纵向耦合器写 from: <下方>.N, to: <上方>.S, mirror: x (五边形翻到条的 +x 侧, 距上方比特 540 —— 照片 Fig. 1a 的手性)。
+# 数字出处 docs/design/paper-chen2025-geometry.md §3.2 #8–#12: 五边形 378 底 × 300 总高、直壁 125 (屋顶 175, ≈43°; 照片 45° 与三个量不能同时成立),
+# 条–板缝 75 (量出 65–85), 中心距 to 端盘心 540 → 距 to 口 540 − (195 + 12 + 40 + 20) = 273。
+schema: quantum-dsl/template/1
+kind: connect
+params: {pent_w: 378, pent_wall: 125, pent_h: 300, pent_gap: 75, pent_off: 273, jj_w: 5}
+layers: {metal: conductor, jj: junction}
+body: bar
+islands: {bar: {faces: bar(), layer: metal}, pent: {faces: pent(), layer: metal}}
+junction: {a: bar, b: pent, x1: jj_x1, y1: jj_y1, x2: jj_x2, y2: jj_y2, width: jj_w, layer: jj}

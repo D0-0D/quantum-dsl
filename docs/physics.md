@@ -4,7 +4,7 @@
 > 网格收敛实测、每条公式的文献出处、失效防线、分块拼装的适用边界、对论文的外部验证与容差账、Palace 运行面。
 > 读者：碰 `mesh.py` / `palace.py` / `circuit_model.py` / `cpw.py`、改容差、或要给真实器件报数的人。
 > 所有"实测"均为 2026-08-24/25 在 WSL2 + gmsh 4.15.2 + Palace 0.16.0（two_pads）与 96 核 / 384 G 远端机（sung）完成，
-> 原始 CSV 归档在 `v4-dev` 分支 `.claude/n15-evidence/`。文献列表在文末 §14。
+> 原始 CSV 归档在 `v4-dev` 分支 `.claude/n15-evidence/`。文献列表在文末 §15。
 
 ---
 
@@ -92,7 +92,7 @@ KQCircuits（IQM）默认 `metal_height = 0`；SQDMetal 2026 基准用 zero-thic
 且 ε 不单调（0.5 µm 反而产损坏拓扑），v3 最终缓解到 ε = 0.01 µm。方案 (a) **根本没有布尔减**——金属片印在界面上，
 共面是构造性精确，整个 ε-nudge 问题类连同 fragment scale ladder 一起消失。
 
-**内部边界在 Palace 里的机制**（源码取证，出处 §14 [P1]–[P3]）：Palace 有 `CrackInternalBoundaryElements`
+**内部边界在 Palace 里的机制**（源码取证，出处 §15 [P1]–[P3]）：Palace 有 `CrackInternalBoundaryElements`
 （默认开）——对内部 **PEC / Ground** 面复制节点、解耦两侧，所以带 ground plane 的设计走的是官方支持路径；
 **Terminal** 不在 crack 属性集合里，作为 essential Dirichlet 直接生效（静电里等势面两侧共节点无影响——本机实测可解
 且与挖空细网格一致 ~0.1%）。文档只明确禁止 wave port 在内部面，未禁 Terminal / Ground。
@@ -277,7 +277,29 @@ g 系统性偏高 ~1.4×。
 **精度参照系**（业界）：Palace spheres 例对解析解 0.57–3.5%；SQDMetal 三求解器互差 <0.3%，但对**实验**频率 RMSE
 ~6% / 3.5%、g RMSE ~24.5%（材料 / 制程 / 省略物理）——仿真间一致性 ≠ 对器件预测精度。
 
-## 13. Palace 运行面
+## 13. flip-chip 口径与 Chen 2025 QCQ 首解（N17）
+
+Chen et al. 2025（Nat. Phys. 21, 1489）的器件是 flip-chip：比特与耦合器在顶片，**顶片无地平面**，地是隔真空间隙 d 的载片。
+管线里不需要新词汇：`ground: none` + `airbox.top_um = d` + `solver.outer_boundary: ground`（默认）就是载片地——盒顶 z = +d 接地。
+注意 `outer` 组是**整个**外表面：侧壁（导体 bbox ± `side_um`）与底面（z = −`bottom_um`）也接地；side / bottom 取几百 µm 以上时它们是次级项。
+d 是这套几何唯一的物理旋钮（BAQIS 同工艺实测 5 ± 0.4 µm；SI 只说 bump ~10 µm 未压合）。
+
+首解（2026-09-13，`examples/chen_2025_3x3` 的 QCQ 块 H01，6 terminal，100/4 order 2，105 万未知量，本机 8 rank 570 s，**单网格未收敛**）对 SI §D 的 11 个电容：
+
+| | 半盘对地 C01/C02 | 条 C03 / 板 C04 | 互容 C12 / C34 / C23 |
+|---|---|---|---|
+| SI（fF） | 137 / 119 | 133 / 165 | 23 / 28 / 26 |
+| d = 5 µm | 153 / 145（×1.12–1.22） | 195 / 238（×1.45） | 10.2 / 10.6 / 12.7（×0.4–0.5） |
+| d = 7 µm | 124 / 116（×0.90–0.98） | 162 / 190（×1.15–1.22） | 11.2 / 12.1 / 13.4（×0.4–0.5） |
+
+读法：① d 只动对地项（近似 ∝ 1/d），**几乎不动互容**——互容的一半缺口是几何（缝 70 / 盘–爪 12 / 条–板 75 都是照片 B/C 级量）或 SI 电磁模型口径，
+不能靠拟合 d 吸收；② 派生量 E_C(q) 220 → 259 MHz、g_qc 66 → 85 MHz（d 5 → 7）夹住了 SI 自身闭合值（209 / 71）与设计值（185 / 90），
+是量级检验不是命中，实测 α −179～−200 MHz 反而更贴 d = 5；③ 网格：5 µm 薄板内只靠 `mesh.min_size_um` 控层数（细化场 DistMin 10 µm 常数），
+盘内部是 100 µm 宽 × 5 µm 高的扁单元——均匀场区 P2 精确，边缘区才是收敛的主战场，报数前做两档。
+④ `extract.blocks` 的 12 个 QCQ 块两两共享比特几何，**不能** `assemble()` 叠加（会重复计入比特对地电容，§11 的前提是块划分几何）；要整片就整片解（42 导体，上云）。
+账与产物：`.claude/session/2609131337.md`、`.claude/chen-evidence/`；几何出处 `design/paper-chen2025-geometry.md`。
+
+## 14. Palace 运行面
 
 - **内存**：每个 terminal 解完都跑误差估计器（RT 通量恢复），即使 `Refinement.MaxIts = 0` 也不跳过——大网格内存预算
   要把 estimator 阶段算进去。sung 规模实测：np = 32 峰值 **154 G**（64 核 / 128 G 机在多重网格层级组装处被 OOM 杀，
@@ -296,7 +318,7 @@ g 系统性偏高 ~1.4×。
 - **对称面减半**：偶对称 ZeroCharge、奇对称 Ground 原理可行，但完整 C 矩阵的逐 terminal 单位激励通常破坏对称性——不做。
 - 官方额外输出 `terminal-Cinv.csv` 可对照自家求逆做零成本交叉校验（v4.0 未接）。
 
-## 14. 参考文献与出处
+## 15. 参考文献与出处
 
 **LOM / 电路量子化**
 - [L1] Minev, Z. K. et al., "Circuit quantum electrodynamics (cQED) with modular quasi-lumped models", arXiv:2103.10344

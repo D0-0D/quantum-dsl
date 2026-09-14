@@ -6,7 +6,7 @@
 
 纯 Python ≥ 3.13，核心依赖只有 `pyyaml` / `shapely`；`gmsh` / `gdstk` 为 optional extra；无 qiskit_metal。
 
-**v4.0**（2026-08-26）+ **N16 版图编排**（2026-09-12）。金属用**零厚度片 imprint** 表示（不是 v3 的挖空），整条链 ≈3 000 行；
+**v4.0**（2026-08-26）+ **N16 版图编排**（2026-09-12）+ **N17 Chen 2025 圆盘比特 3×3**（2026-09-13）。金属用**零厚度片 imprint** 表示（不是 v3 的挖空），整条链 ≈3 000 行；
 35 条测试；two_pads 回归锚实测**逐位复现**，Sung et al. PRX 11, 021058 论文器件 C_Σ 对论文在 ±8% 内。
 
 ## 安装与运行
@@ -35,7 +35,7 @@ QDSL_RUN_PALACE_SUNG=1 PALACE_BIN=tools/palace_remote.sh QDSL_REMOTE_HOST=<主�
 | 为什么这么算、数值可信到哪一位、每条公式的出处 | [`docs/physics.md`](docs/physics.md) |
 | `.geo`、`meta.yaml`、版图 `layout.yaml` 与模板怎么写 | [`docs/grammar.md`](docs/grammar.md) |
 | 例子（two_pads / 分块 / sung 论文器件 / 宏库 / 版图与模板库 `lib/`） | [`examples/README.md`](examples/README.md) |
-| 契约（N0–N16 ↔ 测试） | [`SPEC.md`](SPEC.md) |
+| 契约（N0–N17 ↔ 测试） | [`SPEC.md`](SPEC.md) |
 | 汇报材料（展示 / 备问 / 演示手册） | [`docs/report/`](docs/report/README.md) |
 
 ## 分支

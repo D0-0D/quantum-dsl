@@ -1,0 +1,12 @@
+Estimated current per-rank memory usage is: Min. 68.5M, Max. 511.1M, Avg. 124.3M, Total 994.3M
+Estimated current per-node memory usage is: Min. 994.8M, Max. 994.8M, Avg. 994.8M, Total 994.8M
+Assembling system matrices, number of global unknowns:
+ Level 0 (p = 1): 135503 unknowns
+ Level 1 (p = 2): 1052016 unknowns
+It 1/6: Index = 1 (elapsed time = 1.57e-07 s)
+It 2/6: Index = 2 (elapsed time = 8.30e+01 s)
+It 3/6: Index = 3 (elapsed time = 1.78e+02 s)
+It 4/6: Index = 4 (elapsed time = 2.62e+02 s)
+It 5/6: Index = 5 (elapsed time = 3.56e+02 s)
+It 6/6: Index = 6 (elapsed time = 4.44e+02 s)
+ Indicator norm = 2.862e-01, global unknowns = 1052016

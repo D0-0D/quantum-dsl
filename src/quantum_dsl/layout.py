@@ -404,6 +404,7 @@ class Layout:
         target = None
         if connect:
             ends, pose, D, w = self._connect_pose(step, where)
+            net = self._net(ends, full, where)          # 路由体的 component = net, 结记账前就定
             for k in ("D", "w", "L"):
                 if k in params:
                     raise QuantumDslError(f"{where}: connect templates get {k!r} injected; "
@@ -428,6 +429,8 @@ class Layout:
         if connect and islands and body not in islands:
             raise QuantumDslError(f"{where}: connect template with {len(islands)} islands "
                                   f"needs body: <island key>")
+        if connect and body:
+            comps[body] = net
 
         out: dict[str, float] = {}
         if tpl.geo:
@@ -478,7 +481,7 @@ class Layout:
             self._reexport(tpl, full, comps, where)
 
         if connect:
-            net = self._connect(ends, comps.get(body), full, where)
+            self._connect(ends, net, where)
         if target is not None:
             drawn = out.get("length")
             if drawn is None:
@@ -616,7 +619,8 @@ class Layout:
                                   f"a taper is not implemented — match the widths")
         if p.layer != q.layer:
             raise QuantumDslError(f"{where}: ports on different layers ({p.layer!r} vs {q.layer!r})")
-        pose = _compose((1, 0, 0, 1, p.x, p.y), _pose([0, 0], math.degrees(axis), None))
+        pose = _compose((1, 0, 0, 1, p.x, p.y),
+                        _pose([0, 0], math.degrees(axis), step.get("mirror")))   # mirror: x 翻到轴另一侧
         return ((step["from"], p), (step["to"], q)), pose, D, p.w
 
     def _length(self, spec, w, params, ends, where) -> dict:
@@ -655,7 +659,8 @@ class Layout:
         return {"kind": "cpw_resonator", "width_um": w, **rec,
                 "length_total_um": total, "equiv_length_um": leq, "length_drawn_um": drawn}
 
-    def _connect(self, ends, body_comp, full, where) -> str:
+    def _net(self, ends, full, where) -> str:
+        """连接的 net 名: 恰一个岛端 → 该岛; 零岛端 → 步骤名; 两岛端 → raise。"""
         island_ends = [(ref, p) for ref, p in ends if p.net is not None]
         if len(island_ends) == 2:
             raise QuantumDslError(
@@ -663,15 +668,10 @@ class Layout:
                 f"{island_ends[0][1].net!r}, {island_ends[1][0]} = {island_ends[1][1].net!r}) — "
                 f"a galvanic join of two named islands has no unique net name; make one an "
                 f"external or draw them as one instance")
-        net = island_ends[0][1].net if island_ends else full
-        if body_comp is not None and net != full:
-            # 路由体加入岛端的 net: 体的 component 改成岛端的
-            for t, f in self.faces.items():
-                if f.component == body_comp:
-                    self.faces[t] = _Face(f.role, f.layer, net, f.primitive, named=f.named)
-            for pk, p in list(self.ports.items()):
-                if p.net == body_comp:
-                    self.ports[pk] = Port(p.x, p.y, p.a, p.w, p.layer, p.leq, net, None)
+        return island_ends[0][1].net if island_ends else full
+
+    def _connect(self, ends, net, where) -> None:
+        """两端外挂面 (与其端口) 并入 net; 端口只能连一次。"""
         for ref, p in ends:
             if p.ext is None:
                 continue
@@ -685,7 +685,6 @@ class Layout:
             if ref in self.used:
                 raise QuantumDslError(f"{where}: port {ref!r} already used by another connection")
             self.used.add(ref)
-        return net
 
     # ---- 手写 .geo 步骤 ------------------------------------------------------------
     def _geo_step(self, step, ctx: _Ctx, where: str) -> None:

@@ -185,10 +185,11 @@ extract:
 
 ## 4. 版图与模板（`*.layout.yaml`，schema `quantum-dsl/layout/1`）
 
-**版图 = 一个 gmsh 模型**。手写 `.geo` 与模板在同一模型里混用，靠 gmsh 本来就有的三条通道过界：解析器变量（编排器把参数、
+`*.layout.yaml` 是**几何源**，在 meta 里以 `layout:` 顶替 `geo:`（二选一）；sidecar 其余字段（材料 / airbox / 网格 / 求解器 / 结）照旧，只是 `layers:` 表变成必填。
+两个文件缺一不可：版图管几何与电学归属，meta 管物理与计算域。**版图 = 一个 gmsh 模型**。手写 `.geo` 与模板在同一模型里混用，靠 gmsh 本来就有的三条通道过界：解析器变量（编排器把参数、
 已放置实例的端口 `Q0_RO_x/y/a/w` 放进去，`.geo` 直接当变量用；`.geo` 算出的面表 / 端口 / 长度编排器读回）、OCC tag、Physical 名（两边各挂，累积）。
 设计依据：[`design/component-library.md`](design/component-library.md)。例子：`examples/two_pads.layout.yaml`（与手写 `two_pads.geo` 逐字等价）、
-`examples/xmon_readout.layout.yaml`（模板 + 手写 + 路由 + 地）。
+`examples/xmon_readout.layout.yaml`（模板 + 手写 + 路由 + 地）、`examples/chen_2025_3x3.layout.yaml`（论文几何的 9 比特 + 12 耦合器阵列，flip-chip 无片上地）。
 
 ### 4.1 版图文件
 
@@ -207,7 +208,7 @@ ground: {sheet: {layer: m1, margin_um: 200}}       # 或 none (flip-chip): 建�
 |---|---|
 | `template` / `route` | 模板名；`name` = 实例名（= component 名；多岛模板为 `<name>_<岛键>`；嵌套加父前缀） |
 | `at` `rot` `mirror` | 放置型位姿：µm、**度**、`x`/`y`（沿局部轴镜像后再转） |
-| `from` `to` | 连接型：两个端口 `实例.端口`（或手写步骤声明的端口名）。局部坐标原点 = from 口、x 轴指向 to 口；两口必须正对、同宽、同层 |
+| `from` `to` | 连接型：两个端口 `实例.端口`（或手写步骤声明的端口名）。局部坐标原点 = from 口、x 轴指向 to 口；两口必须正对、同宽、同层。连接型也吃 `mirror: x`（模板翻到轴另一侧，如 `bar_coupler` 的五边形侧） |
 | `params` | 覆盖模板 `params` 默认值；未知参数 raise |
 | `layers` | 槽位 → 芯片层。省略时取同名芯片层；没有同名且该 kind 的芯片层唯一时取它；否则 raise。kind 不兼容 raise |
 | `E_J` / `L_J` / `squid` | 模板有 `junction` 时必给恰一个 → 自动进 `circuit_model.qubits`（与 meta 手写同名条目不一致 raise） |
@@ -242,7 +243,7 @@ steps: [...]                                      # 可选: 嵌套子步骤 (同
 ### 4.3 端口、路由与 net
 
 - 端口 = 端面中点 + 外法向 + 宽 + 层 + 等效长度；谁画了那块面谁给端口。路由只接端口，宽度继承，两端宽不同 raise（taper 未实现）。
-- **路由是电连接**：路由体 + 两端外挂面并成一个 net。net 名：恰一个岛端 → 该岛；零岛端 → 步骤名；两个岛端 → raise。
+- **路由是电连接**：路由体 + 两端外挂面并成一个 net。net 名：恰一个岛端 → 该岛；零岛端 → 步骤名；两个岛端 → raise。路由体（`body:` 岛）的 component **就是** net 名，模板里其它岛仍是 `<步骤名>_<岛键>`（`bar_coupler`：条 + 两爪 = `H00`，五边形 = `H00_pent`，结条目 `islands: [H00, H00_pent]`）。
 - 不同 net 的导体面同层相交 / 相切 = 短路 → raise（缺蚀刻或缝）。同 net 重叠放行。
 - 每块面必须被岛 / 外挂 / 蚀刻 / 结 / 手写 Physical 名之一认领，否则 raise。
 

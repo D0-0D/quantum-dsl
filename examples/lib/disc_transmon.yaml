@@ -1,0 +1,16 @@
+# disc_transmon — Chen 2025 圆盘浮动 transmon: 两半盘 a/b (缝 70 沿 −45°) + 盘心跨缝的结 + 四个可选耦合器爪 (外挂面 E/N/W/S)。
+# 几何在 disc_transmon.geo (局部坐标), 数字出处与置信度见 docs/design/paper-chen2025-geometry.md §3.2 (≤15 µm 的量是照片估计 ±30–50%)。
+# 爪由本模板画 (与盘共形), 电学归连到该口的 bar_coupler; 无邻居的方向 params: {claw_W: 0} 关掉 (画了没人连 → raise)。
+schema: quantum-dsl/template/1
+params: {dia: 390, slot: 70, slot_deg: -45, jj_w: 5,
+         claw_E: 1, claw_N: 1, claw_W: 1, claw_S: 1, gap: 12, claw_t: 40, claw_deg: 20, stub: 20, bar_w: 30}
+layers: {metal: conductor, jj: junction}
+islands: {a: {faces: half_a(), layer: metal}, b: {faces: half_b(), layer: metal}}     # component = <实例>_a / <实例>_b
+external:
+  E: {faces: faces_E(), layer: metal, if: claw_E}
+  N: {faces: faces_N(), layer: metal, if: claw_N}
+  W: {faces: faces_W(), layer: metal, if: claw_W}
+  S: {faces: faces_S(), layer: metal, if: claw_S}
+junction: {a: a, b: b, x1: jj_x1, y1: jj_y1, x2: jj_x2, y2: jj_y2, width: jj_w, layer: jj}   # 浮动: islands: [<实例>_a, <实例>_b]
+ports: {E: {port: port(0), if: claw_E}, N: {port: port(1), if: claw_N},
+        W: {port: port(2), if: claw_W}, S: {port: port(3), if: claw_S}}                   # 颈外端中点, 外法向, 宽 bar_w

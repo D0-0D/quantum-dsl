@@ -14,7 +14,8 @@
 | `qlib.geo` | OCC 宏库:`PAD` / `POLY` / `XMON` / `CPW` / `JUNCTION` / `GROUND_CUTOUT` | 被 sung 例子 `Include`;写自己的版图时可复用(纯几何宏,Physical 名由调用点打;⚠ `Call X;` 独占一行) | — |
 | `two_pads.layout.yaml` + `two_pads_layout.meta.yaml` | 同一 two_pads, 用**版图**写: 两个 `pad` 模板实例 | 版图路线的最小例子: 与手写 `.geo` 逐字等价(GDS / 网格标签相同, 测试断言) | 同 two_pads |
 | `xmon_readout.{layout.yaml,meta.yaml}` + `xmon_readout_launch.geo` | `xmon` 模板(岛 + moat + 结 + 读出桨) → λ/4 定长蛇形 `cpw_meander` → 手写发射焊盘, `ground: sheet` | 框架演示: 模板 / 手写 `.geo` / 路由在同一模型混用; 结自动进 circuit_model; 路由 net 认领; 长度闭环 | 粗网格秒级(演示件) |
-| `lib/` | 模板库: `pad`、`xmon`、`cpw_meander`(各 = `.geo` 局部坐标几何 + `.yaml` 接口)+ `cpw_macros.geo`(include-guard 宏库) | 写自己的模板照抄: `.geo` 不打名、不定义 Macro, 输出变量在 yaml 里指名 | — |
+| `chen_2025_3x3.{layout.yaml,meta.yaml}` | Chen et al. 2025 (Nat. Phys. 21, 1489) 圆盘比特方格阵列的 3×3 切片: 9 个 `disc_transmon` + 12 个 `bar_coupler`, 几何全部是 Fig. 1a 照片量出值(`../docs/design/paper-chen2025-geometry.md`), 无读出结构 | flip-chip 口径: 顶片无地, `ground: none`, 载片地 = `airbox.top_um: 5`(唯一物理旋钮); 21 个浮动结条目自动生成; `extract.blocks` = 12 个 SI §D 口径的孤立 QCQ 块(6 terminal), 可逐项对 SI 的 11 个电容 | 单块 100/4 order-2 ≈75 万 tets, 本机 8 rank 可解; 整片 42 导体上云 |
+| `lib/` | 模板库: `pad`、`xmon`、`cpw_meander`、`disc_transmon`、`bar_coupler`(各 = `.geo` 局部坐标几何 + `.yaml` 接口)+ `cpw_macros.geo`(include-guard 宏库) | 写自己的模板照抄: `.geo` 不打名、不定义 Macro, 输出变量在 yaml 里指名; `disc_transmon` 是可选外挂面(`if:` 开关)+ 多岛 + 浮动结的样板, `bar_coupler` 是连接型多岛(`body:`)+ 结的样板 | — |
 
 ## 跑起来
 
@@ -45,8 +46,8 @@ Demo F;`tools/palace_remote.sh` 是把 Palace 调用透明转到远端的 `PALAC
 
 ## 写自己的例子
 
-版图路线(推荐, 语法 `docs/grammar.md` §4): `lib/` 里挑模板, 写 `<name>.layout.yaml`(steps: 放置 / 连接 / 手写 `.geo`)+ meta(`layout:` + `layers:` 表),
-`build()` 一样跑。缺的形状先手写 `geo:` 步骤(只增不改), 用顺手了再升级成模板(`.geo` + `.yaml`)。
+版图路线(推荐, 语法 `docs/grammar.md` §4): `lib/` 里挑模板, 写 `<name>.layout.yaml`(steps: 放置 / 连接 / 手写 `.geo`)+ meta(`layout:` 顶替 `geo:`, 加 `layers:` 表, 其余字段不变),
+`build()` 一样跑。始终是两个文件: 版图 = 几何源(顶替手写 `.geo`), meta = 物理与计算域 sidecar。模板自己就是 `.geo`(`lib/*.geo` 局部坐标), 顶层再加 `geo:` 步骤是为了画库里没有的形状。缺的形状先手写 `geo:` 步骤(只增不改), 用顺手了再升级成模板(`.geo` + `.yaml`)。
 
 手写路线:
 

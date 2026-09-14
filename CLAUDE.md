@@ -2,7 +2,7 @@
 
 Guidance for AI agents working in this repository.
 
-> **v4.0 已发布（2026-08-26）；N16 版图编排 2026-09-12 落地。** 契约 = [`SPEC.md`](SPEC.md)（N0–N16 ↔ `tests/`）。开工前读
+> **v4.0 已发布（2026-08-26）；N16 版图编排 2026-09-12 落地；N17 Chen 2025 圆盘比特 3×3 2026-09-13 落地。** 契约 = [`SPEC.md`](SPEC.md)（N0–N17 ↔ `tests/`）。开工前读
 > `.claude/status.md` → `.claude/plan.md`（backlog）—— 不要臆测项目状态。碰 mesh / Palace / 物理公式 / 容差
 > 之前**必读** [`docs/physics.md`](docs/physics.md)；改代码前读 [`docs/architecture.md`](docs/architecture.md)。
 

@@ -1,0 +1,33 @@
+# chen_2025_3x3.meta.yaml — chen_2025_3x3.layout.yaml 的 sidecar。物理口径见 docs/design/paper-chen2025-geometry.md §2.1 / §5.2。
+# flip-chip: 比特与耦合器在顶片 (200 nm Ta / 蓝宝石), 顶片**无地平面**; 地 = 载片, 隔真空间隙 d 面对全部金属。
+# 管线里 d 就是 airbox.top_um (接地盒顶 = 载片地), 默认 outer_boundary: ground。d 是这套几何**唯一的物理旋钮**
+# (BAQIS 同工艺实测 5 ± 0.4 µm; SI 电容反推也 ≈5): 验证时用一个 C 定 d, 其余是预测。盒侧壁/底面同样接地, 离结构 ≥300 µm 是次级项。
+schema: quantum-dsl/meta/1
+
+layout: chen_2025_3x3.layout.yaml
+layers:
+  ta: {kind: conductor, gds: [1, 0]}      # 顶片 Ta 金属
+  jj: {kind: junction,  gds: [20, 0]}     # 结 (集总: 进 GDS 不进网格)
+
+materials:
+  substrate: {eps_r: 10.0, thickness_um: 430}   # 蓝宝石标量近似 (⊥9.4 / ∥11.5); 地隔 5 µm 真空在金属另一侧, 衬底是次级项
+airbox: {top_um: 5, bottom_um: 500, side_um: 300}   # top_um = flip-chip 间隙 d
+mesh: {max_size_um: 100, min_size_um: 4}            # 5 µm 缝内至少 1–2 层; 报数前按 grammar 常见坑 #6 做两档
+solver: {type: electrostatic, order: 2, outer_boundary: ground}
+
+# 分块 = SI §D 的「孤立 QCQ」口径: 每块 = 两比特四半盘 + 一条 + 一板 (6 terminal), 可逐项对 SI 的 11 个电容;
+# 整片 42 导体一次求解才是全阵列 (上云); 块两两共享比特几何, **不能**拿去 assemble() 叠加 (会重复计入比特对地电容)。
+extract:
+  blocks:
+    - {name: H00, components: [Q00_a, Q00_b, H00, H00_pent, Q10_a, Q10_b]}
+    - {name: H10, components: [Q10_a, Q10_b, H10, H10_pent, Q20_a, Q20_b]}
+    - {name: H01, components: [Q01_a, Q01_b, H01, H01_pent, Q11_a, Q11_b]}
+    - {name: H11, components: [Q11_a, Q11_b, H11, H11_pent, Q21_a, Q21_b]}
+    - {name: H02, components: [Q02_a, Q02_b, H02, H02_pent, Q12_a, Q12_b]}
+    - {name: H12, components: [Q12_a, Q12_b, H12, H12_pent, Q22_a, Q22_b]}
+    - {name: V00, components: [Q00_a, Q00_b, V00, V00_pent, Q01_a, Q01_b]}
+    - {name: V10, components: [Q10_a, Q10_b, V10, V10_pent, Q11_a, Q11_b]}
+    - {name: V20, components: [Q20_a, Q20_b, V20, V20_pent, Q21_a, Q21_b]}
+    - {name: V01, components: [Q01_a, Q01_b, V01, V01_pent, Q02_a, Q02_b]}
+    - {name: V11, components: [Q11_a, Q11_b, V11, V11_pent, Q12_a, Q12_b]}
+    - {name: V21, components: [Q21_a, Q21_b, V21, V21_pent, Q22_a, Q22_b]}

@@ -11,7 +11,9 @@
 > 端口默认归 `body` 岛（多岛加 `island:`）；③ 省略层映射时先取同名芯片层，再取该 kind 唯一的芯片层，否则 raise；④ 手写步骤的
 > 蚀刻用 `etch: <面表变量>`，端口用 `ports: {名: {port: f(0), net: <component>}}`；⑤ 单岛模板 component = 实例名，多岛 `<实例>_<岛键>`；
 > ⑥ 嵌套再导出：`ports: {E: 子.E}`、`external: {C: {inst: 子}}`（无 `.geo` 的父模板）；⑦ **未做**：`py:` 逃生口、`nets:` 覆盖、taper、
-> 端口面 tag 表注入（增量原则下无用）、多张 ground sheet 之外的 ground 角色输出、Chen 模板（下一步）。开放问题 §2 不变。
+> 端口面 tag 表注入（增量原则下无用）、多张 ground sheet 之外的 ground 角色输出。开放问题 §2 不变。
+> **Chen 模板已落地（2026-09-13, N17）**：`examples/lib/disc_transmon` / `bar_coupler` + `examples/chen_2025_3x3.layout.yaml`，按 §3 的分工（爪由比特画为外挂面，耦合器连接型）；
+> 为此修了两处契约：连接型路由体的 component 在结记账**之前**就定为 net 名（原实现事后改名，多岛 + 双外挂端时体不改名 → 误报短路），连接型步骤吃 `mirror:`。读出结构未进（phase 1 不含）。
 
 ---
 
