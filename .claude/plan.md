@@ -31,7 +31,7 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done。
       组合(0.16.1 覆盖 bug)。
 - [ ] **域尺寸扫**: sung 例子 airbox 取自 v3 实测档, two_pads 的 side=80 是刻意
       小型化;给真实器件报数前应做 1×/1.5×/2× 扫(C 变化 <0.2–0.5% 验收)。
-- [ ] **CI**: 默认 `pytest -q` 在 CI 上就是 37 passed / 2 skipped, 只需 Python 3.13 +
+- [ ] **CI**: 默认 `pytest -q` 在 CI 上就是 39 passed / 2 skipped, 只需 Python 3.13 +
       `pip install -e '.[gmsh,gds,test]'`(gmsh 装得起, Palace 装不起——live 正好 skip)。
 - [ ] **N15 求解产物缓存**: 一次 build 现已同时断言 C_Σ 与 β(不再重复求解);
       若要在同一 results.yaml 上加更多断言, 直接读 `v4-dev` 分支
@@ -47,6 +47,8 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done。
       THR 143.5→120 ⇒ C_Σ +2.5/+4.0/+6.1%); ② 参数化版若要再逼近描摹版, 补 Xmon 上臂旁的 L 形读出槽与 5 条走线(值 1–4% C_Σ, β 无关);
       ③ 5 µm 地条(qubit moat 与 coupler moat 之间)的 FEM 敏感性——β 的 ±5–10% 估计未实测; ④ 合并时把 `.claude/xmon-evidence/` 按 N15 惯例迁到 v4-dev;
       ⑤ 要不要给 xmon 加一条只记录不断言的 live 测试(它是预测不是判据)。
+
+- [ ] **`readout_pad.geo` demo 落仓**(2026-09-16 `.claude/session/2609161007.md` 追问): 9/14 演示过的 `{geo: readout_pad.geo, frame: Q00}` 文件没进仓, chen 版图头注引的就是它; `frame:` 至今无测试。做法: 文件进 `examples/`, chen 头注改「取消注释这一步即可」(不进正式步骤: 会多一个无结浮岛, 动 87 名 / 12 块 / 物理口径), `tests/test_layout.py` 加一条 `frame:` 断言。
 
 ## 已了结, 别重新踩
 

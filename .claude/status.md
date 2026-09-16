@@ -1,6 +1,6 @@
 # quantum_dsl — Current Status
 
-每个 session 开工前读这份 + [`plan.md`](plan.md)。快照日期 **2026-09-13**。
+每个 session 开工前读这份 + [`plan.md`](plan.md)。快照日期 **2026-09-16**。
 
 ## 最新动态（给刚接手的人：5 分钟版）
 
@@ -9,7 +9,7 @@
 2. **最近两天新增两层**：
    - **N16 版图编排**（2026-09-12）：`*.layout.yaml` 顶替手写 `.geo` 作几何源——一张有序步骤表，实例化模板（`examples/lib/<name>.geo`
      局部坐标几何 + `<name>.yaml` 接口）或混入手写 `.geo` 步骤，全部写进**同一个 gmsh 模型**；meta 照旧，只多一张 `layers:` 表（模板层槽位 → 芯片层）。
-     实现 `src/quantum_dsl/layout.py`（≈870 行），语法 `docs/grammar.md` §4，设计稿 `docs/design/component-library.md`。
+     实现 `src/quantum_dsl/layout.py`（≈1 000 行），语法 `docs/grammar.md` §4，设计稿 `docs/design/component-library.md`。
    - **N17 Chen 2025 圆盘比特 3×3**（2026-09-13）：模板 `disc_transmon`（两半盘 + 跨缝结 + 可选爪）/ `bar_coupler`（连接型：条 + 五边形 + 结）
      + 例子 `examples/chen_2025_3x3.{layout,meta}.yaml`（9 比特 + 12 耦合器，21 个结条目自动生成；**无读出结构**）。几何全部是论文
      Fig. 1a 照片量出值（`docs/design/paper-chen2025-geometry.md`，≤15 µm 的量 ±30–50%）。flip-chip：顶片无地 `ground: none`，载片地 = `airbox.top_um: 5`。
@@ -18,7 +18,7 @@
    从 ×1.1–1.45 落到 ×0.9–1.2；互容始终只有 SI 的一半（×0.4–0.5）⇒ 缺口在缝 / 间隙几何或 SI 模型口径，**不在 d**。派生 E_C(q) 220→259 MHz、
    g_qc 66→85 MHz，夹住 SI 自身闭合值（209 / 71）与设计值（185 / 90）——量级检验，不是命中。账 `.claude/session/2609131337.md`，
    产物 `.claude/chen-evidence/`，物理口径 `docs/physics.md` §13。
-4. **怎么跑**：`~/miniconda3/envs/qdsl313/bin/python -m pytest tests/ -q` → **37 passed / 2 skipped**（~30 s；live 两条要 Palace）。
+4. **怎么跑**：`~/miniconda3/envs/qdsl313/bin/python -m pytest tests/ -q` → **39 passed / 2 skipped**（~30 s；live 两条要 Palace）。
    Chen 例子：`compile_layout` 0.7 s、`build_gds` 1 s、单块网格 22 s。只要块就 `build(m, out, blocks=["H01"])`
    （2026-09-13 加：跳过整片网格，`solve=True` 时逐块跑 Palace 并写 `block_<name>.results.yaml`）；不带 `blocks=` 的
    `build(solve=False)` 会按 100/4 给全片出网格（~9M tets）。看图直接 `build_gds` + `render_gds_png`
@@ -30,13 +30,17 @@
    连接型 `mirror: y` / `at:` / `rot:`、外挂端口背后无面、`if:` 指未声明参数、子字典键与 `kind` 不校验、`body:` 伪造岛键、`Include` 不进 manifest）；
    `examples/lib` 的宏名与入参加 `LIB_`/`_lib_` 前缀（与 `qlib.geo` 的 `Macro CPW` 撞名会炸掉整个 session，裸名入参会漏给后续手写步骤）；
    `bar_coupler.geo` 加前置守卫。**⚠ §13 的 QCQ 块数字有已知系统偏差**：块会把块内比特伸向块外耦合器的爪一起删掉（H01 少 5 只），对地项偏低。
+8. **手写步骤 `connect:`**（2026-09-16，`.claude/session/2609161007.md`）：手写 `.geo` 步骤可用 `connect: {net: [端口…]}` 认领模板画的外挂面（爪），
+   与连接型模板走同一条 `_connect`；对照件 `examples/chen_2025_3x3_hand`（12 个 `bar_coupler` 换成一步手写 `.geo`，Physical 名 / GDS / H01 块网格与模板路线逐项相同）。
+   顺带堵的静默路径：路由体 / 手写金属没碰到端口那一端（曾把悬空的爪记进 net）、步骤键不按类型查、merge 文件里定义 Macro（同进程第二次跑段错误）、
+   手写 `etch` 的 `layers:` 拼错。文档 grammar §4.1 / §4.3 / §5 #10 #18。
 
 ## At a glance
 
 | | |
 |---|---|
 | 版本 | **v4.0 已发布**(tag `v4.0`, 2026-08-26) + N16(2026-09-12) + N17(2026-09-13)。`main` = 产品;`v3` = 旧实现(只读参考);`v4-dev` = 开发痕迹与原始调研存档(session logs / codex 取证 / N15 原始 CSV / 原型脚本) |
-| 契约 | [`SPEC.md`](../SPEC.md)(N0–N17 需求索引)↔ `tests/`(37 passed / 2 skipped;live 两条各自实测通过一次) |
+| 契约 | [`SPEC.md`](../SPEC.md)(N0–N17 需求索引)↔ `tests/`(39 passed / 2 skipped;live 两条各自实测通过一次) |
 | 文档 | [`docs/README.md`](../docs/README.md) 是入口;物理口径与数值决策在 `docs/physics.md`(§13 = flip-chip 与 Chen 首解),汇报材料在 `docs/report/`(04 = sung 论文验证闭环账) |
 | 测试跑法 | `~/miniconda3/envs/qdsl313/bin/python -m pytest tests/ -q`;live 加 `QDSL_RUN_PALACE=1`(~4 min);sung 加 `QDSL_RUN_PALACE_SUNG=1 PALACE_BIN=tools/palace_remote.sh QDSL_REMOTE_HOST=<64C+/384G 机> QDSL_PALACE_NP=32`(峰值内存 154 G, 128G 机必 OOM) |
 | 实测锚 | two_pads C 对 `[[24.5324,-1.9472],[-1.9472,24.5353]]` fF <2%;sung 对 PRX 11.021058: C_Σ ×0.940–0.969(±8% 内), β_qc +8%(±20% 内);Chen QCQ 对 SI §D: 见上 3 |

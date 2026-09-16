@@ -72,3 +72,30 @@ def test_chen_2025_qcq_block_is_si_isolated_qcq(tmp_path):
     cfg = palace_config(mesh, m, tmp_path / "b.json")
     assert cfg["Boundaries"]["Ground"]["Attributes"] == [mesh.boundary_groups["outer"]]
     assert len(cfg["Boundaries"]["Terminal"]) == 6 and cfg["Solver"]["Order"] == 2
+
+
+def test_chen_2025_hand_written_bars_equal_template_route(tmp_path):
+    """chen_2025_3x3_hand: 12 个 bar_coupler 模板步骤换成一步手写 .geo (端口变量起画 + ``connect:`` 认领爪, 结写在 meta),
+    与模板路线的 Physical 名、GDS 多边形 (1 nm 取整) 与合并后的 circuit_model.qubits 逐项相同 —— 几何完全不变, 只改表述。"""
+    import gdstk
+
+    from quantum_dsl import build_gds, compile_layout, load_geo, load_meta
+    from quantum_dsl.build import _merge_qubits
+
+    def run(meta):
+        m = load_meta(meta)
+        lay = compile_layout(m)
+        names = {p.name for p in load_geo(lay).physicals}
+        (cell,) = gdstk.read_gds(str(build_gds(lay, m, tmp_path / (meta.stem + ".gds")))).top_level()
+        polys = sorted((p.layer, tuple(sorted((round(x, 3), round(y, 3)) for x, y in p.points)))
+                       for p in cell.polygons)
+        qubits = sorted(_merge_qubits(list(m.circuit_model.get("qubits") or []), lay.qubits),
+                        key=lambda q: q["name"])
+        return names, polys, qubits, lay
+
+    tpl, hand = run(META), run(EXAMPLES / "chen_2025_3x3_hand.meta.yaml")
+    assert hand[0] == tpl[0] and len(tpl[0]) == 87
+    assert hand[1] == tpl[1] and len(tpl[1]) == 87
+    assert hand[2] == tpl[2] and len(tpl[2]) == 21 and len(hand[3].qubits) == 9      # 12 条耦合器结来自 meta
+    assert hand[3].used == tpl[3].used and len(hand[3].used) == 24
+    assert {"chen_2025_3x3_bars.geo", "chen_2025_3x3_bar_macros.geo"} <= {p.name for p in hand[3].inputs}

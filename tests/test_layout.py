@@ -292,3 +292,78 @@ def test_layout_guards_close_silent_paths(tmp_path):
     tpl("u", external={}, ports={"E": {"port": "port(0)"}})
     with pytest.raises(QuantumDslError, match="unset"):
         compile_steps("- {template: u, name: A, layers: {metal: m}, params: {en: 0}}\n")
+
+
+# ---------------------------------------------------------------- N16 手写步骤 connect:
+def test_geo_step_connect_adopts_external_faces(tmp_path):
+    """契约 N16 (2026-09-16, 起因 chen_2025_3x3_hand): 手写步骤 ``connect: {net: [端口…]}`` 认领模板画的外挂面 —— 与连接型模板
+    走同一条 ``_connect``; 每一端 (外挂面或岛) 都必须被本步画的 net 金属碰到, 隔着缝 raise (两条路线都查);
+    步骤键按步骤类型查 (模板步骤给 connect:/frame: 曾被静默吞掉); 手写文件里定义 Macro raise (merge 的文件关掉后宏体失效,
+    同进程第二次跑会炸 gmsh); 手写 ``etch`` 的 ``layers:`` 拼错 raise (曾静默丢掉蚀刻面)。"""
+    from quantum_dsl import QuantumDslError, compile_layout, load_geo, load_meta
+    layers = {"m": {"kind": "conductor", "gds": [1, 0]}}
+
+    def compile_steps(steps: str):
+        doc = {"schema": "quantum-dsl/layout/1", "templates": [".", LIB.as_posix()],
+               "steps": yaml.safe_load(steps), "ground": "none"}
+        (tmp_path / "chip.layout.yaml").write_text(yaml.safe_dump(doc), encoding="utf-8")
+        return compile_layout(load_meta(_meta(tmp_path, "chip.layout.yaml", layers)))
+
+    # 模板 t: 岛 (0..w) + 外挂面 (w+5..2w+5) + 端口 E 在外挂面外沿 (2w+5, 朝 +x), w = 10
+    _write(tmp_path / "t.yaml", yaml.safe_dump({
+        "schema": "quantum-dsl/template/1", "params": {"w": 10}, "layers": {"metal": "conductor"},
+        "islands": {"i": {"faces": "f()", "layer": "metal"}},
+        "external": {"E": {"faces": "g()", "layer": "metal"}}, "ports": {"E": "port(0)"}}))
+    _write(tmp_path / "t.geo", """
+        SetFactory("OpenCASCADE");
+        s = news; Rectangle(s) = {0, -w/2, 0, w, w};  f() = {s};
+        e = news; Rectangle(e) = {w + 5, -w/2, 0, w, w};  g() = {e};
+        port_x() = {2*w + 5};  port_y() = {0};  port_a() = {0};  port_w() = {w};
+        """)
+    pair = ("- {template: t, name: A, layers: {metal: m}}\n"
+            "- {template: t, name: B, layers: {metal: m}, at: [500, 0], rot: 180}\n")
+
+    def bar(short_um=0):        # 手写条: 从 A.E 口到 B.E 口 (端口变量注入), short_um > 0 时够不到 B 的爪
+        _write(tmp_path / "bar.geo", f"""
+            SetFactory("OpenCASCADE");
+            b = news; Rectangle(b) = {{A_E_x, -A_E_w/2, 0, B_E_x - A_E_x - {short_um}, A_E_w}};
+            Physical Surface("metal::m::BAR::bar") = {{ b }};
+            """)
+    bar()
+    lay = compile_steps(pair + "- {geo: bar.geo, connect: {BAR: [A.E, B.E]}}")
+    names = {p.name for p in load_geo(lay).physicals}
+    assert names == {"metal::m::A::i", "metal::m::B::i", "metal::m::BAR::bar", "metal::m::BAR::E"}   # 两只爪并入 BAR
+    assert lay.used == {"A.E", "B.E"} and lay.ports["A.E"].net == "BAR" and lay.ports["B.E"].net == "BAR"
+    # 条够不到 B 的爪 → 曾会把一只悬空的爪记成 BAR 的一部分
+    bar(short_um=3)
+    with pytest.raises(QuantumDslError, match="not touched by"):
+        compile_steps(pair + "- {geo: bar.geo, connect: {BAR: [A.E, B.E]}}")
+    bar()
+    # connect: 的 net 不是本步骤挂名的 component / 端口已被用 / 模板步骤给手写键
+    with pytest.raises(QuantumDslError, match="not a metal component"):
+        compile_steps(pair + "- {geo: bar.geo, connect: {BAZ: [A.E, B.E]}}")
+    with pytest.raises(QuantumDslError, match="already used"):
+        compile_steps(pair + "- {geo: bar.geo, connect: {BAR: [A.E, B.E, A.E]}}")
+    with pytest.raises(QuantumDslError, match="unknown key.*connect"):
+        compile_steps(pair.replace("rot: 180}", "rot: 180, connect: {}}"))
+    # 岛端: 手写金属以岛的 component 命名接到岛端口上, 必须真碰到岛 (连接型模板的路由体同理)
+    _write(tmp_path / "stub.geo", """
+        SetFactory("OpenCASCADE");
+        s = news; Rectangle(s) = {P_E_x + gap, -P_E_w/4, 0, 20, P_E_w/2};
+        Physical Surface("metal::m::P::stub") = { s };
+        """)
+    pad = "- {template: pad, name: P, layers: {metal: m}}\n"
+    _write(tmp_path / "stub_ok.geo", (tmp_path / "stub.geo").read_text().replace("P_E_x + gap", "P_E_x"))
+    lay = compile_steps(pad + "- {geo: stub_ok.geo, connect: {P: [P.E]}}")
+    assert lay.used == {"P.E"} and "metal::m::P::stub" in {p.name for p in load_geo(lay).physicals}
+    _write(tmp_path / "stub.geo", (tmp_path / "stub.geo").read_text().replace("P_E_x + gap", "P_E_x + 3"))
+    with pytest.raises(QuantumDslError, match="does not touch island"):
+        compile_steps(pad + "- {geo: stub.geo, connect: {P: [P.E]}}")
+    # 手写步骤文件里定义 Macro → 第二次跑会炸 gmsh, 直接 raise
+    _write(tmp_path / "mac.geo", 'SetFactory("OpenCASCADE");\nMacro M\nReturn\n')
+    with pytest.raises(QuantumDslError, match="Macro"):
+        compile_steps(pad + "- {geo: mac.geo}")
+    # 手写 etch 的 layers: 拼错 → 曾在 _ground 里静默丢掉蚀刻面
+    _write(tmp_path / "etch.geo", 'SetFactory("OpenCASCADE");\nh = news; Rectangle(h) = {200, 0, 0, 5, 5};\ne() = {h};\n')
+    with pytest.raises(QuantumDslError, match="mm"):
+        compile_steps(pad + "- {geo: etch.geo, etch: e(), layers: mm}")

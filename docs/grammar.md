@@ -255,7 +255,9 @@ ground: {sheet: {layer: m1, margin_um: 200}}       # 见下
 | `layers` | 模板步骤 | 槽位 → 芯片层。省略时先取同名芯片层；没有同名且该 kind 的芯片层唯一时取它；否则 raise。kind 不兼容 raise。嵌套时值可以是父模板的槽位名 |
 | `E_J` / `L_J` / `squid` | 模板步骤 | 模板有 `junction` 时必给恰一个 → 自动进 `circuit_model.qubits`（§4.6） |
 | `length` | 连接型 | 定长：`{mode: quarter_wave \| half_wave, f_r: 7GHz, film_nm: 200}`（`cpw.guided_wavelength`：中心导体宽 = 端口宽，缝 = 模板参数 `gap`，衬底 ε 与厚度取 meta）或 `{mode: fixed, L: 900um}`（裸数 = µm）；减去两端端口等效长度 `leq` 后注入模板变量 `L`；模板须以 `outputs.length` 回报画出的长度，与目标不符 raise；记入 `subsystems` |
-| `geo` | 手写步骤 | `.geo` 路径（相对版图文件；嵌套时相对模板目录）。可选 `frame: <实例全名>` 在该实例局部坐标下画；`ports:` 用输出变量声明端口（须 `net:`）；`etch:` 声明蚀刻工具面表；`layers: <芯片层 id>` 指明蚀刻面所在层（本步骤挂名的面不止一层时必填） |
+| `geo` | 手写步骤 | `.geo` 路径（相对版图文件；嵌套时相对模板目录）。可选 `frame: <实例全名>` 在该实例局部坐标下画；`ports:` 用输出变量声明端口（须 `net:`）；`etch:` 声明蚀刻工具面表；`layers: <芯片层 id>` 指明蚀刻面所在层（本步骤挂名的面不止一层时必填；不在层表 raise）；`connect: {<net>: [端口, …]}` 把模板画的外挂面（爪 / 桨）归入本步骤挂名的 component（下文与 §4.3） |
+
+步骤键按步骤类型查：模板步骤写 `frame:` / `connect:`、手写步骤写 `at:` / `params:` 都 raise。
 
 **`ground`**（省略 = `none`）：
 
@@ -273,6 +275,11 @@ ground: {sheet: {layer: m1, margin_um: 200}}       # 见下
   端口名是**扁平**的（不带 `实例.` 前缀），全版图唯一。
 - 合并前编排器把此刻已存在的全部端口写成变量 `<实例>_<端口>_x/y/a/w`（点换下划线：`Q1.RO` → `Q1_RO_x`），手写 `.geo` 直接读。
 - 每块新面必须被 Physical 名或 `etch:` 之一认领，否则 raise。
+- **认领外挂面** `connect: {H00: [Q00.E, Q10.W]}`：本步骤以 `H00` 挂名的金属接在这两个端口上——端口背后的外挂面改挂 `H00`（名字变成 `metal::ta::H00::E`），端口记为已用。
+  与连接型模板走同一条路：每一端都必须被 `H00` 的面真碰到（隔着缝 raise）；端口若属于某岛（如 `pad` 的 `P.E`），net 必须就是那个岛的 component（`connect: {P: [P.E]}`，手写面命名 `metal::m::P::stub`）。
+  例 `chen_2025_3x3_hand.layout.yaml`：12 个 `bar_coupler` 换成一步手写 `.geo`，爪照旧由 `disc_transmon` 画，与模板路线出同一套 Physical 名与 GDS 多边形。
+- **文件里不能定义 Macro**（编排器 raise）：手写步骤文件是 merge 进模型的，解析完即关闭，宏体随之失效；同进程第二次跑版图（`build()` 出 GDS / 网格 / 分块时必然发生）会在 `Call` 处炸掉 gmsh。
+  宏放单独文件加 `If (!Exists(…))` 守卫，由手写文件 `Include`（gmsh 不关 Include 的文件；例 `chen_2025_3x3_bar_macros.geo`）。
 
 ### 4.2 模板文件（`lib/<name>.yaml` + `lib/<name>.geo`）
 
@@ -459,10 +466,11 @@ EndIf
 
 - 端口 = 端面中点 + 外法向 + 宽 + 层 + 等效长度；谁画了那块面谁给端口。放置后端口按实例位姿变换（含镜像、旋转）。
 - 路由只接端口，宽度继承，两端宽不同 raise（taper 未实现）；两口不正对 raise（先用直段 / 弯把口摆正）；每个端口只能被连一次。
-- **路由是电连接**：路由体 + 两端外挂面并成一个 net。net 名：恰一个岛端 → 该岛；零岛端 → 步骤名；两个岛端 → raise
+- **路由是电连接**：路由体 + 两端外挂面并成一个 net，路由体必须真碰到每一端（外挂面或岛），隔着缝 raise。net 名：恰一个岛端 → 该岛；零岛端 → 步骤名；两个岛端 → raise
   （两块命名岛的电气合并没有唯一名，把一端改成外挂面或画成一个实例）。路由体（`body:` 岛）的 component **就是** net 名，
   模板里其它岛仍是 `<步骤名>_<岛键>`。例：`bar_coupler` 步骤 `H00` 连两只爪（外挂面）→ 条 + 两爪 = `H00`，五边形 = `H00_pent`，
   结条目 `islands: [H00, H00_pent]`；`xmon_readout` 的 `R1` 从桨（外挂）到手写焊盘 `F0`（岛）→ 桨 + 蛇形 + 焊盘 = `F0`。
+- 手写步骤也能接：`connect: {net: [端口…]}`（§4.1）把外挂面归入手写挂名的 net，net 名就是 Physical 名的 component 段。
 - 不同 net 的导体面同层相交 / 相切（距离 ≤ 1e-6 µm）= 短路 → raise（缺蚀刻或缝）。同 net 重叠放行。
 - 每块面必须被岛 / 外挂 / 蚀刻 / 结 / 手写 Physical 名之一认领，否则 raise；外挂面没人连也 raise。
 - 端口表 `Layout.ports` 的键：模板端口 `实例全名.端口`（如 `Q1.RO`、嵌套的 `P_L.E`），手写端口就是声明名（`F0`）。
@@ -522,7 +530,7 @@ component 为 `P_L`（`metal::<层>::P_L::pad`）。带 `.geo` 的模板也能�
 7. **`.geo` 注释里写示例 Physical 名**：可以（分块派生跳过 `//` 注释），但不要写成未注释的语句。
 8. **JJ 画成 metal**：会当导体桥把两块 pad 短路。role 用 `jj`（自动从静电几何删除）。
 9. **版图里两块金属挨上了**（pad 直接落在地上、忘了 `gap` / 蚀刻）→ 编排器报 short。给模板 `gap` 参数或加 `etch`。
-10. **模板 `.geo` 里定义 Macro** → 第二次实例化 "Redefinition of function"。宏放 include-guard 库，名字加 `LIB_` / `_lib_` 前缀（§2.5）。
+10. **模板或手写步骤 `.geo` 里定义 Macro** → 编排器 raise（merge 的文件关掉后宏体失效，同进程第二次跑会炸 gmsh；没有守卫则 "Redefinition of function"）。宏放 include-guard 库并 `Include`，名字加 `LIB_` / `_lib_` 前缀（§2.5）。
 11. **`Call X;` 后面同一行接语句** → "Unknown variable"。`Call` 独占一行。
 12. **YAML 1.1 布尔**：`on` / `off` / `yes` / `no` 会被读成 `True` / `False`——别拿它们当参数名或槽位名；数值参数写 `1` / `0`。
 13. **连接型步骤写 `at:` / `rot:` / `mirror: y`** → raise；位姿由两个端口决定，只有 `mirror: x` 有意义。
@@ -530,3 +538,4 @@ component 为 `P_L`（`metal::<层>::P_L::pad`）。带 `.geo` 的模板也能�
 15. **`if:` 指向的参数没在 `params` 里声明** → raise（不是"关闭"）。端口与外挂面的 `if` 要同一个参数。
 16. **画了爪 / 桨却没人连**（`disc_transmon` 外圈比特、`xmon` 没接读出）→ "nothing connects"。用 `params: {claw_W: 0}` / `{ro: 0}` 关掉。
 17. **只想跑一块却调 `build(m, out)`** → 先给整片出网格（Chen 整片 ~9M tets）。用 `build(m, out, blocks=["H01"])`。
+18. **接了端口却没碰到**（手写 `connect:` 的条差几 µm 够不到爪、模板路由体没画到 from 口）→ "not touched by" / "does not touch island"。之前会把悬空的爪静默记进 net。

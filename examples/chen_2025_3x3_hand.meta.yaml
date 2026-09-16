@@ -1,0 +1,46 @@
+# chen_2025_3x3_hand.meta.yaml — chen_2025_3x3_hand.layout.yaml 的 sidecar; 与 chen_2025_3x3.meta.yaml 只差两处:
+# layout: 指向手写耦合器的版图; circuit_model.qubits 手写 12 条耦合器的浮动结 (模板路线由 bar_coupler 步骤的 E_J: 自动生成,
+# 手写步骤没有这个通道)。9 个比特的结仍由 disc_transmon 步骤生成, build() 把两边合并 (同名不一致会 raise)。
+# 物理口径 / 分块口径 / 告警缘由全部见 chen_2025_3x3.meta.yaml 头注与 docs/physics.md §13, 此处不重复。
+schema: quantum-dsl/meta/1
+
+layout: chen_2025_3x3_hand.layout.yaml
+layers:
+  ta: {kind: conductor, gds: [1, 0]}
+  jj: {kind: junction,  gds: [20, 0]}
+
+materials:
+  substrate: {eps_r: 10.0, thickness_um: 430}
+airbox: {top_um: 5, bottom_um: 500, side_um: 300}
+mesh: {max_size_um: 100, min_size_um: 4}
+solver: {type: electrostatic, order: 2, outer_boundary: ground}
+
+circuit_model:
+  qubits:                                  # 耦合器 = 条 + 板的浮动结, E_J 21.1 GHz (SI §D 反推, 见 chen_2025_3x3.layout.yaml 头注)
+    - {name: H00, islands: [H00, H00_pent], E_J: 21.1GHz}
+    - {name: H10, islands: [H10, H10_pent], E_J: 21.1GHz}
+    - {name: H01, islands: [H01, H01_pent], E_J: 21.1GHz}
+    - {name: H11, islands: [H11, H11_pent], E_J: 21.1GHz}
+    - {name: H02, islands: [H02, H02_pent], E_J: 21.1GHz}
+    - {name: H12, islands: [H12, H12_pent], E_J: 21.1GHz}
+    - {name: V00, islands: [V00, V00_pent], E_J: 21.1GHz}
+    - {name: V10, islands: [V10, V10_pent], E_J: 21.1GHz}
+    - {name: V20, islands: [V20, V20_pent], E_J: 21.1GHz}
+    - {name: V01, islands: [V01, V01_pent], E_J: 21.1GHz}
+    - {name: V11, islands: [V11, V11_pent], E_J: 21.1GHz}
+    - {name: V21, islands: [V21, V21_pent], E_J: 21.1GHz}
+
+extract:
+  blocks:
+    - {name: H00, components: [Q00_a, Q00_b, H00, H00_pent, Q10_a, Q10_b]}
+    - {name: H10, components: [Q10_a, Q10_b, H10, H10_pent, Q20_a, Q20_b]}
+    - {name: H01, components: [Q01_a, Q01_b, H01, H01_pent, Q11_a, Q11_b]}
+    - {name: H11, components: [Q11_a, Q11_b, H11, H11_pent, Q21_a, Q21_b]}
+    - {name: H02, components: [Q02_a, Q02_b, H02, H02_pent, Q12_a, Q12_b]}
+    - {name: H12, components: [Q12_a, Q12_b, H12, H12_pent, Q22_a, Q22_b]}
+    - {name: V00, components: [Q00_a, Q00_b, V00, V00_pent, Q01_a, Q01_b]}
+    - {name: V10, components: [Q10_a, Q10_b, V10, V10_pent, Q11_a, Q11_b]}
+    - {name: V20, components: [Q20_a, Q20_b, V20, V20_pent, Q21_a, Q21_b]}
+    - {name: V01, components: [Q01_a, Q01_b, V01, V01_pent, Q02_a, Q02_b]}
+    - {name: V11, components: [Q11_a, Q11_b, V11, V11_pent, Q12_a, Q12_b]}
+    - {name: V21, components: [Q21_a, Q21_b, V21, V21_pent, Q22_a, Q22_b]}

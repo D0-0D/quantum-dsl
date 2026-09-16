@@ -46,9 +46,9 @@ _ROLE_KIND = {"metal": "conductor", "ground": "conductor", "jj": "junction"}
 _LAYOUT_KEYS = frozenset({"schema", "templates", "steps", "ground"})
 _TEMPLATE_KEYS = frozenset({"schema", "kind", "params", "layers", "islands", "external",
                             "etch", "junction", "ports", "outputs", "body", "steps"})
-_STEP_KEYS = frozenset({"template", "route", "geo", "name", "at", "rot", "mirror", "from",
-                        "to", "params", "layers", "length", "frame", "ports", "etch",
-                        "E_J", "L_J", "squid"})
+_TPL_STEP_KEYS = frozenset({"template", "route", "name", "at", "rot", "mirror", "from", "to",
+                            "params", "layers", "length", "E_J", "L_J", "squid"})
+_GEO_STEP_KEYS = frozenset({"geo", "frame", "ports", "etch", "layers", "connect"})
 _ENTRY_KEYS = {          # 模板各段每条目的合法键 (拼错 = 静默丢语义, 必须查)
     "islands": frozenset({"faces", "layer"}),
     "external": frozenset({"faces", "layer", "if", "inst"}),
@@ -58,6 +58,7 @@ _ENTRY_KEYS = {          # 模板各段每条目的合法键 (拼错 = 静默丢
 }
 _REF = re.compile(r"^([A-Za-z_]\w*)(?:\((\d*)\))?$")
 _INCLUDE = re.compile(r'(?m)^\s*Include\s+"([^"]+)"')
+_MACRO = re.compile(r"(?m)^\s*(Macro|Function)\b")
 _TOL = 1e-6          # µm; 面快照 / 端口正对 / 相交判定的公差
 
 _ID = (1.0, 0.0, 0.0, 1.0, 0.0, 0.0)    # 2D 仿射 (a, b, c, d, tx, ty): x' = a x + b y + tx
@@ -320,10 +321,11 @@ class Layout:
         for i, step in enumerate(steps):
             if not isinstance(step, dict):
                 raise QuantumDslError(f"{where}: step #{i} is not a mapping: {step!r}")
-            _check_keys(step, _STEP_KEYS, f"{where} step #{i}")
             if "geo" in step:
+                _check_keys(step, _GEO_STEP_KEYS, f"{where} step #{i} (geo step)")
                 self._geo_step(step, ctx, f"{where} step #{i}")
             elif "template" in step or "route" in step:
+                _check_keys(step, _TPL_STEP_KEYS, f"{where} step #{i} (template step)")
                 self._template_step(step, ctx, f"{where} step #{i}")
             else:
                 raise QuantumDslError(f"{where} step #{i}: needs template:, route: or geo:")
@@ -337,6 +339,13 @@ class Layout:
 
     def _merge(self, path: Path, where: str) -> tuple[list[int], list[tuple[int, int]]]:
         """merge 一个 .geo, 返回 (新面 tags, 新 Physical 组)。"""
+        # merge 的文件解析完即关闭, 里面定义的 Macro 随之失效: 同进程第二次跑版图 (出 GDS / 网格 / 分块) 时守卫跳过定义、
+        # Call 读已关闭的文件 → gmsh 段错误 (2026-09-16 实测)。Include 的文件 gmsh 不关, 宏库走 Include (lib/cpw_macros.geo)。
+        if _MACRO.search(path.read_text(encoding="utf-8", errors="replace")):
+            raise QuantumDslError(
+                f"{where}: {path.name} defines a Macro — a merged file is closed after parsing and its "
+                f"macros die with it (the next run of this layout in the same process crashes gmsh); "
+                f"put macros in a separate file with an If (!Exists(...)) guard and Include it")
         before = {t for _, t in self.gmsh.model.getEntities(2)}
         pbefore = set(self.gmsh.model.getPhysicalGroups(2))
         try:
@@ -500,6 +509,7 @@ class Layout:
             comps[body] = net
 
         out: dict[str, float] = {}
+        new: list[int] = []
         if tpl.geo:
             new = self._run_geo(tpl, params, inject, pose, where)
 
@@ -554,7 +564,8 @@ class Layout:
             self._reexport(tpl, full, comps, where)
 
         if connect:
-            self._connect(ends, net, where)
+            self._connect(ends, net, [t for t in new if t in self.faces and
+                                      self.faces[t].component == net], where)
         if target is not None:
             drawn = out.get("length")
             if drawn is None:
@@ -749,26 +760,39 @@ class Layout:
                 f"external or draw them as one instance")
         return island_ends[0][1].net if island_ends else full
 
-    def _connect(self, ends, net, where) -> None:
-        """两端外挂面 (与其端口) 并入 net; 端口只能连一次。"""
+    def _connect(self, ends, net, body, where) -> None:
+        """两端并入 net: 外挂面 (与其端口) 改挂 net, 岛端只记账。``body`` = 本步骤画的 net 金属面,
+        每一端都必须被它碰到 (否则爪 / 岛与路由体之间隔着缝, 却已记成同一 net); 端口只能连一次。"""
+        def touches(tags):
+            return any(self.occ.getDistance(2, u, 2, v)[0] <= _TOL for u in body for v in tags)
+        for ref, _ in ends:                   # 端口留在表里 (供手写步骤读变量), 但只能连一次 (同一表里重复也算)
+            if ref in self.used:
+                raise QuantumDslError(f"{where}: port {ref!r} already used by another connection")
+            self.used.add(ref)
         for ref, p in ends:
             if p.ext is None:
+                far = [t for t, f in self.faces.items()
+                       if f.component == p.net and f.role == "metal" and t not in body]
+                if not touches(far):
+                    raise QuantumDslError(
+                        f"{where}: the {net!r} metal drawn here does not touch island {p.net!r} "
+                        f"at port {ref!r} — gap between body and port?")
                 continue
             hit = [t for t, f in self.faces.items() if f.ext == p.ext]
             if not hit:
                 raise QuantumDslError(
                     f"{where}: port {ref!r} is external but no face was drawn behind it — the "
                     f"port's if: guard and the external part's if: guard disagree")
+            if not touches(hit):
+                raise QuantumDslError(
+                    f"{where}: external face(s) {hit} behind port {ref!r} are not touched by the "
+                    f"{net!r} metal drawn here — gap between body and port, or wrong connect:?")
             for t in hit:
                 f = self.faces[t]
                 self.faces[t] = _Face(f.role, f.layer, net, f.primitive)
             for pk, q in list(self.ports.items()):
                 if q.ext == p.ext:
                     self.ports[pk] = Port(q.x, q.y, q.a, q.w, q.layer, q.leq, net, None)
-        for ref, _ in ends:                   # 端口留在表里 (供手写步骤读变量), 但只能连一次
-            if ref in self.used:
-                raise QuantumDslError(f"{where}: port {ref!r} already used by another connection")
-            self.used.add(ref)
 
     # ---- 手写 .geo 步骤 ------------------------------------------------------------
     def _geo_step(self, step, ctx: _Ctx, where: str) -> None:
@@ -824,6 +848,8 @@ class Layout:
                                       primitive=phys.primitive, named=True)
         if "etch" in step:
             layer = step.get("layers")
+            if layer is not None:
+                self._chip_layer(layer, f"{where} etch layers:")
             for t in self._tags(step["etch"], new, f"{where} etch"):
                 if t in claimed:
                     raise QuantumDslError(f"{where}: etch face {t} also carries a Physical name")
@@ -834,6 +860,29 @@ class Layout:
                     raise QuantumDslError(f"{where}: etch needs layers: <chip layer> (step "
                                           f"names faces on {sorted(map(str, layers))})")
                 self.etch.append((layer if layer is not None else next(iter(layers)), t))
+        connect = step.get("connect") or {}
+        if not isinstance(connect, dict):
+            raise QuantumDslError(f"{where}: connect must be {{<component>: [<port>, ...]}}")
+        for net, refs in connect.items():        # 手写金属认领模板画的外挂面 (爪), 与连接型模板同一条路
+            body = [t for t in claimed if t in self.faces and self.faces[t].component == net
+                    and self.faces[t].role == "metal"]
+            if not body:
+                raise QuantumDslError(f"{where}: connect: {net!r} is not a metal component named "
+                                      f"by this step's Physical names")
+            if not isinstance(refs, list) or not refs:
+                raise QuantumDslError(f"{where}: connect: {net!r} needs a list of ports, got {refs!r}")
+            ends = []
+            for ref in refs:
+                p = self._port(ref, where)
+                if p.net is not None and p.net != net:
+                    raise QuantumDslError(
+                        f"{where}: connect: port {ref!r} belongs to island {p.net!r}; to join it, "
+                        f"name the faces metal::<layer>::{p.net}::<prim> instead of {net!r}")
+                if any(self.faces[t].layer != p.layer for t in body):
+                    raise QuantumDslError(f"{where}: connect: port {ref!r} is on layer {p.layer!r} "
+                                          f"but {net!r} is drawn on another layer")
+                ends.append((ref, p))
+            self._connect(ends, net, body, where)
         for key, spec in (step.get("ports") or {}).items():
             spec = _port_spec(spec)
             net = spec.get("net")
@@ -919,22 +968,26 @@ class Layout:
                     raise QuantumDslError(
                         f"layout: conductors {f1.component!r} and {f2.component!r} touch/overlap "
                         f"on layer {f1.layer!r} (faces {t1}, {t2}) — a short. Missing etch/gap?")
-        # 挂名 (手写组已存在; 分块 keep 过滤)
-        groups: dict[str, list[int]] = {}
+        # 挂名: 编排器生成的组按 keep 挂; 手写组在 merge 时就已建好, 分块时整体拆掉再按 keep 重挂
+        # (逐组 removePhysicalGroups 只拆块外的, 之后出网格 gmsh 段错误 —— 2026-09-16 chen_2025_3x3_hand 实测)
+        gen: dict[str, list[int]] = {}
+        hand: dict[str, list[int]] = {}
         for t, f in self.faces.items():
             if self.keep is not None and f.component not in self.keep:
-                if f.named:
-                    for dim, ptag in self.gmsh.model.getPhysicalGroups(2):
-                        if t in set(map(int, self.gmsh.model.getEntitiesForPhysicalGroup(dim, ptag))):
-                            self.gmsh.model.removePhysicalGroups([(dim, ptag)])
                 continue
-            if f.named:
-                continue
-            groups.setdefault(f"{f.role}::{f.layer}::{f.component}::{f.primitive}", []).append(t)
-        for name, tags in groups.items():
+            (hand if f.named else gen).setdefault(
+                f"{f.role}::{f.layer}::{f.component}::{f.primitive}", []).append(t)
+        clash = sorted(set(gen) & self.names)
+        if clash:
+            raise QuantumDslError(f"layout: Physical name(s) {clash} clash with hand-written ones")
+        if self.keep is not None:
+            self.gmsh.model.removePhysicalGroups()
+            for name in self.names:          # 名字表与组分开存: 不删, 重挂的组拿不到名字 (读回 ''), 残留名让出网格时 gmsh 崩
+                self.gmsh.model.removePhysicalName(name)
+            for name, tags in hand.items():
+                self.gmsh.model.addPhysicalGroup(2, sorted(tags), name=name)
+        for name, tags in gen.items():
             parse_physical_name(name)
-            if name in self.names:
-                raise QuantumDslError(f"layout: Physical name {name!r} clashes with a hand-written one")
             self.names.add(name)
             self.gmsh.model.addPhysicalGroup(2, sorted(tags), name=name)
         self.occ.synchronize()

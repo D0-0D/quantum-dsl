@@ -1,0 +1,32 @@
+# chen_2025_3x3_hand.layout.yaml — 与 chen_2025_3x3.layout.yaml **几何逐点相同**的另一种写法: 9 个 disc_transmon 照抄,
+# 12 个 bar_coupler 不走模板, 改成**一步手写 .geo** (chen_2025_3x3_bars.geo, 宏在 chen_2025_3x3_bar_macros.geo): 从编排器注入的端口变量 Q<ij>_E_x… 起, 在全局坐标下
+# 直接画 12 条条形耦合器; 再用 connect: 把两端的爪 (比特模板画的外挂面) 归入手写的 net —— 与连接型模板走同一条 _connect 路。
+# 结能量不再由步骤带 (手写步骤没有 E_J:), 写在 chen_2025_3x3_hand.meta.yaml 的 circuit_model.qubits 里, build() 与版图生成的 9 条比特合并。
+# 两种写法出同一套 Physical 名、GDS 多边形与块网格 (tests/test_chen_2025.py 断言)。物理口径与出处见 chen_2025_3x3.layout.yaml 头注。
+schema: quantum-dsl/layout/1
+templates: [lib]
+steps:
+  - {template: disc_transmon, name: Q00, at: [0, 0], layers: {metal: ta, jj: jj}, E_J: 12.4GHz, params: {claw_W: 0, claw_S: 0}}
+  - {template: disc_transmon, name: Q10, at: [1383, 0], layers: {metal: ta, jj: jj}, E_J: 12.4GHz, params: {claw_S: 0}}
+  - {template: disc_transmon, name: Q20, at: [2766, 0], layers: {metal: ta, jj: jj}, E_J: 12.4GHz, params: {claw_E: 0, claw_S: 0}}
+  - {template: disc_transmon, name: Q01, at: [0, 1383], layers: {metal: ta, jj: jj}, E_J: 12.4GHz, params: {claw_W: 0}}
+  - {template: disc_transmon, name: Q11, at: [1383, 1383], layers: {metal: ta, jj: jj}, E_J: 12.4GHz}
+  - {template: disc_transmon, name: Q21, at: [2766, 1383], layers: {metal: ta, jj: jj}, E_J: 12.4GHz, params: {claw_E: 0}}
+  - {template: disc_transmon, name: Q02, at: [0, 2766], layers: {metal: ta, jj: jj}, E_J: 12.4GHz, params: {claw_W: 0, claw_N: 0}}
+  - {template: disc_transmon, name: Q12, at: [1383, 2766], layers: {metal: ta, jj: jj}, E_J: 12.4GHz, params: {claw_N: 0}}
+  - {template: disc_transmon, name: Q22, at: [2766, 2766], layers: {metal: ta, jj: jj}, E_J: 12.4GHz, params: {claw_E: 0, claw_N: 0}}
+  - geo: chen_2025_3x3_bars.geo          # 12 条耦合器一次画完; connect: <手写 net>: [两端爪端口] —— 爪改挂该 net, 端口记为已用
+    connect:
+      H00: [Q00.E, Q10.W]
+      H10: [Q10.E, Q20.W]
+      H01: [Q01.E, Q11.W]
+      H11: [Q11.E, Q21.W]
+      H02: [Q02.E, Q12.W]
+      H12: [Q12.E, Q22.W]
+      V00: [Q00.N, Q01.S]
+      V10: [Q10.N, Q11.S]
+      V20: [Q20.N, Q21.S]
+      V01: [Q01.N, Q02.S]
+      V11: [Q11.N, Q12.S]
+      V21: [Q21.N, Q22.S]
+ground: none

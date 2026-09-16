@@ -86,12 +86,12 @@ Maxwell 互容, 必须**在至少一次求解中共现**; 共享节点只提供�
 | N13 编排 | `build(meta, out, solve=False) → {gds, gds_png, mesh, config, manifest}`（manifest 带输入 sha256 与全部产物；`<stem>.gds.png` = GDS 预览） | `test_pipeline.py::test_build_no_solve_artifacts_and_manifest` |
 | N14 分块 | `extract.blocks` → 落盘 `block_<name>.geo`（只含该块 component）+ 各块 config（各自的 `postpro_block_<name>`）; 跨块邻近告警 + 块集合重叠告警; `build(blocks=[...])` 只做指定块（跳过整片网格，`solve=True` 时逐块求解并写 `block_<name>.results.yaml`，schema 同整片） | `test_pipeline.py::test_extract_blocks_derived_and_scoped`、`::test_build_blocks_only_skips_the_whole_chip` |
 | N15 外部物理验证 | sung 例子（PRX 11.021058）live 解: C_Σ ×3 对论文 ±8%（2026-08-25 翻案: 原 ±5% 锚的 Elmer P1 档系偏置抵消产物, 账见例子 meta 头注与 `docs/physics.md` §12）, β_qc ±20%（gate `QDSL_RUN_PALACE_SUNG=1`; 排除项见例子 meta） | `test_live.py::test_sung_2021_against_paper` |
-| N16 版图编排 | `compile_layout(meta) → Layout`（可调用几何源, `.qubits/.subsystems/.ports/.inputs`）; meta `layout:`+`layers:`; 模板 `.geo`+yaml; 手写 `.geo` 步骤只增不改; 路由只接正对端口、宽度继承、定长闭合 `guided_wavelength`; 编排器纪律全部 raise（NaN 置毒含 `port(i)` 简写 / 短路 / 未认领面 / 未连接外挂面 / 外挂端口背后无面 / 全名唯一 / 层 kind / 模板子字典键与 `kind` 取值 / `if:` 指向未声明参数 / `body:` 非岛键 / 连接型的 `at:`·`rot:`·`mirror: y`）；`inputs` 含 `.geo` 递归 `Include` 到的宏库 | `test_layout.py` 全部 7 条（等价性、混用 + 路由 + 地、嵌套再导出、纪律、守卫、词汇） |
-| N17 Chen 2025 圆盘比特 → 3×3 | 模板 `disc_transmon`（两半盘 + 跨缝结 + 可选爪外挂面 E/N/W/S）与 `bar_coupler`（连接型: 条 + 五边形 + 结, 两端爪并入条的 net; 连接型步骤吃 `mirror:`）; 例子 `chen_2025_3x3.layout.yaml`（9 + 12 步, 21 个结条目自动生成, 载片地 = `airbox.top_um`, `extract.blocks` = 12 个 SI 口径 QCQ 块）; 几何 = `docs/design/paper-chen2025-geometry.md` 照片量出值 | `test_chen_2025.py` 2 条（几何 / 手性 / 记账一致; QCQ 块 = 6 terminal + 盒顶地） |
+| N16 版图编排 | `compile_layout(meta) → Layout`（可调用几何源, `.qubits/.subsystems/.ports/.inputs`）; meta `layout:`+`layers:`; 模板 `.geo`+yaml; 手写 `.geo` 步骤只增不改; 路由只接正对端口、宽度继承、定长闭合 `guided_wavelength`; 编排器纪律全部 raise（NaN 置毒含 `port(i)` 简写 / 短路 / 未认领面 / 未连接外挂面 / 外挂端口背后无面 / 全名唯一 / 层 kind / 模板子字典键与 `kind` 取值 / `if:` 指向未声明参数 / `body:` 非岛键 / 连接型的 `at:`·`rot:`·`mirror: y` / 步骤键按类型查 / 路由体与手写金属须碰到每一端 / merge 文件里的 Macro / 手写 `etch` 的 `layers:`）；手写步骤 `connect: {net: [端口]}` 认领外挂面（与连接型同一条路）；`inputs` 含 `.geo` 递归 `Include` 到的宏库 | `test_layout.py` 全部 8 条（等价性、混用 + 路由 + 地、嵌套再导出、纪律、守卫、词汇、手写 connect） |
+| N17 Chen 2025 圆盘比特 → 3×3 | 模板 `disc_transmon`（两半盘 + 跨缝结 + 可选爪外挂面 E/N/W/S）与 `bar_coupler`（连接型: 条 + 五边形 + 结, 两端爪并入条的 net; 连接型步骤吃 `mirror:`）; 例子 `chen_2025_3x3.layout.yaml`（9 + 12 步, 21 个结条目自动生成, 载片地 = `airbox.top_um`, `extract.blocks` = 12 个 SI 口径 QCQ 块）; 几何 = `docs/design/paper-chen2025-geometry.md` 照片量出值; 对照件 `chen_2025_3x3_hand`（12 个耦合器换成一步手写 `.geo` + `connect:`, 结写在 meta, 几何逐点相同） | `test_chen_2025.py` 3 条（几何 / 手性 / 记账一致; QCQ 块 = 6 terminal + 盒顶地; 手写 = 模板路线） |
 
 ## 验收
 
-1. Python 3.13 下 `pytest tests/ -q` **0 failed**（37 passed, live 两条默认 skip）。
+1. Python 3.13 下 `pytest tests/ -q` **0 failed**（39 passed, live 两条默认 skip）。
 2. `QDSL_RUN_PALACE=1` 下 N7 通过（Palace 0.16, WSL; ⚠ 必须 `HWLOC_COMPONENTS=-gl`）。
 3. `QDSL_RUN_PALACE_SUNG=1` 下 N15 通过（整片 order 2, 18.5M 未知量, 峰值内存 ~154 G,
    须 384G 级机器; N7 锚配方可复现, N15 锚论文真值——角色互补, 都要）。

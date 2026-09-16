@@ -23,7 +23,7 @@ native Gmsh `.geo`（OCC, **µm**）**或** 版图 `*.layout.yaml`（模板 = �
 conda env **`qdsl313`**（Python 3.13 + gmsh + gdstk + shapely + pytest; `PALACE_BIN` 与 `HWLOC_COMPONENTS=-gl` 已持久化）:
 
 ```bash
-~/miniconda3/envs/qdsl313/bin/python -m pytest tests/ -q                       # 37 passed, 2 skipped, ~30 s
+~/miniconda3/envs/qdsl313/bin/python -m pytest tests/ -q                       # 39 passed, 2 skipped, ~30 s
 QDSL_RUN_PALACE=1 ~/miniconda3/envs/qdsl313/bin/python -m pytest tests/test_live.py -k two_pads -q   # ~2 min
 # sung 外部锚: QDSL_RUN_PALACE_SUNG=1 + PALACE_BIN=tools/palace_remote.sh + 384G 远端机 (峰值内存 154 G)
 ```
