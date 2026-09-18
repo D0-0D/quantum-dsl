@@ -1,0 +1,13 @@
+# cpw_route — 自动布线 CPW (连接型 + planner: cpw): 两个**不必正对**的端口之间, 编排器用 route.plan_cpw (Dubins CSC,
+# 弯半径 R) 在芯片坐标里规划中心线 = 直段 + 圆弧序列, 逐段注入列表变量 _rt_*, 本模板的 .geo 用 LIB_CPW / LIB_CPW_ARC 画面。
+# 步骤上可给 length: (同 cpw_meander: 减两端 leq 后注入 L, 中间直段换成蛇形; 不给 = 最短路) 与 region: [x0, y0, x1, y1]
+# (芯片坐标可用矩形, 全部原语含缝宽须落在其内; n_legs: 0 = 自动取能装进 region 的最小腿数, 没 region 就必须显式给 n_legs)。
+# 设计稿 docs/design/auto-route.md。
+schema: quantum-dsl/template/1
+kind: connect
+planner: cpw
+params: {R: 40, n_legs: 0, gap: 6}
+layers: {metal: conductor}
+islands: {cpw: {faces: cpw_centre(), layer: metal}}     # 路由体: 与两端并成一个 net
+etch: [{faces: cpw_etch(), layer: metal}]
+outputs: {length: cpw_length}                           # 步骤给 length: 时必须 == 注入的 L

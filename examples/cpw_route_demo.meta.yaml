@@ -1,0 +1,14 @@
+# cpw_route_demo.meta.yaml — cpw_route_demo.layout.yaml 的 sidecar (与 xmon_readout 同口径)。层表: m1 导体 (GDS 1/0), jj 结 (GDS 20/0)。
+# 网格刻意粗 (演示/测试用秒级); 报数前按 grammar 常见坑 #6 做两档网格。
+schema: quantum-dsl/meta/1
+
+layout: cpw_route_demo.layout.yaml
+layers:
+  m1: {kind: conductor, gds: [1, 0]}
+  jj: {kind: junction,  gds: [20, 0]}
+
+materials:
+  substrate: {eps_r: 11.45, thickness_um: 500}
+airbox: {top_um: 600, bottom_um: 800, side_um: 200}
+mesh: {max_size_um: 200, min_size_um: 20}
+solver: {type: electrostatic, order: 2, outer_boundary: open}

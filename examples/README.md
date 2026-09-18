@@ -12,13 +12,15 @@
 | `two_pads_blocks.meta.yaml` | 同一几何切成 A / B 两块 | 分块提取 `extract.blocks`，以及「跨块直接互容 = 结构性零」告警 | 不需要求解 |
 | `two_pads.layout.yaml` + `two_pads_layout.meta.yaml` | 同一 two_pads，用**版图**写：两个 `pad` 模板实例 | 版图路线的最小例子：与手写 `.geo` 逐字等价（GDS / 网格标签相同，测试断言） | 同 two_pads |
 | `xmon_readout.{layout.yaml,meta.yaml}` + `xmon_readout_launch.geo` | `xmon` 模板（岛 + moat + 结 + 读出桨）→ λ/4 定长蛇形 `cpw_meander` → 手写发射焊盘，`ground: sheet` | 框架演示：模板 / 手写 `.geo` / 路由在同一模型混用；手写步骤声明端口给路由接；结自动进 circuit_model；长度闭环 | 粗网格秒级（演示件） |
+| `cpw_route_demo.{layout.yaml,meta.yaml}` | `xmon` 读出桨（朝 +x）→ **自动布线** `cpw_route` → `pad` 北口（朝 +y，错位数百 µm）：两口不正对，fixed 3000 µm，`region` 矩形内自动取腿数，`ground: sheet` | `planner: cpw`（Dubins 弧 + 直段 + 定长蛇形，`docs/design/auto-route.md`）；`region:` 步骤键；`subsystems` 多出 `route_primitives`；region 太小 / 长度装不下都 raise | 粗网格秒级（演示件） |
 | `chen_2025_3x3.{layout.yaml,meta.yaml}` | Chen et al. 2025 (Nat. Phys. 21, 1489) 圆盘比特方格阵列的 3×3 切片：9 个 `disc_transmon` + 12 个 `bar_coupler`，几何全部是 Fig. 1a 照片量出值（`../docs/design/paper-chen2025-geometry.md`），无读出结构 | flip-chip 口径：顶片无地 `ground: none`，载片地 = `airbox.top_um: 5`（唯一物理旋钮）；21 个浮动结条目自动生成；`extract.blocks` = 12 个 SI §D 口径的孤立 QCQ 块（6 terminal） | 单块 100/4 order-2 ≈75 万 tets，本机 8 rank ~10 min：`build(m, out, solve=True, blocks=["H01"])`；整片 42 导体 ~9M tets 上云 |
 | `chen_2025_3x3_hand.{layout.yaml,meta.yaml}` + `chen_2025_3x3_bars.geo` + `chen_2025_3x3_bar_macros.geo` | 同一 Chen 3×3，**几何逐点相同**的另一种写法：9 个 `disc_transmon` 照抄，12 个 `bar_coupler` 换成一步手写 `.geo`（从端口变量 `Q00_E_x…` 起画）+ `connect:` 认领爪；12 条耦合器的结写在 meta `circuit_model.qubits` | 「模板 vs 手写」对照件：手写步骤 `connect:`（grammar §4.1）；宏必须放 `Include` 文件；Physical 名 / GDS 多边形 / 结条目与模板路线相同（`test_chen_2025.py` 断言） | 同 chen |
+| `chen_2025_cross.{layout.yaml,meta.yaml}` | Chen 2025「十字」：中心 Q11 四爪全开 + 四臂比特各留一只朝中心的爪 + 4 个 `bar_coupler` = 18 导体 / 9 个浮动结，**整片一次解**（meta 无 `extract.blocks`）。中心比特的 C_Σ 是真晶格口径（↔ Table SI 实测 α −192 ± 6 MHz），臂比特只有一只爪 = SI §D 孤立 QCQ 的比特侧口径，同一张网格作差 = 周边结构效应。100/4 网格 2.4 M tets，上云解（`.claude/session/2609180210.md`） |
 | `sung_2021_device.{geo,meta.yaml}` | Sung et al., PRX 11, 021058 三体 tunable-coupler 的简化重现（手写 `.geo` + `qlib.geo` 宏） | **外部物理锚**：三个浮动 transmon 的 C_Σ、β 对论文；`ground::` 角色 + 开放边界 + `Include` 宏库 | 18.5M 未知量，**峰值内存 ~154 G** |
-| `sung_2021_xmon.{geo,meta.yaml}` | 同一论文器件的**真拓扑**（接地 Xmon ×2 + 梳齿 coupler），~20 个照片量出参数，无调参 | 对论文的**无调参预测**（分清「标定命中」与「预测精度」，`docs/report/04` §8）；`XMON` 宏；接地单岛写法 `island:` | 80/2 order-2 ~13M tets，需 384 G 远端机 |
+| `sung_2021_xmon.{geo,meta.yaml}` | 同一论文器件的**真拓扑**（接地 Xmon ×2 + 梳齿 coupler），~20 个照片量出参数，无调参 | 对论文的**无调参预测**（分清「标定命中」与「预测精度」，`docs/report/Aug27/04` §8）；`XMON` 宏；接地单岛写法 `island:` | 80/2 order-2 ~13M tets，需 384 G 远端机 |
 | `sung_2021_xmon_traced.{geo,meta.yaml}` | 同一照片的逐点描摹（`tools/micrograph_to_geo.py` 生成，426 顶点） | 参数化版的保真参照；`POLY` 宏 | 15.4M tets，峰值 168 G |
 | `qlib.geo` | 手写路线的 OCC 宏库：`PAD` / `POLY` / `XMON` / `CPW` / `JUNCTION` / `GROUND_CUTOUT`，面 tag 回 `sret` | 被 sung 例子 `Include`；纯几何宏，Physical 名由调用点打；⚠ `Call X;` 独占一行 | — |
-| `lib/` | **模板库**：5 个模板（各 = `.yaml` 接口 + `.geo` 局部坐标几何）+ 宏库 `cpw_macros.geo` | 见下一节 | — |
+| `lib/` | **模板库**：6 个模板（各 = `.yaml` 接口 + `.geo` 局部坐标几何）+ 宏库 `cpw_macros.geo` | 见下一节 | — |
 
 ## `lib/` 模板库
 
@@ -31,6 +33,7 @@
 | `pad` | 放置 | 1（= 实例名） | 端口 E/N/W/S = 四边中点，宽 = 边长 | — | `w` `h`；`gap` > 0 出蚀刻 pocket | `two_pads.layout.yaml` |
 | `xmon` | 放置 | 1（= 实例名） | 可选读出桨 RO（外挂面 + 同名端口，`ro` 开关） | 北臂端 → 地 → `island:` 条目 | `arm_w` `arm_L` `gap` `jj_w` `ro_*` | `xmon_readout.layout.yaml` |
 | `cpw_meander` | **连接** | 1 = 路由体（并入端点 net） | 两端由 `from` / `to` 给定，宽度继承 | — | `R` `n_legs` `gap`；步骤 `length:` 定长 | `xmon_readout.layout.yaml` |
+| `cpw_route` | **连接 + 自动布线**（`planner: cpw`） | 1 = 路由体（并入端点 net） | 两端由 `from` / `to` 给定，**不必正对**，宽度继承；步骤可给 `region: [x0, y0, x1, y1]` | — | `R` 最小弯半径、`n_legs`（0 = 按 region 自动）、`gap`；步骤 `length:` 定长（中段换蛇形）；几何 = Dubins 弧 + 直段，`docs/design/auto-route.md` | `cpw_route_demo.layout.yaml` |
 | `disc_transmon` | 放置 | 2：`<实例>_a` / `<实例>_b` 两半盘 | 4 只可选爪 E/N/W/S（外挂面 + 同名端口，`claw_*` 开关），电学归接上来的耦合器 | 跨缝 a → b → `islands:` 浮动条目 | `dia` `slot` `slot_deg` `gap` `claw_t` `claw_deg` `stub` `bar_w` `jj_w` | `chen_2025_3x3.layout.yaml` |
 | `bar_coupler` | **连接**，2 岛 | `body: bar`（= 步骤名，含两端爪）+ `<步骤名>_pent` | 两端接 `disc_transmon` 的爪端口 | 条 → 板 → `islands: [H, H_pent]` | `pent_w` `pent_wall` `pent_h` `pent_gap` `pent_off` `jj_w`；`mirror: x` 翻五边形侧 | `chen_2025_3x3.layout.yaml` |
 | `cpw_macros.geo` | 宏库 | — | — | — | `LIB_CPW` / `LIB_CPW_ARC` / `LIB_CPW_MEANDER`，入参出参 `_lib_*` | 被 `cpw_meander.geo` / `disc_transmon.geo` `Include` |
@@ -58,7 +61,8 @@ steps:
 |---|---|---|
 | 单岛放置型 | `pad`（最小完整对） | §4.2.1 |
 | 岛 + 蚀刻 + 结 + 可选外挂 | `xmon` | §4.2.4 |
-| 端口到端口的定长路由 | `cpw_meander` | §4.2.5 |
+| 端口到端口的定长路由（两口正对） | `cpw_meander` | §4.2.5 |
+| 两口不正对的自动布线（区域内、定长） | `cpw_route`（`planner: cpw`，几何由 `route.py` 规划、`.geo` 只逐段 Call 宏） | §4.2.2 `planner` / `docs/design/auto-route.md` |
 | 多岛 + 多只可选外挂 + 浮动结 | `disc_transmon` | §4.2.6 |
 | 连接型多岛（`body:`）+ 跨岛结 | `bar_coupler` | §4.2.5 |
 | 复用几何宏 | `cpw_macros.geo`：include guard、`LIB_` / `_lib_` 前缀、`Call` 独占一行 | §4.2.7 |
@@ -94,7 +98,7 @@ QDSL_PALACE_NP=8 PALACE_BIN=/path/to/palace $P -c "from quantum_dsl import build
 预期（3）：`maxwell_fF ≈ [[24.53, -1.95], [-1.95, 24.54]]`（对头注 golden <2%），
 `results.yaml` 里 `f01_GHz ≈ 9.40 / 9.40`、`g_MHz ≈ 376`。
 
-sung 例子的跑法（远端大内存机）见 [`../docs/report/03-复现与演示.md`](../docs/report/03-复现与演示.md)
+sung 例子的跑法（远端大内存机）见 [`../docs/report/Aug27/03-复现与演示.md`](../docs/report/Aug27/03-复现与演示.md)
 Demo F；`tools/palace_remote.sh` 是把 Palace 调用透明转到远端的 `PALACE_BIN` 垫片。
 
 ## 写自己的例子

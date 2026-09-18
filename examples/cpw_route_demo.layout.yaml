@@ -1,0 +1,13 @@
+# cpw_route_demo.layout.yaml — 自动布线演示: 两个**不正对**的端口 (Q1.RO 朝 +x, F0.N 朝 +y, 错位几百 µm) 用 cpw_route
+# (planner: cpw, Dubins CSC + 定长蛇形) 在 region 矩形内连成一条 3000 µm 的 CPW; n_legs: 0 = 腿数按 region 自动取。
+#   Q1.RO (读出桨外沿, 宽 10) ──cpw_route (fixed 3000 µm, R 40, 缝 6)──► F0.N (pad 模板的北口, 宽 10)
+# 读出腔 net = F0 (唯一岛端; 桨是外挂面, 并入 F0)。ground: sheet 建地并减去全部蚀刻工具面 (moat / 桨 pocket / pad pocket / CPW 缝)。
+# 两口都是岛 (如两个 pad) 会 raise「两岛端无唯一 net 名」—— 那是 net 规则, 不是布线器的限制 (grammar §4.3)。
+schema: quantum-dsl/layout/1
+templates: [lib]
+steps:
+  - {template: xmon, name: Q1, at: [0, 0], layers: {metal: m1, jj: jj}, E_J: 12.2GHz}
+  - {template: pad, name: F0, at: [900, -700], params: {w: 10, h: 60, gap: 6}, layers: {metal: m1}}
+  - {template: cpw_route, name: R1, from: Q1.RO, to: F0.N, params: {R: 40, gap: 6},
+     length: {mode: fixed, L: 3000um}, region: [180, -760, 1000, 100]}
+ground: {sheet: {layer: m1, margin_um: 200}}

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""版图编排器 (契约 N16): ``*.layout.yaml`` 有序步骤 → 一个 gmsh 模型 + 记账。
+"""版图编排器 (契约「版图编排」): ``*.layout.yaml`` 有序步骤 → 一个 gmsh 模型 + 记账。
 
 设计稿 ``docs/design/component-library.md`` (v3.1)。要点:
 
@@ -12,7 +12,8 @@
   芯片层 → 按实例名挂 Physical。模板可嵌套 (``steps:``), 端口 / 外挂面可再导出。
 * **层是模板的局部命名空间**: 槽位只声明 kind 要求, 实例上 ``layers: {slot: chip_layer}`` 重定位
   (同名兼容可省), 层性质由 meta ``layers:`` 表决定。
-* **端口** = 端面中点 + 外法向 (rad) + 宽 + 层 + 等效长度; 路由只接端口, 宽度继承, 两口必须正对。
+* **端口** = 端面中点 + 外法向 (rad) + 宽 + 层 + 等效长度; 路由只接端口, 宽度继承, 两口必须正对
+  (``planner: cpw`` 模板除外: ``route.plan_cpw`` 在芯片坐标里规划 Dubins 弧 + 直段, 位姿恒等, 原语按列表变量注入)。
   **路由是电连接**: 两端外挂面 + 路由自身面并成一个 net; net 名来自岛 (恰一个岛端 → 该岛;
   零岛端 → 步骤名; 两岛端 → raise)。
 * **纪律** (全部 raise, 不静默): 输出变量 NaN 置毒; 手写步骤前后已有面原样存在 (增量原则);
@@ -20,7 +21,7 @@
   kind 一致; 不同 net 同层导体面相交 (``occ.getDistance == 0``) = 短路。
 
 角度: YAML 里 ``rot`` 写**度**; 模板输出的端口法向是 ``.geo`` 算的 **rad**。长度一律 µm。
-gmsh 惰性 import (N0): 本模块只在 ``Layout`` 被调用时用到 gmsh。
+gmsh 惰性 import (import 纯度): 本模块只在 ``Layout`` 被调用时用到 gmsh。
 """
 
 from __future__ import annotations
@@ -45,9 +46,10 @@ _ROLE_KIND = {"metal": "conductor", "ground": "conductor", "jj": "junction"}
 
 _LAYOUT_KEYS = frozenset({"schema", "templates", "steps", "ground"})
 _TEMPLATE_KEYS = frozenset({"schema", "kind", "params", "layers", "islands", "external",
-                            "etch", "junction", "ports", "outputs", "body", "steps"})
+                            "etch", "junction", "ports", "outputs", "body", "steps", "planner"})
 _TPL_STEP_KEYS = frozenset({"template", "route", "name", "at", "rot", "mirror", "from", "to",
-                            "params", "layers", "length", "E_J", "L_J", "squid"})
+                            "params", "layers", "length", "E_J", "L_J", "squid", "region"})
+_PLANNER_PARAMS = ("R", "n_legs", "gap")     # planner: cpw 模板必须声明的参数 (最小弯半径 / 腿数 / 缝宽)
 _GEO_STEP_KEYS = frozenset({"geo", "frame", "ports", "etch", "layers", "connect"})
 _ENTRY_KEYS = {          # 模板各段每条目的合法键 (拼错 = 静默丢语义, 必须查)
     "islands": frozenset({"faces", "layer"}),
@@ -179,6 +181,15 @@ def _load_template(name: str, tdirs) -> _Template:
                     raise QuantumDslError(
                         f"template {yml}: kind {doc['kind']!r} must be 'connect' (a placement "
                         f"template omits kind:)")
+                if doc.get("planner") is not None:
+                    if doc["planner"] != "cpw" or doc.get("kind") != "connect":
+                        raise QuantumDslError(
+                            f"template {yml}: planner: {doc['planner']!r} — the only planner is 'cpw' and it "
+                            f"needs kind: connect")
+                    missing = [k for k in _PLANNER_PARAMS if k not in (doc.get("params") or {})]
+                    if missing:
+                        raise QuantumDslError(f"template {yml}: planner: cpw needs params {list(_PLANNER_PARAMS)}, "
+                                              f"missing {missing}")
                 for sec, allowed in _ENTRY_KEYS.items():
                     val = doc.get(sec)
                     if isinstance(val, dict) and sec == "junction":
@@ -466,15 +477,19 @@ class Layout:
             raise QuantumDslError(
                 f"{where}: template kind {'connect' if connect else 'place'} "
                 f"{'needs from:/to:' if connect else 'takes at:/rot:/mirror:, not from:/to:'}")
+        planner = tpl.doc.get("planner") is not None
+        if "region" in step and not planner:
+            raise QuantumDslError(f"{where}: region: is only for planner templates (planner: cpw); "
+                                  f"{tpl.name} draws in the from->to frame and needs facing ports")
         ends: tuple[tuple[str, Port], tuple[str, Port]] | None = None
-        inject: dict[str, float] = {}
+        inject: dict = {}
         target = None
         if connect:
             bad = sorted({"at", "rot"} & set(step))
             if bad:
                 raise QuantumDslError(f"{where}: connect steps take from:/to:/mirror:, not "
                                       f"{bad} — the pose comes from the two ports")
-            ends, pose, D, w = self._connect_pose(step, where)
+            ends, pose, D, w = self._connect_pose(step, where, planner)
             net = self._net(ends, full, where)          # 路由体的 component = net, 结记账前就定
             for k in ("D", "w", "L"):
                 if k in params:
@@ -484,6 +499,11 @@ class Layout:
             if "length" in step:
                 target = self._length(step["length"], w, params, ends, where)
                 inject["L"] = target["length_drawn_um"]
+            if planner:                                 # 规划在芯片坐标里 (位姿恒等), 原语当列表变量注入
+                prims = self._plan(step, params, ends, w, inject.get("L"), where)
+                inject.update(prims)
+                if target is not None:
+                    target["route_primitives"] = int(prims["_rt_n"])
         else:
             at = step.get("at", [0, 0])
             if not (isinstance(at, list) and len(at) == 2):
@@ -600,8 +620,8 @@ class Layout:
         nan = float("nan")
         for v in poison:
             self.P.setNumber(v, [nan])
-        for k, v in {**params, **inject}.items():
-            self.P.setNumber(k, [float(v)])
+        for k, v in {**params, **inject}.items():        # 标量或列表 (planner 的 _rt_* 原语表), 列表整体替换
+            self.P.setNumber(k, [float(x) for x in v] if isinstance(v, (list, tuple)) else [float(v)])
         new, pnew = self._merge(tpl.geo, where)
         if pnew:
             raise QuantumDslError(
@@ -685,7 +705,7 @@ class Layout:
             raise QuantumDslError(f"{where}: port {ref!r} unknown (known: {sorted(self.ports)})")
         return self.ports[ref]
 
-    def _connect_pose(self, step, where):
+    def _connect_pose(self, step, where, planner=False):
         for k in ("from", "to"):
             if k not in step:
                 raise QuantumDslError(f"{where}: connect step needs {k}:")
@@ -693,18 +713,23 @@ class Layout:
         D = math.hypot(q.x - p.x, q.y - p.y)
         if not D > 0:
             raise QuantumDslError(f"{where}: ports {step['from']} and {step['to']} coincide")
-        axis = math.atan2(q.y - p.y, q.x - p.x)
-        if not (_angles_equal(p.a, axis) and _angles_equal(q.a, axis + math.pi)):
-            raise QuantumDslError(
-                f"{where}: ports must face each other along the axis (from normal "
-                f"{math.degrees(p.a):.3f} deg, axis {math.degrees(axis):.3f} deg, to normal "
-                f"{math.degrees(q.a):.3f} deg) — route straight segments/bends first")
         if abs(p.w - q.w) > _TOL:
             raise QuantumDslError(f"{where}: port widths differ ({p.w} vs {q.w} um); "
                                   f"a taper is not implemented — match the widths")
         if p.layer != q.layer:
             raise QuantumDslError(f"{where}: ports on different layers ({p.layer!r} vs {q.layer!r})")
         mirror = step.get("mirror")
+        if planner:                                    # 规划器在芯片坐标里自己找路: 位姿恒等, 不要求正对, 镜像无意义
+            if mirror not in (None, False):
+                raise QuantumDslError(f"{where}: mirror: has no meaning for a planner template (the route is "
+                                      f"planned in chip coordinates); drop it or use region:")
+            return ((step["from"], p), (step["to"], q)), _ID, D, p.w
+        axis = math.atan2(q.y - p.y, q.x - p.x)
+        if not (_angles_equal(p.a, axis) and _angles_equal(q.a, axis + math.pi)):
+            raise QuantumDslError(
+                f"{where}: ports must face each other along the axis (from normal "
+                f"{math.degrees(p.a):.3f} deg, axis {math.degrees(axis):.3f} deg, to normal "
+                f"{math.degrees(q.a):.3f} deg) — use cpw_route (planner: cpw) or hand-write the .geo")
         if mirror not in (None, False, "x"):
             raise QuantumDslError(
                 f"{where}: connect steps only take mirror: x (flip across the from->to axis); "
@@ -712,6 +737,26 @@ class Layout:
         pose = _compose((1, 0, 0, 1, p.x, p.y),
                         _pose([0, 0], math.degrees(axis), mirror))   # mirror: x 翻到轴另一侧
         return ((step["from"], p), (step["to"], q)), pose, D, p.w
+
+    def _plan(self, step, params, ends, w, L, where) -> dict:
+        """planner: cpw —— 两口 (不必正对) 之间在芯片坐标里规划中心线 (``route.plan_cpw``), 原语按列展开成
+        gmsh 列表变量: ``_rt_n`` 段数, ``_rt_kind(k)`` 0 直段 / 1 弧, ``_rt_p0(k)..._rt_p4(k)`` =
+        直段 (x1, y1, x2, y2, 0) / 弧 (cx, cy, R, a0, a1); 模板 ``.geo`` 用 For 循环逐段 Call 宏。"""
+        from .route import plan_cpw
+        (_, p), (_, q) = ends
+        try:
+            prims = plan_cpw((p.x, p.y, p.a), (q.x, q.y, q.a + math.pi), params["R"], length=L,
+                             region=step.get("region"), n_legs=params["n_legs"], width=w + 2 * params["gap"])
+        except QuantumDslError as exc:
+            raise QuantumDslError(f"{where}: {exc}") from exc
+        cols: dict[str, list[float]] = {f"_rt_p{i}": [] for i in range(5)}
+        cols["_rt_kind"] = []
+        for pr in prims:
+            vals = list(pr[1:]) + ([0.0] if pr[0] == "line" else [])
+            cols["_rt_kind"].append(0.0 if pr[0] == "line" else 1.0)
+            for i in range(5):
+                cols[f"_rt_p{i}"].append(vals[i])
+        return {"_rt_n": len(prims), **cols}
 
     def _length(self, spec, w, params, ends, where) -> dict:
         if not isinstance(spec, dict) or "mode" not in spec:

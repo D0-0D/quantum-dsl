@@ -3,7 +3,7 @@
 > **本文档的定位**：给**写版图 / 写 sidecar / 写模板**的人看的参考书。每个语法元素一段说明 + 一个最小片段，
 > 不引代码行号（语法比实现稳定）。为什么这些字段是这个物理含义，见 [`physics.md`](physics.md)；
 > 字段的加载 / 校验代码在 `src/quantum_dsl/meta.py`、`geo.py`、`layout.py`、`mesh.py`、`gds.py`、`palace.py`。
-> 例子全部可跑：[`../examples/`](../examples/README.md)。本文对照 2026-09-16 的 `main`（N0–N17）逐条核过。
+> 例子全部可跑：[`../examples/`](../examples/README.md)。本文对照 2026-09-16 的 `main` 逐条核过。
 >
 > **总纪律：拒绝静默。** 未知键、拼错的枚举值、漏赋的输出变量、没人认领的面、没人连的端口、短路、NaN——
 > 一律 raise 并说明原因，从不"修"成默认值。看到报错先照错误信息改输入，不要绕。
@@ -12,10 +12,10 @@
 
 ## 1. 设计模型：两层输入
 
-| 层 | 文件 | 写什么 | 不写什么 |
-|---|---|---|---|
-| Layer-2 几何 | `<name>.geo`（§2）**或** `<name>.layout.yaml`（§4） | 金属图形（面）、Physical 名、可复用宏；版图 = 模板实例 + 手写 `.geo` 步骤 + 路由 + 地 | 衬底、真空盒、网格尺寸——由 `build_mesh` 按 meta 合成 |
-| Layer-1 物理 | `<name>.meta.yaml`（§3） | 材料、计算域、网格、求解器、芯片层表 / GDS 图层映射、结参数、分块 | 任何坐标 |
+| 层           | 文件                                                            | 写什么                                                                                 | 不写什么                                                |
+| ------------ | --------------------------------------------------------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| Layer-2 几何 | `<name>.geo`（§2）**或** `<name>.layout.yaml`（§4） | 金属图形（面）、Physical 名、可复用宏；版图 = 模板实例 + 手写`.geo` 步骤 + 路由 + 地 | 衬底、真空盒、网格尺寸——由`build_mesh` 按 meta 合成 |
+| Layer-1 物理 | `<name>.meta.yaml`（§3）                                     | 材料、计算域、网格、求解器、芯片层表 / GDS 图层映射、结参数、分块                      | 任何坐标                                                |
 
 一份 meta 引用一份几何源（`geo:` 或 `layout:` 键，**二选一**，两个都给 raise；路径相对 meta 所在目录）。多份 meta 可以指向同一份几何
 （例：`two_pads.meta.yaml` 与 `two_pads_blocks.meta.yaml`）。**要在模板版图上手写微调，不是 meta 里再加 `geo:`，而是版图里加一个
@@ -38,12 +38,12 @@ Physical 名的 component 段**（= 电学岛 / net），它是全链路的绑�
 Physical Surface("<role>::<layer>::<component>::<primitive>") = { <面 tag> };
 ```
 
-| 段 | 约束 | 含义 |
-|---|---|---|
-| `role` | `metal` · `ground` · `jj`（`substrate` / `port` / `symmetry` 解析合法，但 `build_mesh` 拒绝） | metal → 静电 Terminal；ground → 接地导体面；jj → 集总元件，只进 GDS，**从静电几何中删除** |
-| `layer` | 非负整数，或标识符 `[A-Za-z_]\w*` | 芯片层 id。meta 有 `layers:` 表时**必须在表里**，GDS 按层映射、role 须与层 kind 一致（`drawing` 层例外：任何 role 都收，只进 GDS 不进网格）；无层表时仅注释（GDS 按 role） |
-| `component` | 非空 | **电学岛（net）**。同名 = 同导体。它是电容矩阵行列标签、`circuit_model` 的 `island(s)`、`extract.blocks.components` 的键 |
-| `primitive` | 非空 | 注释性质（pad / cpw / lead …） |
+| 段            | 约束                                                                                                          | 含义                                                                                                                                                                                |
+| ------------- | ------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `role`      | `metal` · `ground` · `jj`（`substrate` / `port` / `symmetry` 解析合法，但 `build_mesh` 拒绝） | metal → 静电 Terminal；ground → 接地导体面；jj → 集总元件，只进 GDS，**从静电几何中删除**                                                                                  |
+| `layer`     | 非负整数，或标识符`[A-Za-z_]\w*`                                                                            | 芯片层 id。meta 有`layers:` 表时**必须在表里**，GDS 按层映射、role 须与层 kind 一致（`drawing` 层例外：任何 role 都收，只进 GDS 不进网格）；无层表时仅注释（GDS 按 role） |
+| `component` | 非空                                                                                                          | **电学岛（net）**。同名 = 同导体。它是电容矩阵行列标签、`circuit_model` 的 `island(s)`、`extract.blocks.components` 的键                                                |
+| `primitive` | 非空                                                                                                          | 注释性质（pad / cpw / lead …）                                                                                                                                                     |
 
 不合约定的名字（段数 ≠ 4、role 不在集合里、layer 既非整数也非标识符、空段）在 `load_geo` 就 raise。
 电容矩阵行序 = `sorted(component)`。
@@ -93,10 +93,10 @@ ground sheet 提供——更接近自由空间。**没有任何 ground 的版图
 
 仓里两套宏库，都是**纯几何**：宏只建面、把 tag 写进输出变量，**Physical 名由调用点打**，同一几何宏可被任意 role 复用。
 
-| 库 | 宏 | 输出 | 用在哪 |
-|---|---|---|---|
-| `examples/qlib.geo` | `PAD` `POLY` `XMON` `CPW` `JUNCTION` `GROUND_CUTOUT`（入参是裸名全局变量 `cx, cy, w, h, x1, …`） | 面 tag → `sret`（XMON 另出 moat → `mret`） | 手写 `.geo`（sung 例子） |
-| `examples/lib/cpw_macros.geo` | `LIB_CPW` `LIB_CPW_ARC` `LIB_CPW_MEANDER`（入参 `_lib_x1, _lib_w, …`） | `_lib_s` / `_lib_faces()` / `_lib_len` / `_lib_mlen` | 模板 `.geo`（`cpw_meander` / `disc_transmon`） |
+| 库                              | 宏                                                                                                              | 输出                                                         | 用在哪                                              |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ | --------------------------------------------------- |
+| `examples/qlib.geo`           | `PAD` `POLY` `XMON` `CPW` `JUNCTION` `GROUND_CUTOUT`（入参是裸名全局变量 `cx, cy, w, h, x1, …`） | 面 tag →`sret`（XMON 另出 moat → `mret`）              | 手写`.geo`（sung 例子）                           |
+| `examples/lib/cpw_macros.geo` | `LIB_CPW` `LIB_CPW_ARC` `LIB_CPW_MEANDER`（入参 `_lib_x1, _lib_w, …`）                                 | `_lib_s` / `_lib_faces()` / `_lib_len` / `_lib_mlen` | 模板`.geo`（`cpw_meander` / `disc_transmon`） |
 
 ```geo
 Include "qlib.geo";
@@ -156,31 +156,31 @@ circuit_model:
 
 ### 3.2 逐字段
 
-| 键 | 类型 / 取值 | 必填 | 含义 |
-|---|---|---|---|
-| `schema` | `quantum-dsl/meta/1` | ✅ | 版本标识，其它值 raise |
-| `geo` / `layout` | 文件名 | 二选一 | Layer-2 几何：手写 `.geo`，或版图 `*.layout.yaml`（§4；`layout` 必须配 `layers`）。两个都给 raise；版图上的手写微调写成版图内的 `geo:` 步骤（§4.1），meta 不再加 `geo:` |
-| `layers.<id>.kind` | `conductor` / `junction` / `drawing` | `layout` 时整表必填；`geo` 时可选 | 芯片层表，id 可为整数或标识符（= Physical 名第 2 段）。conductor 进静电网格（z = 0，目前唯一支持的导体平面）；junction 集总，进 GDS 不进网格；drawing 只进 GDS（任何 role 都收）。别的键（如 `z_um`）raise |
-| `layers.<id>.gds` | `[layer, datatype]` 或 `{layer, datatype}` | 可选 | 该层 → GDS 图层，datatype 默认 0。有层表时 GDS 按层映射（`gds.by_role` 被忽略）；**没给 gds 的层不进 GDS**；全表都没给 = 不出 GDS |
-| `materials.substrate.eps_r` | float | ✅（`palace_config`） | 衬底相对介电常数（低温硅 11.45；蓝宝石各向异性取标量近似 ~10） |
-| `materials.substrate.thickness_um` | float | ✅（`build_mesh`） | 衬底厚度，衬底占 z ∈ [−thickness, 0] |
-| `airbox.top_um` | float | ✅ | 真空盒顶 z = +top。flip-chip 时就是到载片地的间隙 d（`chen_2025_3x3`: 5） |
-| `airbox.bottom_um` | float | ✅ | 真空盒底 z = −bottom（> thickness 时衬底下方留真空） |
-| `airbox.side_um` | float | ✅ | xy 方向：导体（含 ground）包围盒每侧外扩 side；也是分块「几何邻近」告警的阈值 |
-| `mesh.max_size_um` | float | ✅ | 远场单元尺寸 |
-| `mesh.min_size_um` | float | ✅ | 导体边缘单元尺寸（Distance+Threshold 场，10 → 130 µm 渐变） |
-| `solver.type` | `electrostatic` | 默认 | 只做静电 |
-| `solver.order` | int | 默认 `2` | Palace FEM 阶数。**2 是承重件**：同网格 order 1 偏 +7.3%（见 physics.md） |
-| `solver.outer_boundary` | `ground` / `open` | 默认 `ground` | `ground` = 接地屏蔽盒（盒壁 Dirichlet 0）；`open` = 盒壁不挂 BC，须有 `ground::` 面 |
-| `gds.by_role.<role>.layer` | int | 写 gds 段则必填 | 无层表时：该 role 的所有面 → 此 GDS layer（jj 要进 GDS 就映射 jj） |
-| `gds.by_role.<role>.datatype` | int | 默认 `0` | |
-| `circuit_model.qubits[].name` | str | ✅ | 器件名（结果里的 qubit 名），唯一 |
-| `circuit_model.qubits[].island` / `islands` | component 名 / 两个 component 名的列表 | 二选一 | 接地单岛 / 浮动双岛。**每个 metal component 必须被恰好一个 qubit 认领**，否则 `solve_circuit_model` raise（未认领 = 静默接地） |
-| `circuit_model.qubits[].L_J` | 带单位字串（`10nH`） | 三选一 | 结电感 → `E_J = (ħ/2e)²/L_J` |
-| `circuit_model.qubits[].E_J` | 带单位频率（`12.2GHz`） | 三选一 | 论文惯例 E_J/h；加载成 Hz，`build` 接线时 ×h |
-| `circuit_model.qubits[].squid` | `{E_J1: 46GHz, E_J2: 25GHz, flux: 0.0}` | 三选一 | 非对称 SQUID，`flux` = Φ/Φ₀（无量纲，默认 0），两支都必填 |
-| `extract.blocks[]` | `{name: A, components: [A, ...]}` | 可选 | 分块提取（§3.3）：每块只含这些 component 的 Physical 组 |
-| `subsystems` | list | 可选 | 记账用：**原样透传**进 `results.yaml` 的 `subsystems` 段，不驱动任何计算（TL 谐振器 / χ 的计算器 `resonator_lumped_lc` / `dispersive_shift_hz` 需手动调用）。版图路线的定长路由会往这里**追加**条目（§4.6） |
+| 键                                              | 类型 / 取值                                    | 必填                                  | 含义                                                                                                                                                                                                                              |
+| ----------------------------------------------- | ---------------------------------------------- | ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `schema`                                      | `quantum-dsl/meta/1`                         | ✅                                    | 版本标识，其它值 raise                                                                                                                                                                                                            |
+| `geo` / `layout`                            | 文件名                                         | 二选一                                | Layer-2 几何：手写`.geo`，或版图 `*.layout.yaml`（§4；`layout` 必须配 `layers`）。两个都给 raise；版图上的手写微调写成版图内的 `geo:` 步骤（§4.1），meta 不再加 `geo:`                                              |
+| `layers.<id>.kind`                            | `conductor` / `junction` / `drawing`     | `layout` 时整表必填；`geo` 时可选 | 芯片层表，id 可为整数或标识符（= Physical 名第 2 段）。conductor 进静电网格（z = 0，目前唯一支持的导体平面）；junction 集总，进 GDS 不进网格；drawing 只进 GDS（任何 role 都收）。别的键（如`z_um`）raise                       |
+| `layers.<id>.gds`                             | `[layer, datatype]` 或 `{layer, datatype}` | 可选                                  | 该层 → GDS 图层，datatype 默认 0。有层表时 GDS 按层映射（`gds.by_role` 被忽略）；**没给 gds 的层不进 GDS**；全表都没给 = 不出 GDS                                                                                        |
+| `materials.substrate.eps_r`                   | float                                          | ✅（`palace_config`）               | 衬底相对介电常数（低温硅 11.45；蓝宝石各向异性取标量近似 ~10）                                                                                                                                                                    |
+| `materials.substrate.thickness_um`            | float                                          | ✅（`build_mesh`）                  | 衬底厚度，衬底占 z ∈ [−thickness, 0]                                                                                                                                                                                            |
+| `airbox.top_um`                               | float                                          | ✅                                    | 真空盒顶 z = +top。flip-chip 时就是到载片地的间隙 d（`chen_2025_3x3`: 5）                                                                                                                                                       |
+| `airbox.bottom_um`                            | float                                          | ✅                                    | 真空盒底 z = −bottom（> thickness 时衬底下方留真空）                                                                                                                                                                             |
+| `airbox.side_um`                              | float                                          | ✅                                    | xy 方向：导体（含 ground）包围盒每侧外扩 side；也是分块「几何邻近」告警的阈值                                                                                                                                                     |
+| `mesh.max_size_um`                            | float                                          | ✅                                    | 远场单元尺寸                                                                                                                                                                                                                      |
+| `mesh.min_size_um`                            | float                                          | ✅                                    | 导体边缘单元尺寸（Distance+Threshold 场，10 → 130 µm 渐变）                                                                                                                                                                     |
+| `solver.type`                                 | `electrostatic`                              | 默认                                  | 只做静电                                                                                                                                                                                                                          |
+| `solver.order`                                | int                                            | 默认`2`                             | Palace FEM 阶数。**2 是承重件**：同网格 order 1 偏 +7.3%（见 physics.md）                                                                                                                                                   |
+| `solver.outer_boundary`                       | `ground` / `open`                          | 默认`ground`                        | `ground` = 接地屏蔽盒（盒壁 Dirichlet 0）；`open` = 盒壁不挂 BC，须有 `ground::` 面                                                                                                                                         |
+| `gds.by_role.<role>.layer`                    | int                                            | 写 gds 段则必填                       | 无层表时：该 role 的所有面 → 此 GDS layer（jj 要进 GDS 就映射 jj）                                                                                                                                                               |
+| `gds.by_role.<role>.datatype`                 | int                                            | 默认`0`                             |                                                                                                                                                                                                                                   |
+| `circuit_model.qubits[].name`                 | str                                            | ✅                                    | 器件名（结果里的 qubit 名），唯一                                                                                                                                                                                                 |
+| `circuit_model.qubits[].island` / `islands` | component 名 / 两个 component 名的列表         | 二选一                                | 接地单岛 / 浮动双岛。**每个 metal component 必须被恰好一个 qubit 认领**，否则 `solve_circuit_model` raise（未认领 = 静默接地）                                                                                            |
+| `circuit_model.qubits[].L_J`                  | 带单位字串（`10nH`）                         | 三选一                                | 结电感 →`E_J = (ħ/2e)²/L_J`                                                                                                                                                                                                  |
+| `circuit_model.qubits[].E_J`                  | 带单位频率（`12.2GHz`）                      | 三选一                                | 论文惯例 E_J/h；加载成 Hz，`build` 接线时 ×h                                                                                                                                                                                   |
+| `circuit_model.qubits[].squid`                | `{E_J1: 46GHz, E_J2: 25GHz, flux: 0.0}`      | 三选一                                | 非对称 SQUID，`flux` = Φ/Φ₀（无量纲，默认 0），两支都必填                                                                                                                                                                    |
+| `extract.blocks[]`                            | `{name: A, components: [A, ...]}`            | 可选                                  | 分块提取（§3.3）：每块只含这些 component 的 Physical 组                                                                                                                                                                          |
+| `subsystems`                                  | list                                           | 可选                                  | 记账用：**原样透传**进 `results.yaml` 的 `subsystems` 段，不驱动任何计算（TL 谐振器 / χ 的计算器 `resonator_lumped_lc` / `dispersive_shift_hz` 需手动调用）。版图路线的定长路由会往这里**追加**条目（§4.6） |
 
 版图路线下 meta 手写的 `circuit_model.qubits` 与编排器生成的合并：同名条目必须**逐字段一致**，否则 raise（要么删掉 meta 里的，要么改成一致）。
 
@@ -225,7 +225,7 @@ extract:
 
 例子：`examples/two_pads.layout.yaml`（与手写 `two_pads.geo` 逐字等价）、`examples/xmon_readout.layout.yaml`
 （模板 + 手写 + 定长路由 + 平面地）、`examples/chen_2025_3x3.layout.yaml`（9 比特 + 12 耦合器阵列，flip-chip 无片上地）。
-模板库 `examples/lib/`：`pad` · `xmon` · `cpw_meander`（连接型）· `disc_transmon`（多岛 + 可选外挂面）· `bar_coupler`（连接型多岛）。
+模板库 `examples/lib/`：`pad` · `xmon` · `cpw_meander`（连接型）· `cpw_route`（连接型 + 自动布线 `planner: cpw`，两口不必正对）· `disc_transmon`（多岛 + 可选外挂面）· `bar_coupler`（连接型多岛）。
 
 ### 4.1 版图文件
 
@@ -246,26 +246,27 @@ ground: {sheet: {layer: m1, margin_um: 200}}       # 见下
 
 **步骤键**（合法集合就这些，别的 raise）：
 
-| 步骤键 | 适用 | 含义 |
-|---|---|---|
-| `template` / `route` | 模板步骤 | 模板名（`route` 是连接型的同义写法）。`name` 必填、须是标识符、全版图唯一；它就是 component 名（多岛模板为 `<name>_<岛键>`；嵌套加父前缀 `<父>_<子>`） |
-| `at` `rot` `mirror` | **放置型** | 位姿：`at: [x, y]` µm（默认 `[0, 0]`）、`rot` **度**（默认 0）、`mirror: x` / `y`（先沿局部轴镜像再转）。连接型步骤写 `at` / `rot` 即 raise（位姿由两个端口给定） |
-| `from` `to` | **连接型** | 两个端口 `实例.端口`（或手写步骤声明的端口名）。局部坐标原点 = from 口、+x 轴指向 to 口；两口必须正对、同宽、同层，且各只能被连一次。连接型只吃 `mirror: x`（模板翻到轴另一侧，如 `bar_coupler` 的五边形侧）；`mirror: y` 会翻转 from→to 轴本身，raise |
-| `params` | 模板步骤 | 覆盖模板 `params` 默认值；未知参数 raise；值必须是有限数（布尔拒绝） |
-| `layers` | 模板步骤 | 槽位 → 芯片层。省略时先取同名芯片层；没有同名且该 kind 的芯片层唯一时取它；否则 raise。kind 不兼容 raise。嵌套时值可以是父模板的槽位名 |
-| `E_J` / `L_J` / `squid` | 模板步骤 | 模板有 `junction` 时必给恰一个 → 自动进 `circuit_model.qubits`（§4.6） |
-| `length` | 连接型 | 定长：`{mode: quarter_wave \| half_wave, f_r: 7GHz, film_nm: 200}`（`cpw.guided_wavelength`：中心导体宽 = 端口宽，缝 = 模板参数 `gap`，衬底 ε 与厚度取 meta）或 `{mode: fixed, L: 900um}`（裸数 = µm）；减去两端端口等效长度 `leq` 后注入模板变量 `L`；模板须以 `outputs.length` 回报画出的长度，与目标不符 raise；记入 `subsystems` |
-| `geo` | 手写步骤 | `.geo` 路径（相对版图文件；嵌套时相对模板目录）。可选 `frame: <实例全名>` 在该实例局部坐标下画；`ports:` 用输出变量声明端口（须 `net:`）；`etch:` 声明蚀刻工具面表；`layers: <芯片层 id>` 指明蚀刻面所在层（本步骤挂名的面不止一层时必填；不在层表 raise）；`connect: {<net>: [端口, …]}` 把模板画的外挂面（爪 / 桨）归入本步骤挂名的 component（下文与 §4.3） |
+| 步骤键                        | 适用             | 含义                                                                                                                                                                                                                                                                                                                                                                           |
+| ----------------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `template` / `route`      | 模板步骤         | 模板名（`route` 是连接型的同义写法）。`name` 必填、须是标识符、全版图唯一；它就是 component 名（多岛模板为 `<name>_<岛键>`；嵌套加父前缀 `<父>_<子>`）                                                                                                                                                                                                                 |
+| `at` `rot` `mirror`     | **放置型** | 位姿：`at: [x, y]` µm（默认 `[0, 0]`）、`rot` **度**（默认 0）、`mirror: x` / `y`（先沿局部轴镜像再转）。连接型步骤写 `at` / `rot` 即 raise（位姿由两个端口给定）                                                                                                                                                                                         |
+| `from` `to`               | **连接型** | 两个端口`实例.端口`（或手写步骤声明的端口名）。局部坐标原点 = from 口、+x 轴指向 to 口；两口必须同宽、同层，且各只能被连一次；**正对**是普通连接型模板的要求，`planner: cpw` 模板（`cpw_route`）不要求正对、位姿恒等（在芯片坐标里规划）。连接型只吃 `mirror: x`（模板翻到轴另一侧，如 `bar_coupler` 的五边形侧）；`mirror: y` 会翻转 from→to 轴本身，raise                                                                                                                 |
+| `params`                    | 模板步骤         | 覆盖模板`params` 默认值；未知参数 raise；值必须是有限数（布尔拒绝）                                                                                                                                                                                                                                                                                                          |
+| `layers`                    | 模板步骤         | 槽位 → 芯片层。省略时先取同名芯片层；没有同名且该 kind 的芯片层唯一时取它；否则 raise。kind 不兼容 raise。嵌套时值可以是父模板的槽位名                                                                                                                                                                                                                                        |
+| `E_J` / `L_J` / `squid` | 模板步骤         | 模板有`junction` 时必给恰一个 → 自动进 `circuit_model.qubits`（§4.6）                                                                                                                                                                                                                                                                                                    |
+| `length`                    | 连接型           | 定长：`{mode: quarter_wave \| half_wave, f_r: 7GHz, film_nm: 200}`（`cpw.guided_wavelength`：中心导体宽 = 端口宽，缝 = 模板参数 `gap`，衬底 ε 与厚度取 meta）或 `{mode: fixed, L: 900um}`（裸数 = µm）；减去两端端口等效长度 `leq` 后注入模板变量 `L`；模板须以 `outputs.length` 回报画出的长度，与目标不符 raise；记入 `subsystems`                          |
+| `region`                    | 连接型（仅 `planner:` 模板） | `[x0, y0, x1, y1]` 芯片坐标矩形（µm）：自动布线的全部原语**含缝宽**须落在其内，否则 raise（报哪一段出界多少）；模板参数 `n_legs: 0`（自动腿数）必须配它。非 planner 模板写它 raise。设计稿 [`design/auto-route.md`](design/auto-route.md) |
+| `geo`                       | 手写步骤         | `.geo` 路径（相对版图文件；嵌套时相对模板目录）。可选 `frame: <实例全名>` 在该实例局部坐标下画；`ports:` 用输出变量声明端口（须 `net:`）；`etch:` 声明蚀刻工具面表；`layers: <芯片层 id>` 指明蚀刻面所在层（本步骤挂名的面不止一层时必填；不在层表 raise）；`connect: {<net>: [端口, …]}` 把模板画的外挂面（爪 / 桨）归入本步骤挂名的 component（下文与 §4.3） |
 
 步骤键按步骤类型查：模板步骤写 `frame:` / `connect:`、手写步骤写 `at:` / `params:` 都 raise。
 
 **`ground`**（省略 = `none`）：
 
-| 写法 | 含义 |
-|---|---|
-| `none` | 不建地（flip-chip：地是载片，= 接地盒顶 `airbox.top_um`）。全部蚀刻工具面丢弃 |
-| `{sheet: {layer: m1, margin_um: 200}}` | 在该导体层建地：矩形 = 该层 **metal** 面的 bbox ± margin（默认 0），减去该层全部蚀刻工具面（模板 `etch` + 手写 `etch:`）→ `ground::m1::GND::sheet`。层上没有 metal 面、或蚀刻把整张地吃光 → raise |
-| `{sheet: [{layer: m1, …}, {layer: m2, …}]}` | 多层各建一张；没建地的层上的蚀刻面丢弃 |
+| 写法                                            | 含义                                                                                                                                                                                                            |
+| ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `none`                                        | 不建地（flip-chip：地是载片，= 接地盒顶`airbox.top_um`）。全部蚀刻工具面丢弃                                                                                                                                  |
+| `{sheet: {layer: m1, margin_um: 200}}`        | 在该导体层建地：矩形 = 该层**metal** 面的 bbox ± margin（默认 0），减去该层全部蚀刻工具面（模板 `etch` + 手写 `etch:`）→ `ground::m1::GND::sheet`。层上没有 metal 面、或蚀刻把整张地吃光 → raise |
+| `{sheet: [{layer: m1, …}, {layer: m2, …}]}` | 多层各建一张；没建地的层上的蚀刻面丢弃                                                                                                                                                                          |
 
 **手写步骤的规则**：
 
@@ -316,36 +317,37 @@ EndIf
 
 #### 4.2.2 YAML 接口
 
-顶层键（别的 raise）：`schema` `kind` `params` `layers` `islands` `external` `etch` `junction` `ports` `outputs` `body` `steps`。
+顶层键（别的 raise）：`schema` `kind` `planner` `params` `layers` `islands` `external` `etch` `junction` `ports` `outputs` `body` `steps`。
 
-| 段 | 条目键 | 规则 |
-|---|---|---|
-| `schema` | — | `quantum-dsl/template/1`，逐字 |
-| `kind` | `connect` | 连接型：注入 `D`（两口距离）、`w`（端口宽）、`L`（给了 `length:` 才有）；`params` **不得**同名声明这三个。放置型不写 `kind` |
-| `params` | 任意标识符 → 数 | 默认值，必须是有限数（0/1 当开关）；实例 `params:` 覆盖，未知名 raise。⚠ 别叫 `on` / `off` / `yes` / `no`（YAML 1.1 读成布尔） |
-| `layers` | 槽位 → `conductor` / `junction` / `drawing` | 模板的局部层命名空间；实例上 `layers:` 重定位到芯片层，kind 不符 raise |
-| `islands` | `faces` `layer` | 面表变量 → 岛。component 名：单岛 = 实例名；多岛 = `<实例>_<岛键>`；连接型的 `body` 岛 = net 名（§4.3）。Physical 名 `metal::<层>::<component>::<岛键>` |
-| `external` | `faces` `layer` `if` `inst` | 外挂面：模板画、电学归属由连到同名端口的路由决定（连上后 component = 路由 net，Physical 名 `metal::<层>::<net>::<外挂键>`）。画了没人连 → raise。`inst` 只用于嵌套再导出（§4.5） |
-| `etch` | `faces` `layer` `if` | **列表**；蚀刻工具面按层记账，`ground: sheet` 时减去，`none` 时丢弃 |
-| `junction` | `a` `b` `x1` `y1` `x2` `y2` `width` `layer` | 前七个必填；`a` / `b` 是岛键，`b` 可为 `ground`（→ `island:` 单岛条目，否则 `islands: [a, b]` 浮动条目）；层槽位须映射到 junction 层；长度 0 或宽 ≤ 0 raise。矩形面 `jj::<层>::<实例>::jj`，只进 GDS |
-| `ports` | `port` `x` `y` `a` `w` `layer` `leq` `if` `island` | 端口。简写 `"port(0)"` = `{x: port_x(0), y: port_y(0), a: port_a(0), w: port_w(0)}`，可与其它键并用 `{port: port(0), if: claw_E}`。`layer` 默认第一个声明的槽位；`leq` 默认 0。键名等于某个 `external` 键 → 外挂端口（net 待连接步骤定）；否则归 `island:` 指定的岛（默认 `body` / 单岛），多岛模板不写 `island:` raise |
-| `outputs` | 名 → 变量 | 记账；`length` 参与定长闭合（连接型画出长度必须 == 注入的 `L`） |
-| `body` | 岛键 | 连接型多岛必填：哪个岛是路由体（其 component = net 名） |
-| `if` | 参数名 | 可选部件开关：参数非零才读该条目（`external` / `etch` / `ports` 都支持）；指向未声明的参数 raise。端口的 `if` 与其外挂面的 `if` 必须同一个参数 |
-| `steps` | 子步骤表 | 嵌套（§4.5） |
+| 段           | 条目键                                                               | 规则                                                                                                                                                                                                                                                                                                                                      |
+| ------------ | -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `schema`   | —                                                                   | `quantum-dsl/template/1`，逐字                                                                                                                                                                                                                                                                                                          |
+| `kind`     | `connect`                                                          | 连接型：注入`D`（两口距离）、`w`（端口宽）、`L`（给了 `length:` 才有）；`params` **不得**同名声明这三个。放置型不写 `kind`                                                                                                                                                                                              |
+| `planner`  | `cpw`                                                              | 自动布线（须 `kind: connect`）：编排器不要求两口正对、位姿恒等，用 `route.plan_cpw`（Dubins 弧 + 直段，定长时中段换蛇形）在芯片坐标里规划中心线，按列表变量 `_rt_n` / `_rt_kind(k)` / `_rt_p0(k)…_rt_p4(k)` 注入（直段 x1, y1, x2, y2, 0 / 弧 cx, cy, R, a0, a1）；`params` 必须声明 `R` `n_legs` `gap`；步骤可给 `region:`；`mirror:` raise。样板 `lib/cpw_route`，设计稿 [`design/auto-route.md`](design/auto-route.md) |
+| `params`   | 任意标识符 → 数                                                     | 默认值，必须是有限数（0/1 当开关）；实例`params:` 覆盖，未知名 raise。⚠ 别叫 `on` / `off` / `yes` / `no`（YAML 1.1 读成布尔）                                                                                                                                                                                                  |
+| `layers`   | 槽位 →`conductor` / `junction` / `drawing`                    | 模板的局部层命名空间；实例上`layers:` 重定位到芯片层，kind 不符 raise                                                                                                                                                                                                                                                                   |
+| `islands`  | `faces` `layer`                                                  | 面表变量 → 岛。component 名：单岛 = 实例名；多岛 =`<实例>_<岛键>`；连接型的 `body` 岛 = net 名（§4.3）。Physical 名 `metal::<层>::<component>::<岛键>`                                                                                                                                                                            |
+| `external` | `faces` `layer` `if` `inst`                                  | 外挂面：模板画、电学归属由连到同名端口的路由决定（连上后 component = 路由 net，Physical 名`metal::<层>::<net>::<外挂键>`）。画了没人连 → raise。`inst` 只用于嵌套再导出（§4.5）                                                                                                                                                     |
+| `etch`     | `faces` `layer` `if`                                           | **列表**；蚀刻工具面按层记账，`ground: sheet` 时减去，`none` 时丢弃                                                                                                                                                                                                                                                             |
+| `junction` | `a` `b` `x1` `y1` `x2` `y2` `width` `layer`          | 前七个必填；`a` / `b` 是岛键，`b` 可为 `ground`（→ `island:` 单岛条目，否则 `islands: [a, b]` 浮动条目）；层槽位须映射到 junction 层；长度 0 或宽 ≤ 0 raise。矩形面 `jj::<层>::<实例>::jj`，只进 GDS                                                                                                                      |
+| `ports`    | `port` `x` `y` `a` `w` `layer` `leq` `if` `island` | 端口。简写`"port(0)"` = `{x: port_x(0), y: port_y(0), a: port_a(0), w: port_w(0)}`，可与其它键并用 `{port: port(0), if: claw_E}`。`layer` 默认第一个声明的槽位；`leq` 默认 0。键名等于某个 `external` 键 → 外挂端口（net 待连接步骤定）；否则归 `island:` 指定的岛（默认 `body` / 单岛），多岛模板不写 `island:` raise |
+| `outputs`  | 名 → 变量                                                           | 记账；`length` 参与定长闭合（连接型画出长度必须 == 注入的 `L`）                                                                                                                                                                                                                                                                       |
+| `body`     | 岛键                                                                 | 连接型多岛必填：哪个岛是路由体（其 component = net 名）                                                                                                                                                                                                                                                                                   |
+| `if`       | 参数名                                                               | 可选部件开关：参数非零才读该条目（`external` / `etch` / `ports` 都支持）；指向未声明的参数 raise。端口的 `if` 与其外挂面的 `if` 必须同一个参数                                                                                                                                                                                  |
+| `steps`    | 子步骤表                                                             | 嵌套（§4.5）                                                                                                                                                                                                                                                                                                                             |
 
 值可以是数字或 `.geo` 变量引用：`name`（标量）、`name(i)`（列表第 i 项）、`name()`（整个列表，给 `faces`）。
 
 #### 4.2.3 `.geo` 侧协议
 
-| 方向 | 变量 | 谁写 | 说明 |
-|---|---|---|---|
-| 入 | `params` 各键（`w` `gap` `ro` …） | 编排器 | 默认值被实例 `params:` 覆盖后写入解析器，`.geo` 直接当变量读 |
-| 入 | `D` `w` `L` | 编排器（连接型） | 从 from 口（原点）沿 +x 到 to 口 `(D, 0)`；`w` = 端口宽；`L` = 目标画出长度 |
-| 出 | 面表 `xxx() = { tags }` | `.geo` | yaml `faces:` 引用；只能含本次 merge 新建的面；一个岛可以是多块面（OCC 并不保证合并） |
-| 出 | `port_x()` `port_y()` `port_a()` `port_w()` | `.geo` | 四个平行列表，索引 = yaml `port(i)`；或任意标量（`ro_x`）。`a` 是**弧度**外法向 |
-| 出 | 结端点（`jj_x1` … `jj_y2`）、记账标量（`cpw_length`） | `.geo` | 名字任意，yaml `junction:` / `outputs:` 里指名 |
-| 内部 | `_xxx` | `.geo` | 临时量一律 `_` 前缀——gmsh 变量是进程级全局，裸名会串到别的模板 / 手写步骤 |
+| 方向 | 变量                                                         | 谁写             | 说明                                                                                       |
+| ---- | ------------------------------------------------------------ | ---------------- | ------------------------------------------------------------------------------------------ |
+| 入   | `params` 各键（`w` `gap` `ro` …）                   | 编排器           | 默认值被实例`params:` 覆盖后写入解析器，`.geo` 直接当变量读                            |
+| 入   | `D` `w` `L`                                            | 编排器（连接型） | 从 from 口（原点）沿 +x 到 to 口`(D, 0)`；`w` = 端口宽；`L` = 目标画出长度           |
+| 出   | 面表`xxx() = { tags }`                                     | `.geo`         | yaml`faces:` 引用；只能含本次 merge 新建的面；一个岛可以是多块面（OCC 并不保证合并）     |
+| 出   | `port_x()` `port_y()` `port_a()` `port_w()`          | `.geo`         | 四个平行列表，索引 = yaml`port(i)`；或任意标量（`ro_x`）。`a` 是**弧度**外法向 |
+| 出   | 结端点（`jj_x1` … `jj_y2`）、记账标量（`cpw_length`） | `.geo`         | 名字任意，yaml`junction:` / `outputs:` 里指名                                          |
+| 内部 | `_xxx`                                                     | `.geo`         | 临时量一律`_` 前缀——gmsh 变量是进程级全局，裸名会串到别的模板 / 手写步骤               |
 
 规则（违反即 raise 或炸 session）：
 
@@ -465,7 +467,7 @@ EndIf
 ### 4.3 端口、路由与 net
 
 - 端口 = 端面中点 + 外法向 + 宽 + 层 + 等效长度；谁画了那块面谁给端口。放置后端口按实例位姿变换（含镜像、旋转）。
-- 路由只接端口，宽度继承，两端宽不同 raise（taper 未实现）；两口不正对 raise（先用直段 / 弯把口摆正）；每个端口只能被连一次。
+- 路由只接端口，宽度继承，两端宽不同 raise（taper 未实现）；两口不正对用 `cpw_route`（`planner: cpw`：Dubins 弧 + 直段自动布线，可定长、可给 `region:`，[`design/auto-route.md`](design/auto-route.md)）或手写 `.geo` + `connect:`，普通连接型模板（`cpw_meander` / `bar_coupler`）不正对 raise；每个端口只能被连一次。
 - **路由是电连接**：路由体 + 两端外挂面并成一个 net，路由体必须真碰到每一端（外挂面或岛），隔着缝 raise。net 名：恰一个岛端 → 该岛；零岛端 → 步骤名；两个岛端 → raise
   （两块命名岛的电气合并没有唯一名，把一端改成外挂面或画成一个实例）。路由体（`body:` 岛）的 component **就是** net 名，
   模板里其它岛仍是 `<步骤名>_<岛键>`。例：`bar_coupler` 步骤 `H00` 连两只爪（外挂面）→ 条 + 两爪 = `H00`，五边形 = `H00_pent`，
@@ -477,14 +479,14 @@ EndIf
 
 ### 4.4 生成的 Physical 名一览
 
-| 来源 | 名字 |
-|---|---|
-| 模板岛 | `metal::<芯片层>::<component>::<岛键>`（`metal::ta::Q00_a::a`、`metal::m1::Q1::island`） |
-| 外挂面（连上后） | `metal::<芯片层>::<net>::<外挂键>`（`metal::ta::H00::E`、`metal::m1::F0::RO`） |
-| 路由体 | `metal::<芯片层>::<net>::<岛键>`（`metal::ta::H00::bar`、`metal::m1::F0::cpw`） |
-| 结 | `jj::<芯片层>::<实例全名>::jj` |
-| 地 | `ground::<芯片层>::GND::sheet` |
-| 手写步骤 | 文件里写的原样 |
+| 来源             | 名字                                                                                           |
+| ---------------- | ---------------------------------------------------------------------------------------------- |
+| 模板岛           | `metal::<芯片层>::<component>::<岛键>`（`metal::ta::Q00_a::a`、`metal::m1::Q1::island`） |
+| 外挂面（连上后） | `metal::<芯片层>::<net>::<外挂键>`（`metal::ta::H00::E`、`metal::m1::F0::RO`）           |
+| 路由体           | `metal::<芯片层>::<net>::<岛键>`（`metal::ta::H00::bar`、`metal::m1::F0::cpw`）          |
+| 结               | `jj::<芯片层>::<实例全名>::jj`                                                               |
+| 地               | `ground::<芯片层>::GND::sheet`                                                               |
+| 手写步骤         | 文件里写的原样                                                                                 |
 
 全名唯一；编排器生成的名与手写的撞名 raise。分块 `for_block(components)` 只给 `components` 里的 component 挂名。
 
@@ -508,13 +510,13 @@ component 为 `P_L`（`metal::<层>::P_L::pad`）。带 `.geo` 的模板也能�
 
 ### 4.6 编排器生成的记账（`compile_layout(meta)` → `Layout`）
 
-| 属性 | 内容 |
-|---|---|
-| `qubits` | 每个带 `junction` 的实例一条：`{name: <实例全名>, island: <comp>}` 或 `{islands: [a, b]}`，加 `E_J`（Hz）/ `L_J`（H）/ `squid: {E_J1, E_J2, flux}`。`build()` 与 meta 手写条目合并（同名须一致） |
-| `subsystems` | 每条 `length:` 路由一条：`{name: <net>, route: <步骤名>, kind: cpw_resonator, mode, width_um, length_total_um, equiv_length_um, length_drawn_um}`，波长模式另有 `f_r_hz, lambda_g_um, gap_um, film_nm`。追加到 meta `subsystems` 后写进 `results.yaml` |
-| `ports` | 全部端口（§4.3），已连接的带 `net` |
-| `inputs` | 版图 + 用到的模板 yaml / `.geo` + 手写 `.geo` + 它们递归 `Include` 的宏库，全部进 manifest（改宏库即改哈希） |
-| `for_block(components)` | 分块视图（§3.3） |
+| 属性                      | 内容                                                                                                                                                                                                                                                            |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `qubits`                | 每个带`junction` 的实例一条：`{name: <实例全名>, island: <comp>}` 或 `{islands: [a, b]}`，加 `E_J`（Hz）/ `L_J`（H）/ `squid: {E_J1, E_J2, flux}`。`build()` 与 meta 手写条目合并（同名须一致）                                                   |
+| `subsystems`            | 每条`length:` 路由一条：`{name: <net>, route: <步骤名>, kind: cpw_resonator, mode, width_um, length_total_um, equiv_length_um, length_drawn_um}`，波长模式另有 `f_r_hz, lambda_g_um, gap_um, film_nm`。追加到 meta `subsystems` 后写进 `results.yaml` |
+| `ports`                 | 全部端口（§4.3），已连接的带`net`                                                                                                                                                                                                                            |
+| `inputs`                | 版图 + 用到的模板 yaml /`.geo` + 手写 `.geo` + 它们递归 `Include` 的宏库，全部进 manifest（改宏库即改哈希）                                                                                                                                               |
+| `for_block(components)` | 分块视图（§3.3）                                                                                                                                                                                                                                               |
 
 `Layout` 本身是可调用几何源，`load_geo` / `build_gds` / `build_mesh` / `build` 直接吃它；公共 API 见 [`architecture.md`](architecture.md)。
 
