@@ -17,8 +17,8 @@
 #   每条边 ±1 px ≈ ±1.5 µm(30 µm 臂宽 ±5%, 32 µm 缝 ±5%)。量得: Xmon 臂宽 30、臂端到端 340、
 #   臂–地缝 32; 梳齿 coupler 齿宽 24–26、齿间地指 20、缝 27、底梁 26, 中央 SQUID 支柱 26;
 #   两 Xmon 中心距 ≈ 703 µm, 相向臂端间 300 µm 全是地。
-#   (描摹版的手工干预与逐条误差账见 sung_2021_xmon_traced.meta.yaml 与 docs/report/04 §8.1/§8.2。)
-#   测量方法、审计图与误差预算: docs/report/04 §8.1/§8.2 + docs/report/img/sung_2021_xmon_measurement.png
+#   (描摹版的手工干预与逐条误差账见 sung_2021_xmon_traced.meta.yaml 与 docs/report/Aug27/04 §8.1/§8.2。)
+#   测量方法、审计图与误差预算: docs/report/Aug27/04 §8.1/§8.2 + docs/report/Aug27/img/sung_2021_xmon_measurement.png
 #   (阈值 143.5→120 时 C_Σ +2.5/+4.0/+6.1%, β −3/−6%: 阈值是主导误差, 最大 ~±6%; C_c 的 −30% 不可能来自测量)。
 #
 # 模型口径

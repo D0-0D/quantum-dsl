@@ -1,30 +1,33 @@
-# 汇报材料（quantum_dsl v4.0）
+# 汇报材料
 
-本目录是为「向不熟悉代码的听众汇报 v4」准备的一整套材料。四份文档按**读者**分工：前三份是同一套内容的三个切面，第四份专讲论文外部验证这一条线：
+两套材料，按阶段分目录。当前一套覆盖 **2026-09-12 → 09-18**（提交 `50dc842` 起：版图编排、Chen 2025 模板与上云验证、自动布线）；
+v4.0 阶段（2026-08-26，greenfield 重写 + sung 论文验证）的一套原样保留在 [`Aug27/`](Aug27/README.md)。
+
+四份文档按**读者**分工：前三份是同一套内容的三个切面，第四份专讲论文外部验证这一条线。
 
 | 文档 | 用途 | 谁看 / 何时看 |
 |---|---|---|
-| [`01-工作汇报.md`](01-工作汇报.md) | **展示用**。按**功能**组织：为什么 greenfield 重写、整体架构（数据流 + 模块地图 + 绑定键）、能力逐项、端到端验证实测（回归锚 + 论文外部锚）、本次收口的历史问题、当前边界 | 现场对外展示的主文档 |
-| [`02-代码实现详解.md`](02-代码实现详解.md) | **准备用**。把真实代码片段贴进来逐段讲：每个模块做什么、为什么、关键代码在哪、具体数据与坑，附**预期问答** | 汇报人事先研读，应对追问 |
-| [`03-复现与演示.md`](03-复现与演示.md) | **操作用**。与 01 逐段对应：每段展示什么、敲什么命令、预期输出长什么样、指哪里看，含**故障预案** | 现场照着做；任何人复现 |
-| [`04-论文验证闭环-sung.md`](04-论文验证闭环-sung.md) | **说明用**。从论文 Fig. 1(c) 照片量出的真版图 `sung_2021_xmon`（零调参）对 PRX 11.021058 的完整账：论文真值三层、照片测量方法与误差预算、数字怎么算、order 1/2 与粗细网格、Elmer 同网格交叉 1.9e-7、差距归因（Xmon −12%、coupler −30% 是几何不是求解器）；末节一小段说清早期替代几何 `sung_2021_device` 的 ±3～6% 为什么是标定抵消 | 想弄清本仓对论文的预测精度、以及「对论文 ±8%」含义与边界的人 |
+| [`01-工作汇报.md`](01-工作汇报.md) | **展示用**。为什么要版图编排、架构增量（新几何源 + `layout.py` / `route.py`）、能力逐项（模板与版图 / 三种路由写法 / Chen 模板 / 分块与上云 / 拒绝静默）、端到端验证实测、本阶段决策记录、边界与后续 | 现场对外展示的主文档 |
+| [`02-代码实现详解.md`](02-代码实现详解.md) | **准备用**。贴真实代码逐段讲编排器（加载 / 位姿 / 注入 / 认领 / 连接 / 手写 / 收尾）、自动布线规划器、分块与上云接口，附**预期问答** | 汇报人事先研读，应对追问 |
+| [`03-复现与演示.md`](03-复现与演示.md) | **操作用**。Demo A–G：契约套件、Chen 3×3 版图、手写 = 模板、自动布线（含 raise）、块本机求解、十字上云、守卫；含**已确认可运行清单**与**故障预案** | 现场照着做；任何人复现 |
+| [`04-论文验证闭环-chen.md`](04-论文验证闭环-chen.md) | **说明用**。对 Chen et al. 2025（Nat. Phys. 21, 1489）的完整账：论文三层真值（实测 α 表 / 设计值 / SI 电容表与其自身闭合）、几何从照片来、模型口径（flip-chip d）、三种几何各对什么、d = 4 / 5 / 7 与两档网格结果、**逐项偏差表**、归因、验证了什么 / 没验证什么 | 想弄清本仓对论文的预测精度与边界的人 |
 
-配套的长期文档（不是汇报材料，是真源）：[`../architecture.md`](../architecture.md)（架构）·
-[`../physics.md`](../physics.md)（物理口径与数值决策）· [`../grammar.md`](../grammar.md)（语法）。
+配套的长期文档（真源，不是汇报材料）：[`../architecture.md`](../architecture.md)（架构）· [`../physics.md`](../physics.md)（物理口径与数值决策，§13–§14 = Chen 与内存预算）·
+[`../grammar.md`](../grammar.md)（语法，§4 = 版图与模板）· [`../design/`](../design/)（设计稿 + 几何取证 + 自动布线设计稿）。
 
 ## 快速开始（完整演示流程见 `03`）
 
 ```bash
-cd /home/administrator/quantum_dsl          # 或任何 checkout 了 main 的目录
+cd /home/administrator/quantum_dsl-v4
 source ~/miniconda3/etc/profile.d/conda.sh && conda activate qdsl313
 export PYTHONPATH=src
 
-python -m pytest tests/ -q                  # 37 passed, 2 skipped, ~30 s (2026-09-13; v4.0 时 28 条)
-python -c "from quantum_dsl import build; print(build('examples/two_pads.meta.yaml', 'build/report/two_pads'))"
-                                            # GDS + 网格 + Palace config + manifest, ~4 s
-QDSL_RUN_PALACE=1 python -m pytest tests/test_live.py -k two_pads -q    # 真实求解回归 (~2 min, 开场前先跑)
+python -m pytest tests/ -q                  # 44 passed, 2 skipped, ~40 s (2026-09-18)
+python -c "from quantum_dsl import build; print(build('examples/chen_2025_3x3.meta.yaml', 'build/report/chen', solve=False, blocks=['H01']))"
+                                            # 3×3 GDS + PNG + H01 块网格/config, ~30 s
+python -c "from quantum_dsl import build; build('examples/cpw_route_demo.meta.yaml', 'build/report/route', solve=False)"
+                                            # 自动布线 demo GDS + PNG, ~3 s
 ```
 
-> 所有 `文件:行号` 与数值结果均于 v4.0（2026-08-26）在 WSL2 + conda `qdsl313`（Python 3.13.14，gmsh 4.15.2，
-> gdstk 1.0.1，Palace 0.16.0）实测核对。sung 外部验证的数值来自 2026-08-25 在 96 核 / 384 G 远端机的实测，
-> 原始 CSV 归档在 `v4-dev` 分支 `.claude/n15-evidence/`。
+> 所有 `文件:行号` 与数值于 2026-09-18 在 WSL2 + conda `qdsl313`（Python 3.13，gmsh 4.15.2，gdstk 1.0.1，Palace 0.16.0）实测核对；
+> 上云数值来自 2026-09-18 阿里云 c24a1（64 核 / 128 G，spack Palace 0.16），产物归档 `.claude/chen-evidence/`。

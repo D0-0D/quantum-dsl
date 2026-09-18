@@ -2,8 +2,8 @@
 
 Palace 0.16 `postpro/terminal-C.csv` 原件 (法拉, 行序 = labels = `CPLR, QB1, QB2`) 与配套 results/config。远端 gpu4
 (96C/384G, np=32) 解完由 `tools/palace_remote.sh` 拉回, 远端目录即删、机器已关——本目录是唯一存续副本。
-判读: `docs/report/04` §8; 例子头注: `examples/sung_2021_xmon.meta.yaml` / `sung_2021_xmon_traced.meta.yaml`。
-(合并到 main 时可按 N15 惯例迁到 v4-dev 分支。)
+判读: `docs/report/Aug27/04` §8; 例子头注: `examples/sung_2021_xmon.meta.yaml` / `sung_2021_xmon_traced.meta.yaml`。
+(合并到 main 时可按 sung 证据惯例迁到 v4-dev 分支。)
 
 | 文件 | 几何 / 配方 | 来源路径 | 结论 |
 |---|---|---|---|

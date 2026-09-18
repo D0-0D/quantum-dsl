@@ -3,10 +3,10 @@
 > 对象：Z. Chen, W. Liu, … J. Chen, F. Yan (BAQIS / 清华), *Efficient implementation of arbitrary two-qubit gates
 > using unified control*, Nature Physics **21**, 1489–1496 (2025), doi 10.1038/s41567-025-02990-x, arXiv:2502.03612。
 > 本文只做取证：从正文 Fig. 1a 照片量几何、从补充材料（SI）抄电路参数、判断阵列拓扑、列验证清单。**不改仓库代码。**
-> 量法与容差写法沿用 [`../report/04-论文验证闭环-sung.md`](../report/04-论文验证闭环-sung.md) §2–§3。
+> 量法与容差写法沿用 [`../report/Aug27/04-论文验证闭环-sung.md`](../report/Aug27/04-论文验证闭环-sung.md) §2–§3。
 > 2026-09-12。裁图 / 下载件在 scratchpad `paperB/`（见文末索引），未进仓。
 >
-> **落地（2026-09-13, N17）**：`examples/lib/disc_transmon` / `bar_coupler` + `examples/chen_2025_3x3.layout.yaml`，只有比特 + 耦合器（无读出）。
+> **落地（2026-09-13）**：`examples/lib/disc_transmon` / `bar_coupler` + `examples/chen_2025_3x3.layout.yaml`，只有比特 + 耦合器（无读出）。
 > 采用值：盘 390、缝 70 @ −45°、爪厚 40 / ±20° / 间隙 12 / 颈 20、条 30、五边形 378 底 × 300 总高 × 直壁 125（屋顶 175 ≈ 43°，§3.2 的三个量不能同时成立）、
 > 条–板缝 75（底 y = 90）、五边形中心距 to 端盘心 540、pitch 1383、d = `airbox.top_um` = 5、蓝宝石标量 ε 10 / 430 µm。纵向耦合器 = `from: 下.N, to: 上.S, mirror: x`。
 > 首个 QCQ 块（Q01–H01–Q11）本机 Palace 结果与 SI §D 的对照见 `.claude/session/2609131337.md`。
