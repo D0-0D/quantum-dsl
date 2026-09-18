@@ -225,7 +225,7 @@ extract:
 
 例子：`examples/two_pads.layout.yaml`（与手写 `two_pads.geo` 逐字等价）、`examples/xmon_readout.layout.yaml`
 （模板 + 手写 + 定长路由 + 平面地）、`examples/chen_2025_3x3.layout.yaml`（9 比特 + 12 耦合器阵列，flip-chip 无片上地）。
-模板库 `examples/lib/`：`pad` · `xmon` · `cpw_meander`（连接型）· `cpw_route`（连接型 + 自动布线 `planner: cpw`，两口不必正对）· `disc_transmon`（多岛 + 可选外挂面）· `bar_coupler`（连接型多岛）。
+模板库 `examples/lib/`：`pad` · `xmon` · `cpw_meander`（连接型）· `cpw_route`（连接型 + 自动布线 `planner: cpw`，两口不必正对，横平竖直 / 拼接区域 / 自由角）· `disc_transmon`（多岛 + 可选外挂面）· `bar_coupler`（连接型多岛）。
 
 ### 4.1 版图文件
 
@@ -255,7 +255,8 @@ ground: {sheet: {layer: m1, margin_um: 200}}       # 见下
 | `layers`                    | 模板步骤         | 槽位 → 芯片层。省略时先取同名芯片层；没有同名且该 kind 的芯片层唯一时取它；否则 raise。kind 不兼容 raise。嵌套时值可以是父模板的槽位名                                                                                                                                                                                                                                        |
 | `E_J` / `L_J` / `squid` | 模板步骤         | 模板有`junction` 时必给恰一个 → 自动进 `circuit_model.qubits`（§4.6）                                                                                                                                                                                                                                                                                                    |
 | `length`                    | 连接型           | 定长：`{mode: quarter_wave \| half_wave, f_r: 7GHz, film_nm: 200}`（`cpw.guided_wavelength`：中心导体宽 = 端口宽，缝 = 模板参数 `gap`，衬底 ε 与厚度取 meta）或 `{mode: fixed, L: 900um}`（裸数 = µm）；减去两端端口等效长度 `leq` 后注入模板变量 `L`；模板须以 `outputs.length` 回报画出的长度，与目标不符 raise；记入 `subsystems`                          |
-| `region`                    | 连接型（仅 `planner:` 模板） | `[x0, y0, x1, y1]` 芯片坐标矩形（µm）：自动布线的全部原语**含缝宽**须落在其内，否则 raise（报哪一段出界多少）；模板参数 `n_legs: 0`（自动腿数）必须配它。非 planner 模板写它 raise。设计稿 [`design/auto-route.md`](design/auto-route.md) |
+| `region`                    | 连接型（仅 `planner:` 模板） | `[x0, y0, x1, y1]` 芯片坐标矩形（µm）**或矩形列表（并集，可拼成 L / T / 回字）**：自动布线的全部原语**含缝宽**须落在并集内，否则 raise（报哪一段出外框多少 / 切进哪条缝多少）；矩形之间的缝就是障碍，L 拐角落在缝里时骨架自动绕路；模板参数 `n_legs: 0`（自动腿数）必须配它。非 planner 模板写它 raise。设计稿 [`design/auto-route.md`](design/auto-route.md) |
+| `axis`                      | 连接型（仅 `planner:` 模板） | 自动布线骨架的方向框架：数值 = 曼哈顿框架角度（deg，**默认 0 = 横平竖直**，如 `axis: 45` 让全部直段走 45° / 135°）；`free` = Dubins 自由角（v1 行为，斜轴）。非 planner 模板写它 raise |
 | `geo`                       | 手写步骤         | `.geo` 路径（相对版图文件；嵌套时相对模板目录）。可选 `frame: <实例全名>` 在该实例局部坐标下画；`ports:` 用输出变量声明端口（须 `net:`）；`etch:` 声明蚀刻工具面表；`layers: <芯片层 id>` 指明蚀刻面所在层（本步骤挂名的面不止一层时必填；不在层表 raise）；`connect: {<net>: [端口, …]}` 把模板画的外挂面（爪 / 桨）归入本步骤挂名的 component（下文与 §4.3） |
 
 步骤键按步骤类型查：模板步骤写 `frame:` / `connect:`、手写步骤写 `at:` / `params:` 都 raise。
@@ -323,7 +324,7 @@ EndIf
 | ------------ | -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `schema`   | —                                                                   | `quantum-dsl/template/1`，逐字                                                                                                                                                                                                                                                                                                          |
 | `kind`     | `connect`                                                          | 连接型：注入`D`（两口距离）、`w`（端口宽）、`L`（给了 `length:` 才有）；`params` **不得**同名声明这三个。放置型不写 `kind`                                                                                                                                                                                              |
-| `planner`  | `cpw`                                                              | 自动布线（须 `kind: connect`）：编排器不要求两口正对、位姿恒等，用 `route.plan_cpw`（Dubins 弧 + 直段，定长时中段换蛇形）在芯片坐标里规划中心线，按列表变量 `_rt_n` / `_rt_kind(k)` / `_rt_p0(k)…_rt_p4(k)` 注入（直段 x1, y1, x2, y2, 0 / 弧 cx, cy, R, a0, a1）；`params` 必须声明 `R` `n_legs` `gap`；步骤可给 `region:`；`mirror:` raise。样板 `lib/cpw_route`，设计稿 [`design/auto-route.md`](design/auto-route.md) |
+| `planner`  | `cpw`                                                              | 自动布线（须 `kind: connect`）：编排器不要求两口正对、位姿恒等，用 `route.plan_cpw` 在芯片坐标里规划中心线（骨架 = 曼哈顿框架的端弧 + 直 / Z / U / L / 三折模板，或 `axis: free` 的 Dubins；定长时在骨架直段上放蛇形，每个弯按 region 外框 / 缝 / 自身直段的余量独立外推，腿可不等长），按列表变量 `_rt_n` / `_rt_kind(k)` / `_rt_p0(k)…_rt_p4(k)` 注入（直段 x1, y1, x2, y2, 0 / 弧 cx, cy, R, a0, a1）；`params` 必须声明 `R` `n_legs` `gap` `lead`（`lead` = 两端各先沿端口法向直走的长度，弧从其后开始，端口面上永远是直段；0 = 关掉）；步骤可给 `region:`（矩形或并集）/ `axis:`；`mirror:` raise。样板 `lib/cpw_route`，设计稿 [`design/auto-route.md`](design/auto-route.md) |
 | `params`   | 任意标识符 → 数                                                     | 默认值，必须是有限数（0/1 当开关）；实例`params:` 覆盖，未知名 raise。⚠ 别叫 `on` / `off` / `yes` / `no`（YAML 1.1 读成布尔）                                                                                                                                                                                                  |
 | `layers`   | 槽位 →`conductor` / `junction` / `drawing`                    | 模板的局部层命名空间；实例上`layers:` 重定位到芯片层，kind 不符 raise                                                                                                                                                                                                                                                                   |
 | `islands`  | `faces` `layer`                                                  | 面表变量 → 岛。component 名：单岛 = 实例名；多岛 =`<实例>_<岛键>`；连接型的 `body` 岛 = net 名（§4.3）。Physical 名 `metal::<层>::<component>::<岛键>`                                                                                                                                                                            |
@@ -467,7 +468,7 @@ EndIf
 ### 4.3 端口、路由与 net
 
 - 端口 = 端面中点 + 外法向 + 宽 + 层 + 等效长度；谁画了那块面谁给端口。放置后端口按实例位姿变换（含镜像、旋转）。
-- 路由只接端口，宽度继承，两端宽不同 raise（taper 未实现）；两口不正对用 `cpw_route`（`planner: cpw`：Dubins 弧 + 直段自动布线，可定长、可给 `region:`，[`design/auto-route.md`](design/auto-route.md)）或手写 `.geo` + `connect:`，普通连接型模板（`cpw_meander` / `bar_coupler`）不正对 raise；每个端口只能被连一次。
+- 路由只接端口，宽度继承，两端宽不同 raise（taper 未实现）；两口不正对用 `cpw_route`（`planner: cpw`：曼哈顿框架 / Dubins 骨架 + 逐弯余量蛇形的自动布线，可定长、`region:` 可拼接、`axis:` 定方向，[`design/auto-route.md`](design/auto-route.md)）或手写 `.geo` + `connect:`，普通连接型模板（`cpw_meander` / `bar_coupler`）不正对 raise；每个端口只能被连一次。
 - **路由是电连接**：路由体 + 两端外挂面并成一个 net，路由体必须真碰到每一端（外挂面或岛），隔着缝 raise。net 名：恰一个岛端 → 该岛；零岛端 → 步骤名；两个岛端 → raise
   （两块命名岛的电气合并没有唯一名，把一端改成外挂面或画成一个实例）。路由体（`body:` 岛）的 component **就是** net 名，
   模板里其它岛仍是 `<步骤名>_<岛键>`。例：`bar_coupler` 步骤 `H00` 连两只爪（外挂面）→ 条 + 两爪 = `H00`，五边形 = `H00_pent`，

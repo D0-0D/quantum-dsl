@@ -13,7 +13,7 @@
 * **层是模板的局部命名空间**: 槽位只声明 kind 要求, 实例上 ``layers: {slot: chip_layer}`` 重定位
   (同名兼容可省), 层性质由 meta ``layers:`` 表决定。
 * **端口** = 端面中点 + 外法向 (rad) + 宽 + 层 + 等效长度; 路由只接端口, 宽度继承, 两口必须正对
-  (``planner: cpw`` 模板除外: ``route.plan_cpw`` 在芯片坐标里规划 Dubins 弧 + 直段, 位姿恒等, 原语按列表变量注入)。
+  (``planner: cpw`` 模板除外: ``route.plan_cpw`` 在芯片坐标里规划直段 + 圆弧 (曼哈顿框架或 Dubins), 位姿恒等, 原语按列表变量注入)。
   **路由是电连接**: 两端外挂面 + 路由自身面并成一个 net; net 名来自岛 (恰一个岛端 → 该岛;
   零岛端 → 步骤名; 两岛端 → raise)。
 * **纪律** (全部 raise, 不静默): 输出变量 NaN 置毒; 手写步骤前后已有面原样存在 (增量原则);
@@ -48,8 +48,8 @@ _LAYOUT_KEYS = frozenset({"schema", "templates", "steps", "ground"})
 _TEMPLATE_KEYS = frozenset({"schema", "kind", "params", "layers", "islands", "external",
                             "etch", "junction", "ports", "outputs", "body", "steps", "planner"})
 _TPL_STEP_KEYS = frozenset({"template", "route", "name", "at", "rot", "mirror", "from", "to",
-                            "params", "layers", "length", "E_J", "L_J", "squid", "region"})
-_PLANNER_PARAMS = ("R", "n_legs", "gap")     # planner: cpw 模板必须声明的参数 (最小弯半径 / 腿数 / 缝宽)
+                            "params", "layers", "length", "E_J", "L_J", "squid", "region", "axis"})
+_PLANNER_PARAMS = ("R", "n_legs", "gap", "lead")   # planner: cpw 模板必须声明的参数 (最小弯半径 / 腿数 / 缝宽 / 端口引出直段)
 _GEO_STEP_KEYS = frozenset({"geo", "frame", "ports", "etch", "layers", "connect"})
 _ENTRY_KEYS = {          # 模板各段每条目的合法键 (拼错 = 静默丢语义, 必须查)
     "islands": frozenset({"faces", "layer"}),
@@ -478,9 +478,10 @@ class Layout:
                 f"{where}: template kind {'connect' if connect else 'place'} "
                 f"{'needs from:/to:' if connect else 'takes at:/rot:/mirror:, not from:/to:'}")
         planner = tpl.doc.get("planner") is not None
-        if "region" in step and not planner:
-            raise QuantumDslError(f"{where}: region: is only for planner templates (planner: cpw); "
-                                  f"{tpl.name} draws in the from->to frame and needs facing ports")
+        for key in ("region", "axis"):
+            if key in step and not planner:
+                raise QuantumDslError(f"{where}: {key}: is only for planner templates (planner: cpw); "
+                                      f"{tpl.name} draws in the from->to frame and needs facing ports")
         ends: tuple[tuple[str, Port], tuple[str, Port]] | None = None
         inject: dict = {}
         target = None
@@ -744,9 +745,13 @@ class Layout:
         直段 (x1, y1, x2, y2, 0) / 弧 (cx, cy, R, a0, a1); 模板 ``.geo`` 用 For 循环逐段 Call 宏。"""
         from .route import plan_cpw
         (_, p), (_, q) = ends
+        if L is None and "n_legs" in (step.get("params") or {}):
+            raise QuantumDslError(f"{where}: n_legs: given but no length: — without a target length the route is the "
+                                  f"shortest path and has no meander; drop n_legs or give length:")
         try:
             prims = plan_cpw((p.x, p.y, p.a), (q.x, q.y, q.a + math.pi), params["R"], length=L,
-                             region=step.get("region"), n_legs=params["n_legs"], width=w + 2 * params["gap"])
+                             region=step.get("region"), n_legs=params["n_legs"], width=w + 2 * params["gap"],
+                             lead=params["lead"], axis=step.get("axis", 0.0))
         except QuantumDslError as exc:
             raise QuantumDslError(f"{where}: {exc}") from exc
         cols: dict[str, list[float]] = {f"_rt_p{i}": [] for i in range(5)}

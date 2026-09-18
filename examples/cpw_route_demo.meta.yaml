@@ -1,4 +1,4 @@
-# cpw_route_demo.meta.yaml — cpw_route_demo.layout.yaml 的 sidecar (与 xmon_readout 同口径)。层表: m1 导体 (GDS 1/0), jj 结 (GDS 20/0)。
+# cpw_route_demo.meta.yaml — cpw_route_demo.layout.yaml (三对 Xmon + 三条自动布线总线: 横平竖直 / 拼接区域绕路 / 自由角) 的 sidecar (与 xmon_readout 同口径)。层表: m1 导体 (GDS 1/0), jj 结 (GDS 20/0)。
 # 网格刻意粗 (演示/测试用秒级); 报数前按 grammar 常见坑 #6 做两档网格。
 schema: quantum-dsl/meta/1
 
