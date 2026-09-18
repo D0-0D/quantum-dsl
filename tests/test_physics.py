@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
-"""物理内核 (纯数学, 不依赖 gmsh/Palace): 逆电容 LOM (N8)、拼装 (N9)、
-CPW 解析 (N10)、子系统 (N11)。所有 golden 为闭式手验值, 出处见各 docstring。"""
+"""物理内核 (纯数学, 不依赖 gmsh/Palace): 逆电容 LOM、拼装、
+CPW 解析、子系统。所有 golden 为闭式手验值, 出处见各 docstring。"""
 from __future__ import annotations
 
 import math
@@ -10,7 +10,7 @@ import pytest
 from conftest import N8_MAXWELL
 
 
-# ---------------------------------------------------------------- N8 电路模型
+# ---------------------------------------------------------------- 电路模型
 def _two_pads():
     from quantum_dsl import solve_circuit_model
     return solve_circuit_model(
@@ -20,7 +20,7 @@ def _two_pads():
 
 
 def test_single_island_closed_form():
-    """契约 N8: 1×1 时必须精确退化为 E_C = e²/2C (闭式验证过的 golden)。"""
+    """契约「电路模型」: 1×1 时必须精确退化为 E_C = e²/2C (闭式验证过的 golden)。"""
     from quantum_dsl import solve_circuit_model
     r = solve_circuit_model(
         labels=("Q",), maxwell_fF=[[135.0]],
@@ -35,7 +35,7 @@ def test_single_island_closed_form():
 
 
 def test_two_pads_inverse_capacitance_not_raw_diagonal():
-    """契约 N8: C_Σ = 1/[C⁻¹]_ii —— 不是 Maxwell 对角 24.73, 也不是对地 22.75;
+    """契约「电路模型」: C_Σ = 1/[C⁻¹]_ii —— 不是 Maxwell 对角 24.73, 也不是对地 22.75;
     α = −E_C 精确成立。"""
     a, b = _two_pads().qubits
     assert a.C_sigma_fF == pytest.approx(24.57140776699029, rel=1e-9)
@@ -47,7 +47,7 @@ def test_two_pads_inverse_capacitance_not_raw_diagonal():
 
 
 def test_floating_two_island_closed_form():
-    """契约 N8: 浮动双岛 —— 结桥接两岛, 都不接地 (sung 例子依赖的数学)。
+    """契约「电路模型」: 浮动双岛 —— 结桥接两岛, 都不接地 (sung 例子依赖的数学)。
 
     手算: 岛 a,b 对地 50/40 fF, 岛间 30 fF → Maxwell = [[80,-30],[-30,70]] fF。
     结支路差模的有效电容 (完整求逆取 θθ 块, Yanay et al. npj QI 2020
@@ -68,7 +68,7 @@ def test_floating_two_island_closed_form():
 
 
 def test_two_pads_coupling_g():
-    """契约 N8: β 是与磁通/E_J 无关的纯几何耦合度量 (sung 对论文断言的就是它);
+    """契约「电路模型」: β 是与磁通/E_J 无关的纯几何耦合度量 (sung 对论文断言的就是它);
     g = ½·β·√(f01_a·f01_b) —— 两条 golden 互为闭式一致性校验。"""
     (c,) = _two_pads().couplings
     assert {c.qubit_a, c.qubit_b} == {"A", "B"}
@@ -77,7 +77,7 @@ def test_two_pads_coupling_g():
 
 
 def test_squid_flux_tuning_singularity_free():
-    """契约 N8: 非对称 SQUID 用无奇点形式 E_JΣ·√(cos²(πφ)+d²sin²(πφ)):
+    """契约「电路模型」: 非对称 SQUID 用无奇点形式 E_JΣ·√(cos²(πφ)+d²sin²(πφ)):
     φ=0 → E_J1+E_J2; φ=0.5 → |E_J1−E_J2| (教科书 tan 写法在这里发散)。"""
     from quantum_dsl import H_PLANCK, solve_circuit_model
     e1, e2 = 12e9 * H_PLANCK, 8e9 * H_PLANCK
@@ -94,7 +94,7 @@ def test_squid_flux_tuning_singularity_free():
 
 
 def test_lj_nan_inf_nonpositive_rejected():
-    """契约 N8: L_J 拒 nan/inf/0/负 (nan 能穿过 `<= 0`, 必须 isfinite)。"""
+    """契约「电路模型」: L_J 拒 nan/inf/0/负 (nan 能穿过 `<= 0`, 必须 isfinite)。"""
     from quantum_dsl import QuantumDslError, solve_circuit_model
     for bad in (float("nan"), float("inf"), 0.0, -1e-9):
         with pytest.raises(QuantumDslError):
@@ -103,9 +103,9 @@ def test_lj_nan_inf_nonpositive_rejected():
                 junctions=[{"name": "Q", "islands": ["Q"], "L_J": bad}])
 
 
-# ---------------------------------------------------------------- N9 拼装
+# ---------------------------------------------------------------- 拼装
 def test_assemble_shared_node_accumulation():
-    """契约 N9: 块 1 (a,s) + 块 2 (s,b) → (a,s,b); 共享节点 s 的对角相加。"""
+    """契约「拼装」: 块 1 (a,s) + 块 2 (s,b) → (a,s,b); 共享节点 s 的对角相加。"""
     from quantum_dsl import assemble
     out = assemble(
         cells=[{"name": "b1", "labels": ("a", "s"),
@@ -121,7 +121,7 @@ def test_assemble_shared_node_accumulation():
 
 
 def test_assemble_schur_elimination():
-    """契约 N9: 消掉未保留节点 g: C' = C_AA − C_AB·C_BB⁻¹·C_BA (手算可验)。"""
+    """契约「拼装」: 消掉未保留节点 g: C' = C_AA − C_AB·C_BB⁻¹·C_BA (手算可验)。"""
     from quantum_dsl import assemble
     out = assemble(
         cells=[{"name": "b1", "labels": ("a", "b", "g"),
@@ -137,14 +137,14 @@ def test_assemble_schur_elimination():
 
 
 def test_assemble_unknown_keep_label_raises():
-    """契约 N9: keep 里写错的名字必须 raise —— 拼错 = 静默接地是 v3 踩过的坑。"""
+    """契约「拼装」: keep 里写错的名字必须 raise —— 拼错 = 静默接地是 v3 踩过的坑。"""
     from quantum_dsl import QuantumDslError, assemble
     with pytest.raises(QuantumDslError):
         assemble(cells=[{"name": "b1", "labels": ("a",), "maxwell_fF": [[5.0]]}],
                  keep=("a", "typo"))
 
 
-# ---------------------------------------------------------------- N10 CPW
+# ---------------------------------------------------------------- CPW
 _CPW_TYPICAL = dict(freq=5e9, line_width=10e-6, line_gap=6e-6,
                     substrate_thickness=760e-6, film_thickness=200e-9)
 # 自洽物理集的手验值 (Göppl Eq.2–5 零厚度准静态 + Simons sinh 有限衬底
@@ -158,7 +158,7 @@ _CPW_GOLDEN = dict(Lk=2.368128738137757e-09, Lext=4.236292014318449e-07,
 
 
 def test_cpw_golden_and_self_consistency():
-    """契约 N10: lumped_cpw / guided_wavelength 对自洽集 golden 逐位; 且
+    """契约「CPW」: lumped_cpw / guided_wavelength 对自洽集 golden 逐位; 且
     λ_g·f·√(L′C′) ≡ 1、Z0 = √(L′/C′) —— Z0/λ_g 必须含 Lk, 不许退回 c/√ε_eff
     (ε_eff 是介质填充值, 不含 Lk)。"""
     from quantum_dsl import guided_wavelength, lumped_cpw
@@ -174,7 +174,7 @@ def test_cpw_golden_and_self_consistency():
 
 
 def test_cpw_kinetic_inductance_can_dominate():
-    """契约 N10: 窄线 + 薄膜 + 大 λ_L → Lk > Lext (动力学电感不是修正项, 是主项)。"""
+    """契约「CPW」: 窄线 + 薄膜 + 大 λ_L → Lk > Lext (动力学电感不是修正项, 是主项)。"""
     from quantum_dsl import lumped_cpw
     r = lumped_cpw(freq=5e9, line_width=1e-6, line_gap=0.5e-6,
                    substrate_thickness=500e-6, film_thickness=20e-9,
@@ -182,9 +182,9 @@ def test_cpw_kinetic_inductance_can_dominate():
     assert r.Lk > r.Lext
 
 
-# ---------------------------------------------------------------- N11 子系统
+# ---------------------------------------------------------------- 子系统
 def test_resonator_lumped_lc_half_and_quarter_wave():
-    """契约 N11: λ/2: C_r = π/(2ωZ0), L_r = 1/(ω²C_r); λ/4 同频下 C 减半、
+    """契约「子系统」: λ/2: C_r = π/(2ωZ0), L_r = 1/(ω²C_r); λ/4 同频下 C 减半、
     L 加倍 (方向别记反), 共振频率不变。"""
     from quantum_dsl import resonator_lumped_lc
     omega = 2 * math.pi * 7.0e9
@@ -198,7 +198,7 @@ def test_resonator_lumped_lc_half_and_quarter_wave():
 
 
 def test_dispersive_shift_golden():
-    """契约 N11: χ 非 RWA 三能级二阶式 (Zhu et al. arXiv:1210.1605 Eq. 11–14;
+    """契约「子系统」: χ 非 RWA 三能级二阶式 (Zhu et al. arXiv:1210.1605 Eq. 11–14;
     注意 Koch 2007 (3.9)/(3.10) 是 RWA 版, qiskit-metal 源码注释误引)。
     golden: g=41.19 MHz, f_r=7 GHz, f01=5.2, f12=4.95。"""
     from quantum_dsl import dispersive_shift_hz

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Palace 静电 (契约 N6): config 生成 + 电容 CSV 解析。
+"""Palace 静电 (契约「Palace」): config 生成 + 电容 CSV 解析。
 
 config 骨架 = 回归锚配方 (docs/physics.md §5):
 ``Model.L0 = 1e-6`` 是仓库里**唯一**的 µm→m 换算点 (网格坐标 µm, 别处不乘

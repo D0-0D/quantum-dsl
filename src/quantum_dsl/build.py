@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
-"""编排 (契约 N13/N14/N7/N15): ``build(meta, out_dir, solve=)``。
+"""编排 (契约「build 编排 / 分块 / two_pads 锚 / sung 外部锚」): ``build(meta, out_dir, solve=)``。
 
 产物: GDS (+ ``<stem>.gds.png`` 预览) + mesh + Palace config + manifest (输入 sha256); ``extract.blocks``
 时另派生 ``block_<name>.geo`` (只含该块 component 的 Physical 组, 其余组整行
 删除 —— 几何留作孤儿面, build_mesh 会清) + 各块 mesh/config。
 
-几何源二选一 (N16): ``meta.geo`` 手写 ``.geo``, 或 ``meta.layout`` 版图 → ``compile_layout``
+几何源二选一: ``meta.geo`` 手写 ``.geo``, 或 ``meta.layout`` 版图 → ``compile_layout``
 编译成 Layout (可调用几何源, 记账 qubits / subsystems 并入 circuit_model / results); 分块时
 ``Layout.for_block`` 在模型内按 component 过滤, 不派生 ``.geo``。
 
@@ -231,7 +231,7 @@ def build(meta, out_dir, solve: bool = False, blocks=None) -> dict:
     result: dict = {}
     circuit_model = dict(m.circuit_model)
     subsystems = list(m.subsystems)
-    if m.layout_path is not None:                     # N16 版图路线
+    if m.layout_path is not None:                     # 版图路线
         from .layout import compile_layout
         lay = compile_layout(m)
         src = lay

@@ -11,7 +11,7 @@ golden 的三种来源, 都与实现无关 (出处见各测试 docstring, 索引
 * 同一物理输入上的实测值 (two_pads C 矩阵 = 零厚度片配方 2026-08-24 实测,
   docs/physics.md「网格与收敛」) —— 物理回归锚, 不是 API 兼容锚;
 * Palace 0.16 的 verbatim CSV 输出。
-历史教训 (2026-08-24): N10 曾直接钉 qiskit-metal 参考实现的输出, 把
+历史教训 (2026-08-24): CPW golden 曾直接钉 qiskit-metal 参考实现的输出, 把
 "Z0/λ_g 不含 Lk、ε_eff 与 C 不自洽" 这些已知错误锚成了需求 —— 已翻案为
 自洽物理集。golden 不锚参考实现, 只锚物理与闭式。
 """
@@ -31,7 +31,7 @@ TWO_PADS_META = EXAMPLES / "two_pads.meta.yaml"
 BLOCKS_META = EXAMPLES / "two_pads_blocks.meta.yaml"
 SUNG_META = EXAMPLES / "sung_2021_device.meta.yaml"
 
-# two_pads 的实测 Maxwell 矩阵 (fF) — live 回归锚 (契约 N7)。
+# two_pads 的实测 Maxwell 矩阵 (fF) — live 回归锚 (契约「two_pads 锚」)。
 # 配方 = v4 产品路径: 零厚度金属片 imprint 进衬底/真空界面, µm 网格 +
 # Model.L0=1e-6, mesh 40/4 µm, order 2, 接地盒 (Palace 0.16, 2026-08-24 实测;
 # 见 docs/physics.md「网格与收敛」)。
@@ -39,7 +39,7 @@ SUNG_META = EXAMPLES / "sung_2021_device.meta.yaml"
 # 工件偏置 ~1%, 不是物理更优。
 LIVE_MAXWELL_GOLDEN = [[24.5324, -1.9472], [-1.9472, 24.5353]]
 
-# 电路模型的纯数学输入 (契约 N8; golden 由它 + 10 nH 闭式导出, 与 Palace 无关,
+# 电路模型的纯数学输入 (契约「电路模型」; golden 由它 + 10 nH 闭式导出, 与 Palace 无关,
 # 数值无需跟随 LIVE_MAXWELL_GOLDEN 变动)。
 N8_MAXWELL = [[24.73, -1.98], [-1.98, 24.72]]
 

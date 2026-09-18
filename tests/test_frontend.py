@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""前端: 单位 (N1)、.geo 加载 (N2)、meta.yaml 加载 (N3)、参数化 cell (N12)。"""
+"""前端: 单位、.geo 加载、meta.yaml 加载、参数化 cell。"""
 from __future__ import annotations
 
 import math
@@ -9,9 +9,9 @@ import pytest
 from conftest import EXAMPLES, TWO_PADS_META
 
 
-# ---------------------------------------------------------------- N1 单位
+# ---------------------------------------------------------------- 单位
 def test_parse_length_to_um():
-    """契约 N1: 长度 → µm。裸数 = µm; 字符串须带长度单位; 垃圾一律 raise。"""
+    """契约「单位」: 长度 → µm。裸数 = µm; 字符串须带长度单位; 垃圾一律 raise。"""
     from quantum_dsl import QuantumDslError, parse_length
     assert parse_length(5) == 5.0
     assert parse_length("5um") == 5.0
@@ -25,7 +25,7 @@ def test_parse_length_to_um():
 
 
 def test_parse_quantity_to_si_requires_unit():
-    """契约 N1: 物理量 → SI, **必须带单位** (裸数没有量纲)。"""
+    """契约「单位」: 物理量 → SI, **必须带单位** (裸数没有量纲)。"""
     from quantum_dsl import QuantumDslError, parse_quantity
     assert parse_quantity("10nH") == pytest.approx(1e-8)
     assert parse_quantity("3fF") == pytest.approx(3e-15)
@@ -34,9 +34,9 @@ def test_parse_quantity_to_si_requires_unit():
         parse_quantity("10")
 
 
-# ---------------------------------------------------------------- N2 .geo
+# ---------------------------------------------------------------- .geo
 def test_load_geo_two_pads():
-    """契约 N2: 四段 Physical 名解析 + µm 包围盒。"""
+    """契约「.geo 加载」: 四段 Physical 名解析 + µm 包围盒。"""
     from quantum_dsl import load_geo
     geo = load_geo(EXAMPLES / "two_pads.geo")
     assert {p.name for p in geo.physicals} == {"metal::1::A::pad", "metal::1::B::pad"}
@@ -46,7 +46,7 @@ def test_load_geo_two_pads():
 
 
 def test_load_geo_rejects_malformed_physical_name(tmp_path):
-    """契约 N2: 不合 role::layer::component::primitive 约定的名字 raise。"""
+    """契约「.geo 加载」: 不合 role::layer::component::primitive 约定的名字 raise。"""
     from quantum_dsl import QuantumDslError, load_geo
     bad = tmp_path / "bad.geo"
     bad.write_text(
@@ -58,9 +58,9 @@ def test_load_geo_rejects_malformed_physical_name(tmp_path):
         load_geo(bad)
 
 
-# ---------------------------------------------------------------- N3 meta
+# ---------------------------------------------------------------- meta
 def test_load_meta_two_pads():
-    """契约 N3: 扁平词汇逐字段; circuit_model 的结参数加载时解析成 SI。"""
+    """契约「meta 加载」: 扁平词汇逐字段; circuit_model 的结参数加载时解析成 SI。"""
     from quantum_dsl import load_meta
     meta = load_meta(TWO_PADS_META)
     assert meta.geo_path == EXAMPLES / "two_pads.geo"
@@ -77,7 +77,7 @@ def test_load_meta_two_pads():
 
 
 def test_load_meta_rejects_unknown_key_and_wrong_schema(tmp_path):
-    """契约 N3: 未知顶层键 (typo) 与错 schema 都不静默。"""
+    """契约「meta 加载」: 未知顶层键 (typo) 与错 schema 都不静默。"""
     from quantum_dsl import QuantumDslError, load_meta
     bad = tmp_path / "bad.meta.yaml"
     bad.write_text("schema: quantum-dsl/meta/1\ngeo: x.geo\ntypo_key: 1\n",
@@ -90,9 +90,9 @@ def test_load_meta_rejects_unknown_key_and_wrong_schema(tmp_path):
         load_meta(bad)
 
 
-# ---------------------------------------------------------------- N12 cells
+# ---------------------------------------------------------------- cells
 def test_rounded_polygon_area():
-    """契约 N12: 100×100 方 + r=10 圆角 → 面积 10000 − (4−π)·r² (采样内接, 容 1%)。"""
+    """契约「圆角 cell」: 100×100 方 + r=10 圆角 → 面积 10000 − (4−π)·r² (采样内接, 容 1%)。"""
     from quantum_dsl import rounded_polygon
     pts = rounded_polygon([(0, 0), (100, 0), (100, 100), (0, 100)], radius_um=10.0)
     assert len(pts) > 8            # 角上有采样点, 不再是 4 顶点
@@ -102,7 +102,7 @@ def test_rounded_polygon_area():
 
 
 def test_emit_geo_roundtrip(tmp_path):
-    """契约 N12: emit 的 .geo 必须能被 load_geo 回读 (物理名契约闭环)。"""
+    """契约「圆角 cell」: emit 的 .geo 必须能被 load_geo 回读 (物理名契约闭环)。"""
     from quantum_dsl import emit_geo, load_geo
     text = emit_geo([{"component": "Q1", "layer": 1, "role": "metal",
                       "points": [(0, 0), (100, 0), (100, 100), (0, 100)],

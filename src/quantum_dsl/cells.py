@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""参数化 cell (契约 N12): 圆角多边形 + ``.geo`` 文本发射。
+"""参数化 cell (契约「圆角 cell」): 圆角多边形 + ``.geo`` 文本发射。
 
 * ``rounded_polygon``: shapely 负/正 buffer 往返 (erode r → dilate r, 圆弧
   join) 预采样圆角 —— 凸角变成内接采样弧 (quad_segs=16, 面积亏 ≪1%)。

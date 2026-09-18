@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
-"""native Gmsh ``.geo`` 加载 + 四段 Physical 名解析 (契约 N2)。
+"""native Gmsh ``.geo`` 加载 + 四段 Physical 名解析 (契约「.geo 加载」)。
 
 作者约定 (SPEC「从 v3 继承」第 1 条): OpenCASCADE、µm、每个语义面挂一个
 Physical 名 ``"<role>::<layer>::<component>::<primitive>"``。**component 段 =
 电学岛 (net)**, 是电容矩阵/circuit_model/assemble 的绑定键。
 
 解析用 gmsh 本体 (它就是 .geo 的解释器 —— 例子里有变量/宏/Include,
-文本解析撑不住 bbox); **惰性 import**, ``import quantum_dsl`` 不拉起 gmsh (N0)。
+文本解析撑不住 bbox); **惰性 import**, ``import quantum_dsl`` 不拉起 gmsh (import 纯度)。
 """
 
 from __future__ import annotations

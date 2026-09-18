@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""版图编排 (契约 N16): 模板 (.geo + yaml) + 有序步骤 → 一个 gmsh 模型; 手写 .geo 混用;
+"""版图编排 (契约「版图编排」): 模板 (.geo + yaml) + 有序步骤 → 一个 gmsh 模型; 手写 .geo 混用;
 层槽位映射; 端口 → 定长路由 → net 认领; ground: sheet; 编排器纪律 (全部 raise)。
 设计稿 docs/design/component-library.md v3.1。"""
 from __future__ import annotations
@@ -34,9 +34,9 @@ def _meta(tmp_path: Path, layout: str, layers: dict, extra: str = "") -> Path:
         """)
 
 
-# ---------------------------------------------------------------- N16 等价性
+# ---------------------------------------------------------------- 等价性
 def test_two_pads_layout_equals_hand_written_geo(tmp_path):
-    """契约 N16: two_pads.layout.yaml (两个 pad 模板实例, 槽位 metal → 芯片层 1) 产出的 Physical 名、
+    """契约「版图编排」: two_pads.layout.yaml (两个 pad 模板实例, 槽位 metal → 芯片层 1) 产出的 Physical 名、
     GDS 多边形与网格标签与手写 two_pads.geo 逐字相同; build() 走版图路线: manifest 记录版图 + 模板文件,
     meta 手写的 circuit_model 原样保留。"""
     import gdstk
@@ -60,9 +60,9 @@ def test_two_pads_layout_equals_hand_written_geo(tmp_path):
     assert Path(r["mesh"]).exists() and Path(r["gds_png"]).exists()
 
 
-# ---------------------------------------------------------------- N16 混用 + 路由 + 地
+# ---------------------------------------------------------------- 混用 + 路由 + 地
 def test_xmon_readout_layout_mixes_template_handwritten_and_route(tmp_path):
-    """契约 N16: xmon 模板 (岛 + moat 蚀刻 + 结 → circuit_model.qubits 自动生成 + 读出桨外挂面) + 手写
+    """契约「版图编排」: xmon 模板 (岛 + moat 蚀刻 + 结 → circuit_model.qubits 自动生成 + 读出桨外挂面) + 手写
     发射焊盘 (.geo 自打名, 声明端口/蚀刻) + 定长蛇形路由 (λ/4 @ 7 GHz, 宽度继承端口) + ground: sheet。
     (a) 路由 net = 唯一岛端 F0: 桨、蛇形、焊盘三组面同 component; (b) 记账长度 = cpw.guided_wavelength 的
     λ_g/4, GDS 中心导体面积 = w·L (圆弧采样 ≲1e-4); (c) 地是带孔面 (面积 < 外接矩形); (d) 网格标签 = 两个 net。"""
@@ -93,9 +93,9 @@ def test_xmon_readout_layout_mixes_template_handwritten_and_route(tmp_path):
     assert mesh.labels == ("F0", "Q1") and "ground" in mesh.boundary_groups
 
 
-# ---------------------------------------------------------------- N16 嵌套 + 再导出 + 镜像
+# ---------------------------------------------------------------- 嵌套 + 再导出 + 镜像
 def test_nested_template_reexports_ports_and_externals(tmp_path):
-    """契约 N16: 无 .geo 的模板只由 steps 组成 (两个 pad 子实例, 一个镜像); 父模板再导出子端口
+    """契约「版图编排」: 无 .geo 的模板只由 steps 组成 (两个 pad 子实例, 一个镜像); 父模板再导出子端口
     (ports: {E: R.E}) 与子岛为外挂面 (external: {C: {inst: R}}); 整体旋转 90° 放置; 一条固定长度
     路由从外挂端口出发, 外挂面并入岛端的 net。component 加实例前缀 (P_L), 层槽位经父模板映射。"""
     from quantum_dsl import compile_layout, load_geo, load_meta
@@ -129,9 +129,9 @@ def test_nested_template_reexports_ports_and_externals(tmp_path):
     assert lay.subsystems[0]["length_drawn_um"] == pytest.approx(900.0)
 
 
-# ---------------------------------------------------------------- N16 纪律
+# ---------------------------------------------------------------- 纪律
 def test_layout_discipline_raises_not_silent(tmp_path):
-    """契约 N16: 编排器拒绝静默 —— 手写步骤删/改模板面; 画了外挂面却没人接; 不同 net 导体相交 (短路);
+    """契约「版图编排」: 编排器拒绝静默 —— 手写步骤删/改模板面; 画了外挂面却没人接; 不同 net 导体相交 (短路);
     两口不正对; 模板 .geo 漏设输出变量 (NaN 置毒); 未知参数; 层槽位 kind 不兼容。"""
     from quantum_dsl import QuantumDslError, compile_layout, load_meta
     layers = {"m": {"kind": "conductor", "gds": [1, 0]}, "j": {"kind": "junction", "gds": [20, 0]}}
@@ -186,9 +186,9 @@ def test_layout_discipline_raises_not_silent(tmp_path):
     assert lay.qubits[0]["island"] == "Q" and "Q.RO" not in lay.ports
 
 
-# ---------------------------------------------------------------- N3/N2 词汇扩展
+# ---------------------------------------------------------------- 词汇扩展
 def test_meta_layers_table_and_identifier_layer_segment(tmp_path):
-    """契约 N16 词汇: meta 'geo'/'layout' 二选一, 'layout' 必须配 'layers'; 层表 kind 受限、未知键 (如 z) raise;
+    """契约「版图编排」 词汇: meta 'geo'/'layout' 二选一, 'layout' 必须配 'layers'; 层表 kind 受限、未知键 (如 z) raise;
     Physical 名第 2 段可以是标识符 (芯片层 id), 非数字非标识符 raise。"""
     from quantum_dsl import QuantumDslError, load_meta, parse_physical_name
     assert parse_physical_name("metal::m1::A::pad").layer == "m1"
@@ -212,7 +212,7 @@ def test_meta_layers_table_and_identifier_layer_segment(tmp_path):
 
 
 def test_layout_guards_close_silent_paths(tmp_path):
-    """契约 N16 纪律 (2026-09-13 代码审查补): 下面每一条都曾**静默**通过并产出错的电容 ——
+    """契约「版图编排」 纪律 (2026-09-13 代码审查补): 下面每一条都曾**静默**通过并产出错的电容 ——
     连接型步骤吞掉 at:/rot:; mirror: y 翻转路由轴本身; if: 指向未声明的参数被当成「关闭」;
     模板子字典键拼错; kind 拼错; body: 伪造岛键; 外挂端口背后没有面; port(i) 简写逃过 NaN 置毒;
     Include 的宏库不进 manifest。"""
@@ -294,9 +294,9 @@ def test_layout_guards_close_silent_paths(tmp_path):
         compile_steps("- {template: u, name: A, layers: {metal: m}, params: {en: 0}}\n")
 
 
-# ---------------------------------------------------------------- N16 手写步骤 connect:
+# ---------------------------------------------------------------- 手写步骤 connect:
 def test_geo_step_connect_adopts_external_faces(tmp_path):
-    """契约 N16 (2026-09-16, 起因 chen_2025_3x3_hand): 手写步骤 ``connect: {net: [端口…]}`` 认领模板画的外挂面 —— 与连接型模板
+    """契约「版图编排」 (2026-09-16, 起因 chen_2025_3x3_hand): 手写步骤 ``connect: {net: [端口…]}`` 认领模板画的外挂面 —— 与连接型模板
     走同一条 ``_connect``; 每一端 (外挂面或岛) 都必须被本步画的 net 金属碰到, 隔着缝 raise (两条路线都查);
     步骤键按步骤类型查 (模板步骤给 connect:/frame: 曾被静默吞掉); 手写文件里定义 Macro raise (merge 的文件关掉后宏体失效,
     同进程第二次跑会炸 gmsh); 手写 ``etch`` 的 ``layers:`` 拼错 raise (曾静默丢掉蚀刻面)。"""

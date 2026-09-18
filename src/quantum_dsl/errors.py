@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""quantum_dsl 的唯一异常类型 (契约 N0)。"""
+"""quantum_dsl 的唯一异常类型 (契约「import 纯度」)。"""
 
 from __future__ import annotations
 

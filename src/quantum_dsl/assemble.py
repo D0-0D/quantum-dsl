@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""拼装 (契约 N9): 多块电容矩阵按共享节点名累加, Schur 消掉未保留节点。
+"""拼装 (契约「拼装」): 多块电容矩阵按共享节点名累加, Schur 消掉未保留节点。
 
 quasi-lumped 近似 (qiskit-metal LOM 2.0 同款, 机制同构与适用边界见
 docs/physics.md §11): 跨 cell 连通性 **只靠共享节点名**; 跨块直接

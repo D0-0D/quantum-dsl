@@ -1,5 +1,5 @@
 # =====================================================================
-# sung_2021_device.meta.yaml — N15 外部物理验证 fixture 的 Layer-1 sidecar。
+# sung_2021_device.meta.yaml — sung 外部物理验证 fixture 的 Layer-1 sidecar。
 # 器件: Y. Sung et al., "Realization of High-Fidelity CZ and ZZ-Free iSWAP
 # Gates with a Tunable Coupler", PRX 11, 021058 (2021) / arXiv:2011.01261。
 #
@@ -17,7 +17,7 @@
 #
 # ---------------------------------------------------------------------
 # 本版图的可复现边界(2026-08-25 整片 order-2 首测后翻案, 逐条有账):
-#   可断言: C_Σ ×3 → N15 判据 **±8%**。账: 本配方(80/2, o2, 14.1M tets)
+#   可断言: C_Σ ×3 → sung 契约判据 **±8%**。账: 本配方(80/2, o2, 14.1M tets)
 #     实测 95.8/220.7/95.8 fF = 论文 ×0.965/0.969/0.940 —— 简化版图结构性
 #     缺失(无 junction leads/读出爪/控制线)系统性低 4~6%。旧判据 ±5% 按
 #     v3 Elmer 档(P1, 6.87M tets: 102.1/232.8/102.1, 对论文 1.00–1.03)

@@ -47,7 +47,7 @@ def geo_model(source):
         path = Path(source)
         if not path.is_file():
             raise QuantumDslError(f"no such file: {path}")
-    import gmsh  # 惰性: N0 import 纯度
+    import gmsh  # 惰性: import 纯度
 
     if not gmsh.isInitialized():
         gmsh.initialize()

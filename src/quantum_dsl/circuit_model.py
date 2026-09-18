@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""电路模型 (契约 N8/N11): Maxwell 电容矩阵 → transmon Hamiltonian 参数。
+"""电路模型 (契约「电路模型 / 子系统」): Maxwell 电容矩阵 → transmon Hamiltonian 参数。
 
 逆电容 LOM, 结支路坐标形式 (审后搬运自 v3 ``dsl/circuit_model.py``, 口径
 = docs/physics.md §8, 已对契约 golden 逐位复算):
@@ -100,7 +100,7 @@ def resonator_lumped_lc(f_res_hz: float, z0_ohm: float,
 
     ``C_r = π/(2·ω_r·Z0)``, ``L_r = 1/(ω_r²·C_r)``, ω_r 用 **裸** 频率。
     λ/4 在同一共振频率下等效电容是 λ/2 的 **一半** (电感因此加倍) ——
-    方向是 ``C_r /= 2``, 别记反 (共振频率不变, N11 有测试)。
+    方向是 ``C_r /= 2``, 别记反 (共振频率不变, 子系统测试锚了它)。
     """
     if not (math.isfinite(f_res_hz) and f_res_hz > 0):
         raise QuantumDslError(f"resonator f_res must be > 0 Hz, got {f_res_hz}")
@@ -195,7 +195,7 @@ def _congruence(mat: Sequence[Sequence[float]],
 
 
 # ---------------------------------------------------------------------------
-# junction dict 解析 (SPEC N8: dict 入参, L_J / E_J / squid 三选一)
+# junction dict 解析 (契约「电路模型」: dict 入参, L_J / E_J / squid 三选一)
 # ---------------------------------------------------------------------------
 
 def _junction_e_j_joule(j: dict) -> float:
@@ -267,7 +267,7 @@ def _junction_e_j_joule(j: dict) -> float:
 # ---------------------------------------------------------------------------
 
 def solve_circuit_model(labels, maxwell_fF, junctions) -> CircuitModelResult:
-    """Maxwell 电容矩阵 (fF) + 结输入 → transmon 参数 + 成对耦合 (契约 N8)。
+    """Maxwell 电容矩阵 (fF) + 结输入 → transmon 参数 + 成对耦合 (契约「电路模型」)。
 
     Args:
         labels:     矩阵行/列的岛名 (顺序 = 行序), = .geo Physical 名的

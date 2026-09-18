@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""``*.meta.yaml`` sidecar 加载 (契约 N3; 词汇见 SPEC「Layer-1 词汇」)。
+"""``*.meta.yaml`` sidecar 加载 (契约「meta 加载」; 词汇见 SPEC「Layer-1 词汇」)。
 
 扁平词汇, schema ``quantum-dsl/meta/1``。未知顶层键一律 raise (typo 不静默)。
 ``circuit_model.qubits`` 里的结参数在加载时就解析成数:
@@ -33,7 +33,7 @@ class Meta:
 
     path: Path
     geo_path: Path | None                       # 手写 .geo (与 layout_path 二选一)
-    layout_path: Path | None = None             # 版图 *.layout.yaml (N16)
+    layout_path: Path | None = None             # 版图 *.layout.yaml
     layers: dict = field(default_factory=dict)  # 芯片层表 {id: {kind, gds: [layer, datatype]}}
     materials: dict = field(default_factory=dict)
     airbox: dict = field(default_factory=dict)

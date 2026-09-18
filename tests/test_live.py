@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """live Palace 求解 (默认 skip, 环境变量开闸)。
 
-* 契约 N7 —— two_pads 回归锚 (钉配方可复现): ``QDSL_RUN_PALACE=1``, 单核 ~4 min,
+* 契约「two_pads 锚」 —— two_pads 回归锚 (钉配方可复现): ``QDSL_RUN_PALACE=1``, 单核 ~4 min,
   ⚠ WSL 上 Palace 必须 ``HWLOC_COMPONENTS=-gl`` (build() 已注入)。
-* 契约 N15 —— sung 论文器件外部锚 (锚外部真相): ``QDSL_RUN_PALACE_SUNG=1``,
+* 契约「sung 外部锚」 —— sung 论文器件外部锚 (锚外部真相): ``QDSL_RUN_PALACE_SUNG=1``,
   18.5M 未知量 / 峰值内存 ~154 G, 上 384G 机 (``tools/palace_remote.sh``)。
 两者角色互补, 都要。
 """
@@ -19,7 +19,7 @@ from conftest import LIVE_MAXWELL_GOLDEN, SUNG_META, TWO_PADS_META, live, live_s
 
 @live
 def test_two_pads_end_to_end(tmp_path):
-    """契约 N7: 一次 build(solve=True): C 矩阵对实测 golden <2%, 且
+    """契约「two_pads 锚」: 一次 build(solve=True): C 矩阵对实测 golden <2%, 且
     results.yaml 的 f01 对「golden + 10 nH 闭式」<3%。"""
     from quantum_dsl import build
     result = build(TWO_PADS_META, tmp_path, solve=True)
@@ -36,7 +36,7 @@ def test_two_pads_end_to_end(tmp_path):
 
 @live_sung
 def test_sung_2021_against_paper(tmp_path):
-    """契约 N15: Sung et al. PRX 11, 021058 —— 一次整片 order-2 求解,
+    """契约「sung 外部锚」: Sung et al. PRX 11, 021058 —— 一次整片 order-2 求解,
     C_Σ ×3 对论文 ±8%, β_qc ×2 对论文 ±20%。判据出处、可复现边界与排除项:
     examples/sung_2021_device.meta.yaml 头注。
 

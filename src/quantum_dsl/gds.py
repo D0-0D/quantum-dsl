@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""GDS 分叉 (契约 N4): ``.geo`` → GDS, µm verbatim, 旁路网格。
+"""GDS 分叉 (契约「GDS」): ``.geo`` → GDS, µm verbatim, 旁路网格。
 
 坐标 **µm 逐字** (gdstk Library ``unit=1e-6``), 不缩放 (SPEC「不双重缩放」)。
 映射两种口径: meta 有 ``layers:`` 表时按 **层** (Physical 名第 2 段 → ``layers[id].gds``,
@@ -8,7 +8,7 @@
 
 面 → 多边形走 gmsh 2D 三角化 + gdstk 布尔并 (逐面): 对任意 OCC 面 (含布尔
 差挖出的带孔 ground) 都稳健; 直边多边形的角点是网格顶点, 逐字保真。
-gmsh/gdstk 惰性 import (N0)。
+gmsh/gdstk 惰性 import (import 纯度)。
 
 ``render_gds_png``: GDS → PNG 概览 (金属浅 / 衬底深 / jj 品红), build() 随 GDS 一起产
 ``<stem>.gds.png``。带孔 ground 用 field − metal 布尔取真缝 (PIL 不会填孔)。PIL 惰性 import。

@@ -4,7 +4,7 @@
 > 把一轮全面审视得到的规则写进 §1.4 / §1.6 / §1.7。每个机制都有探针实证（§4.4，scratchpad `probe2/`，未进仓）。
 > Chen 2025 的几何与验证锚在 [`paper-chen2025-geometry.md`](paper-chen2025-geometry.md)（B 报告），本文只在 §3 说它怎么落进框架。2026-09-12。
 
-> **落地状态（2026-09-12 晚）**：框架已实现为 `src/quantum_dsl/layout.py`（契约 N16，`tests/test_layout.py` 6 条；用户语法见
+> **落地状态（2026-09-12 晚）**：框架已实现为 `src/quantum_dsl/layout.py`（`tests/test_layout.py` 6 条；用户语法见
 > [`grammar.md` §4](../grammar.md)）。首批模板 `examples/lib/`（`pad` / `xmon` / `cpw_meander` + `cpw_macros.geo`），例子
 > `two_pads.layout.yaml`（与手写逐字等价）与 `xmon_readout.layout.yaml`（模板 + 手写 + 定长路由 + 地）。与本稿的实现偏差 / 收窄：
 > ① 模板 `layers:` 写成 `slot: kind`（不是 `{kind: …}`）；② 连接型模板注入 `D` / `w` / `L` 三个保留变量，多岛时用 `body:` 指明路由体，
@@ -12,7 +12,7 @@
 > 蚀刻用 `etch: <面表变量>`，端口用 `ports: {名: {port: f(0), net: <component>}}`；⑤ 单岛模板 component = 实例名，多岛 `<实例>_<岛键>`；
 > ⑥ 嵌套再导出：`ports: {E: 子.E}`、`external: {C: {inst: 子}}`（无 `.geo` 的父模板）；⑦ **未做**：`py:` 逃生口、`nets:` 覆盖、taper、
 > 端口面 tag 表注入（增量原则下无用）、多张 ground sheet 之外的 ground 角色输出。开放问题 §2 不变。
-> **Chen 模板已落地（2026-09-13, N17）**：`examples/lib/disc_transmon` / `bar_coupler` + `examples/chen_2025_3x3.layout.yaml`，按 §3 的分工（爪由比特画为外挂面，耦合器连接型）；
+> **Chen 模板已落地（2026-09-13）**：`examples/lib/disc_transmon` / `bar_coupler` + `examples/chen_2025_3x3.layout.yaml`，按 §3 的分工（爪由比特画为外挂面，耦合器连接型）；
 > 为此修了两处契约：连接型路由体的 component 在结记账**之前**就定为 net 名（原实现事后改名，多岛 + 双外挂端时体不改名 → 误报短路），连接型步骤吃 `mirror:`。读出结构未进（phase 1 不含）。
 
 ---
@@ -203,7 +203,7 @@ ground: sheet: {layer: a, margin_um: 250}            # 或 none (flip-chip)
 
 ---
 
-## 3. Chen 2025 落进框架（**已落地**，2026-09-13 / N17；下表 = 实际实现，数字见 B 报告）
+## 3. Chen 2025 落进框架（**已落地**，2026-09-13；下表 = 实际实现，数字见 B 报告）
 
 | 步骤 | 内容 |
 |---|---|

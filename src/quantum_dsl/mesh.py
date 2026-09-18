@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""静电网格 (契约 N5): 零厚度导体片 imprint 为边界面组。
+"""静电网格 (契约「网格」): 零厚度导体片 imprint 为边界面组。
 
 配方 = docs/physics.md §3–§6 (回归锚出处见其 §7),
 v4 与 v3 的分道处:
@@ -23,7 +23,7 @@ v4 与 v3 的分道处:
   守卫 (gmsh 对失败可能静默返回空网格)。
 
 单位: 全程 µm (网格文件坐标也是 µm), SI 换算只发生在 Palace config 的
-``Model.L0 = 1e-6`` —— 不双重缩放。gmsh 惰性 import (N0)。
+``Model.L0 = 1e-6`` —— 不双重缩放。gmsh 惰性 import (import 纯度)。
 """
 
 from __future__ import annotations

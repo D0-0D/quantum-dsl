@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-"""几何分叉与编排 (需要 gmsh/gdstk, 不需要 Palace): import 纯度 (N0)、
-GDS (N4)、mesh (N5)、Palace config 与 CSV 解析 (N6)、build 编排 (N13)、
-分块提取 (N14)。"""
+"""几何分叉与编排 (需要 gmsh/gdstk, 不需要 Palace): import 纯度、
+GDS、mesh、Palace config 与 CSV 解析、build 编排、
+分块提取。"""
 from __future__ import annotations
 
 import hashlib
@@ -16,9 +16,9 @@ import yaml
 from conftest import BLOCKS_META, EXAMPLES, FIXTURES, SRC, TWO_PADS_META
 
 
-# ---------------------------------------------------------------- N0 纯度
+# ---------------------------------------------------------------- 纯度
 def test_import_is_light_and_metal_free():
-    """契约 N0: ``import quantum_dsl`` 不得拉起 qiskit_metal / gmsh / gdstk /
+    """契约「import 纯度」: ``import quantum_dsl`` 不得拉起 qiskit_metal / gmsh / gdstk /
     matplotlib。在子进程里查 —— 本进程的其他测试早已 import 过 gmsh, 与
     测试顺序无关。"""
     code = ("import sys, quantum_dsl; "
@@ -30,9 +30,9 @@ def test_import_is_light_and_metal_free():
     assert r.returncode == 0, r.stderr.strip()
 
 
-# ---------------------------------------------------------------- N4 GDS
+# ---------------------------------------------------------------- GDS
 def test_build_gds_two_pads_roundtrip(tmp_path):
-    """契约 N4: GDS µm verbatim (unit=1e-6), by_role 映射 layer/datatype,
+    """契约「GDS」: GDS µm verbatim (unit=1e-6), by_role 映射 layer/datatype,
     pad A 的包围盒逐字是 (-120,-40)-(-40,40)。"""
     import gdstk
 
@@ -51,10 +51,10 @@ def test_build_gds_two_pads_roundtrip(tmp_path):
     assert boxes[1] == (40.0, -40.0, 120.0, 40.0)
 
 
-# ---------------------------------------------------------------- N5/N6 mesh + Palace
+# ---------------------------------------------------------------- mesh + Palace
 @pytest.fixture(scope="module")
 def two_pads_mesh(tmp_path_factory):
-    """two_pads 网格化一次, N5 与 N6 config 共用 (秒级, 但没必要跑两遍)。"""
+    """two_pads 网格化一次, 网格 与 Palace config 共用 (秒级, 但没必要跑两遍)。"""
     from quantum_dsl import build_mesh, load_meta
     out = tmp_path_factory.mktemp("two_pads")
     meta = load_meta(TWO_PADS_META)
@@ -62,7 +62,7 @@ def two_pads_mesh(tmp_path_factory):
 
 
 def test_build_mesh_two_pads(two_pads_mesh):
-    """契约 N5: 零厚度导体片 imprint 为边界面组, 按 component 命名可寻址
+    """契约「网格」: 零厚度导体片 imprint 为边界面组, 按 component 命名可寻址
     (Palace Terminal 的绑定键); 有 3D 体网格 (真空 + 衬底)。"""
     _, mesh = two_pads_mesh
     assert mesh.path.exists() and mesh.path.stat().st_size > 1000
@@ -73,7 +73,7 @@ def test_build_mesh_two_pads(two_pads_mesh):
 
 
 def test_palace_config_shape(two_pads_mesh, tmp_path):
-    """契约 N6: Electrostatic, order 2, 每个导体一个 Terminal。"""
+    """契约「Palace」: Electrostatic, order 2, 每个导体一个 Terminal。"""
     from quantum_dsl import palace_config
     meta, mesh = two_pads_mesh
     cfg = palace_config(mesh, meta, tmp_path / "chip.json")
@@ -85,7 +85,7 @@ def test_palace_config_shape(two_pads_mesh, tmp_path):
 
 
 def test_parse_capacitance_verbatim_csv_and_nan_guard(tmp_path):
-    """契约 N6: 吃 Palace 0.16 的 verbatim terminal-C.csv (SI 法拉 → fF ×1e15);
+    """契约「Palace」: 吃 Palace 0.16 的 verbatim terminal-C.csv (SI 法拉 → fF ×1e15);
     mutual 由 Maxwell 代数导出 (Cm_ii = Σ_j C_ij); NaN 一律拒绝。"""
     from quantum_dsl import QuantumDslError, parse_capacitance
     cap = parse_capacitance(FIXTURES / "palace_postpro", labels=("A", "B"))
@@ -107,9 +107,9 @@ def test_parse_capacitance_verbatim_csv_and_nan_guard(tmp_path):
         parse_capacitance(p, labels=("A", "B"))
 
 
-# ---------------------------------------------------------------- N13 编排
+# ---------------------------------------------------------------- 编排
 def test_build_no_solve_artifacts_and_manifest(tmp_path):
-    """契约 N13: build(solve=False) 产 gds/gds_png/mesh/config/manifest,
+    """契约「build 编排」: build(solve=False) 产 gds/gds_png/mesh/config/manifest,
     manifest 记录输入的真 sha256 与全部产物; PNG 里金属与缝两色都在。"""
     from PIL import Image
 
@@ -124,9 +124,9 @@ def test_build_no_solve_artifacts_and_manifest(tmp_path):
     assert len(Image.open(r["gds_png"]).getcolors()) == 2
 
 
-# ---------------------------------------------------------------- N14 分块
+# ---------------------------------------------------------------- 分块
 def test_extract_blocks_derived_and_scoped(tmp_path):
-    """契约 N14: extract.blocks → block_<name>.geo 只含该块 component 的
+    """契约「分块」: extract.blocks → block_<name>.geo 只含该块 component 的
     Physical 组, 每块有自己的 Palace config。two_pads_blocks 的 A/B 相距 80 µm
     却从不共现 → 如设计触发「跨块直接互容 = 结构性零」告警。"""
     from quantum_dsl import build
@@ -142,7 +142,7 @@ def test_extract_blocks_derived_and_scoped(tmp_path):
 
 
 def test_build_blocks_only_skips_the_whole_chip(tmp_path):
-    """契约 N14: ``build(blocks=[...])`` 只做指定的块 —— 跳过整片网格/config (整片可能比
+    """契约「分块」: ``build(blocks=[...])`` 只做指定的块 —— 跳过整片网格/config (整片可能比
     单块大两个数量级, 本机跑不动, 否则「单块可解」只能靠手抄脚本); 每块 Palace 输出目录
     互不覆盖; 块名拼错 raise。"""
     import json
