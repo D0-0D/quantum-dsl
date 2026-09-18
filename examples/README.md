@@ -12,7 +12,7 @@
 | `two_pads_blocks.meta.yaml` | 同一几何切成 A / B 两块 | 分块提取 `extract.blocks`，以及「跨块直接互容 = 结构性零」告警 | 不需要求解 |
 | `two_pads.layout.yaml` + `two_pads_layout.meta.yaml` | 同一 two_pads，用**版图**写：两个 `pad` 模板实例 | 版图路线的最小例子：与手写 `.geo` 逐字等价（GDS / 网格标签相同，测试断言） | 同 two_pads |
 | `xmon_readout.{layout.yaml,meta.yaml}` + `xmon_readout_launch.geo` | `xmon` 模板（岛 + moat + 结 + 读出桨）→ λ/4 定长蛇形 `cpw_meander` → 手写发射焊盘，`ground: sheet` | 框架演示：模板 / 手写 `.geo` / 路由在同一模型混用；手写步骤声明端口给路由接；结自动进 circuit_model；长度闭环 | 粗网格秒级（演示件） |
-| `cpw_route_demo.{layout.yaml,meta.yaml}` | 三对 `xmon` 的读出桨，同一对几何（Q_odd.RO 朝 +x → Q_even 转 90° 桨朝 +y，错位 900 × 900）右移三次只换环境：**R1** 默认横平竖直（骨架 L，蛇形在横臂上，腿上短下长）；**R2** `region` 是两个矩形的并集（右上角挖掉）→ L 淘汰、3 转弯绕路，腿按缝的形状不等长；**R3** `axis: free` 斜轴（Dubins RSR）。都是 fixed 3000 µm、腿数自动、两端 `lead` 60 µm；两端外挂面 → 总线 net = 步骤名；`ground: sheet` | `planner: cpw` v2（`docs/design/auto-route.md`）；`region:`（矩形并集）/ `axis:` 步骤键；`subsystems` 多出 `route_primitives`；region 太小 / 长度装不下都 raise | 粗网格十几秒（演示件） |
+| `cpw_route_demo.{layout.yaml,meta.yaml}` | 四对 `xmon` 的读出桨，同一对几何（Q_odd.RO 朝 +x → Q_even 转 90° 桨朝 +y，错位 900 × 900）右移四次只换环境：**R1** 默认横平竖直（骨架 L，蛇形在横臂上，腿上短下长）；**R2** `region` 是两个矩形的并集（右上角挖掉）→ L 淘汰、3 转弯绕路，腿按缝的形状不等长；**R3** `axis: free` 斜轴（Dubins RSR）；**R4** `params: {R: auto}` → 最大可行弯半径 70。都是 fixed 3000 µm、腿数自动、两端 `lead` 60 µm；两端外挂面 → 总线 net = 步骤名；`ground: sheet` | `planner: cpw` v2（`docs/design/auto-route.md`）；`region:`（矩形并集）/ `axis:` 步骤键；`R: auto`；`subsystems` 多出 `route_primitives` / `R_um`；region 太小 / 长度装不下都 raise（给出能装下的最大 R） | 粗网格十几秒（演示件） |
 | `chen_2025_3x3.{layout.yaml,meta.yaml}` | Chen et al. 2025 (Nat. Phys. 21, 1489) 圆盘比特方格阵列的 3×3 切片：9 个 `disc_transmon` + 12 个 `bar_coupler`，几何全部是 Fig. 1a 照片量出值（`../docs/design/paper-chen2025-geometry.md`），无读出结构 | flip-chip 口径：顶片无地 `ground: none`，载片地 = `airbox.top_um: 5`（唯一物理旋钮）；21 个浮动结条目自动生成；`extract.blocks` = 12 个 SI §D 口径的孤立 QCQ 块（6 terminal） | 单块 100/4 order-2 ≈75 万 tets，本机 8 rank ~10 min：`build(m, out, solve=True, blocks=["H01"])`；整片 42 导体 ~9M tets 上云 |
 | `chen_2025_3x3_hand.{layout.yaml,meta.yaml}` + `chen_2025_3x3_bars.geo` + `chen_2025_3x3_bar_macros.geo` | 同一 Chen 3×3，**几何逐点相同**的另一种写法：9 个 `disc_transmon` 照抄，12 个 `bar_coupler` 换成一步手写 `.geo`（从端口变量 `Q00_E_x…` 起画）+ `connect:` 认领爪；12 条耦合器的结写在 meta `circuit_model.qubits` | 「模板 vs 手写」对照件：手写步骤 `connect:`（grammar §4.1）；宏必须放 `Include` 文件；Physical 名 / GDS 多边形 / 结条目与模板路线相同（`test_chen_2025.py` 断言） | 同 chen |
 | `chen_2025_cross.{layout.yaml,meta.yaml}` | Chen 2025「十字」：中心 Q11 四爪全开 + 四臂比特各留一只朝中心的爪 + 4 个 `bar_coupler` = 18 导体 / 9 个浮动结，**整片一次解**（meta 无 `extract.blocks`）。中心比特的 C_Σ 是真晶格口径（↔ Table SI 实测 α −192 ± 6 MHz），臂比特只有一只爪 = SI §D 孤立 QCQ 的比特侧口径，同一张网格作差 = 周边结构效应。100/4 网格 2.4 M tets，上云解（`.claude/session/2609180210.md`） |
@@ -33,7 +33,7 @@
 | `pad` | 放置 | 1（= 实例名） | 端口 E/N/W/S = 四边中点，宽 = 边长 | — | `w` `h`；`gap` > 0 出蚀刻 pocket | `two_pads.layout.yaml` |
 | `xmon` | 放置 | 1（= 实例名） | 可选读出桨 RO（外挂面 + 同名端口，`ro` 开关） | 北臂端 → 地 → `island:` 条目 | `arm_w` `arm_L` `gap` `jj_w` `ro_*` | `xmon_readout.layout.yaml` |
 | `cpw_meander` | **连接** | 1 = 路由体（并入端点 net） | 两端由 `from` / `to` 给定，宽度继承 | — | `R` `n_legs` `gap`；步骤 `length:` 定长 | `xmon_readout.layout.yaml` |
-| `cpw_route` | **连接 + 自动布线**（`planner: cpw`） | 1 = 路由体（并入端点 net） | 两端由 `from` / `to` 给定，**不必正对**，宽度继承；步骤可给 `region:`（矩形或矩形并集）与 `axis:`（框架角，默认 0 横平竖直；`free` = Dubins） | — | `R` 最小弯半径、`n_legs`（0 = 按余量自动取最小可行）、`gap`、`lead` 端口引出直段（弧从其后开始，0 = 关）；步骤 `length:` 定长（骨架直段上放蛇形，每个弯按余量独立外推，腿可不等长）；几何 = 引出 + 端弧 + 直段 / 圆角 + 蛇形，`docs/design/auto-route.md` | `cpw_route_demo.layout.yaml` |
+| `cpw_route` | **连接 + 自动布线**（`planner: cpw`） | 1 = 路由体（并入端点 net） | 两端由 `from` / `to` 给定，**不必正对**，宽度继承；步骤可给 `region:`（矩形或矩形并集）与 `axis:`（框架角，默认 0 横平竖直；`free` = Dubins） | — | `R` 弯半径（`auto` = 最大可行）、`n_legs`（总腿数，0 = 按余量自动取最小可行）、`gap`、`lead` 端口引出直段（弧从其后开始，0 = 关）；步骤 `length:` 定长（骨架直段上放蛇形，每个弯按精确余量独立外推，腿可不等长，单段装不下分摊到多段）；几何 = 引出 + 端弧 + 直段 / 圆角 + 蛇形，`docs/design/auto-route.md` | `cpw_route_demo.layout.yaml` |
 | `disc_transmon` | 放置 | 2：`<实例>_a` / `<实例>_b` 两半盘 | 4 只可选爪 E/N/W/S（外挂面 + 同名端口，`claw_*` 开关），电学归接上来的耦合器 | 跨缝 a → b → `islands:` 浮动条目 | `dia` `slot` `slot_deg` `gap` `claw_t` `claw_deg` `stub` `bar_w` `jj_w` | `chen_2025_3x3.layout.yaml` |
 | `bar_coupler` | **连接**，2 岛 | `body: bar`（= 步骤名，含两端爪）+ `<步骤名>_pent` | 两端接 `disc_transmon` 的爪端口 | 条 → 板 → `islands: [H, H_pent]` | `pent_w` `pent_wall` `pent_h` `pent_gap` `pent_off` `jj_w`；`mirror: x` 翻五边形侧 | `chen_2025_3x3.layout.yaml` |
 | `cpw_macros.geo` | 宏库 | — | — | — | `LIB_CPW` / `LIB_CPW_ARC` / `LIB_CPW_MEANDER`，入参出参 `_lib_*` | 被 `cpw_meander.geo` / `disc_transmon.geo` `Include` |
@@ -62,7 +62,7 @@ steps:
 | 单岛放置型 | `pad`（最小完整对） | §4.2.1 |
 | 岛 + 蚀刻 + 结 + 可选外挂 | `xmon` | §4.2.4 |
 | 端口到端口的定长路由（两口正对） | `cpw_meander` | §4.2.5 |
-| 两口不正对的自动布线（区域可拼接、定长、横平竖直或自由角） | `cpw_route`（`planner: cpw`，几何由 `route.py` 规划、`.geo` 只逐段 Call 宏） | §4.2.2 `planner` / `docs/design/auto-route.md` |
+| 两口不正对的自动布线（区域可拼接、定长、横平竖直或自由角、多段分摊、R 自动） | `cpw_route`（`planner: cpw`，几何由 `route.py` 规划、`.geo` 只逐段 Call 宏） | §4.2.2 `planner` / `docs/design/auto-route.md` |
 | 多岛 + 多只可选外挂 + 浮动结 | `disc_transmon` | §4.2.6 |
 | 连接型多岛（`body:`）+ 跨岛结 | `bar_coupler` | §4.2.5 |
 | 复用几何宏 | `cpw_macros.geo`：include guard、`LIB_` / `_lib_` 前缀、`Call` 独占一行 | §4.2.7 |

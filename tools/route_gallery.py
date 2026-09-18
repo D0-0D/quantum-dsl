@@ -53,6 +53,21 @@ SCENES = {
     "facing_narrow": dict(start=(0, 0, 0.0), end=(900, 0, 0.0), R=R, width=W, lead=40, length=3000, region=[-30, -150, 930, 150]),
     "too_short!": dict(A, length=1200, region=REGION),
     "too_many_legs!": dict(A, length=3000, region=REGION, n_legs=20),
+    # 多段分摊 / 台阶区域 / 自身净距
+    "corridor_two_blocks": dict(start=(0, 0, 0.0), end=(700, -700, -math.pi / 2), R=R, width=W, lead=40, length=3200,
+                                region=[[-30, -130, 760, 130], [570, -760, 830, 130]]),
+    "ring_three_blocks": dict(start=(30, 0, 0.0), end=(30, -600, math.pi), R=R, width=W, lead=40, length=4600,
+                              region=[[0, -100, 900, 100], [700, -700, 900, 100], [0, -700, 900, -500]]),
+    "step_region": dict(start=(0, 0, 0.0), end=(800, 0, 0.0), R=R, width=W, lead=40, length=2600,
+                        region=[[-30, -100, 830, 100], [250, -400, 550, 400]]),
+    "step_region_offset": dict(start=(0, 0, 0.0), end=(800, 0, 0.0), R=R, width=W, lead=40, length=2400,
+                               region=[[-30, -100, 830, 100], [250, -100, 550, 450]]),
+    "ports_too_close!": dict(start=(0, 0, 0.0), end=(0, 50, math.pi), R=R, width=W, lead=40, region=[-300, -200, 400, 300]),
+    "corridor_legs12": dict(start=(0, 0, 0.0), end=(700, -700, -math.pi / 2), R=R, width=W, lead=40, length=3200, n_legs=12,
+                            region=[[-30, -130, 760, 130], [570, -760, 830, 130]]),
+    "L_auto_R": dict(A, R="auto", length=3000, region=REGION),
+    "corridor_auto_R": dict(start=(0, 0, 0.0), end=(700, -700, -math.pi / 2), R="auto", width=W, lead=40, length=3200,
+                            region=[[-30, -130, 760, 130], [570, -760, 830, 130]]),
 }
 
 BLUE, RED, GREY, DARK, PINK = (70, 90, 220), (200, 30, 30), (150, 150, 150), (40, 40, 40), (255, 215, 215)
@@ -153,7 +168,8 @@ def render_scene(name, kw, size=900):
             d.line([(cx, cy), (cx + 32 * math.cos(a), cy - 32 * math.sin(a))], fill=BLUE, width=2)
         d.text((cx, cy + 40), f"axis {axis}°", fill=BLUE, font=_font(14), anchor="mt")
     # 文字块
-    lines = [name, f"R {kw['R']}  width {kw.get('width', 0)}  lead {kw.get('lead', 0)}  axis {axis}",
+    r_used = next((p[3] for p in (prims or []) if p[0] == "arc"), kw["R"])
+    lines = [name, f"R {kw['R']}{'' if r_used == kw['R'] else f' -> {r_used:g}'}  width {kw.get('width', 0)}  lead {kw.get('lead', 0)}  axis {axis}",
              f"region {rects if rects else None}",
              f"length {kw.get('length')}  n_legs {kw.get('n_legs', 0) or 'auto'}"]
     if prims:

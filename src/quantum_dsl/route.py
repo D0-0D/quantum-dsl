@@ -12,11 +12,15 @@
     (2 − π/2)R, 按长度排会选三折不选 L。
   - ``axis="free"``: v1 的 Dubins CSC 四型 (LSL / RSR / LSR / RSL), 一条中间直段。
   - 出区域 (含总宽/2) 的骨架丢弃。同 (转弯数, 长度) 的一组骨架由填充结果 (腿少、余量大) 定胜负。
-* **填充** (给了 ``length``): 在骨架的某条直段上放蛇形块 (块首 90° 弧 + n 条垂直腿 + 腿间 180° 弯 + 块尾 90° 弧)。每个弯 k 有自己的
-  外推量 u_k ≥ R, 腿因此**可不等长**: 弯的**余量** room_k = 半圆基准取样点沿法向射线首次触界的距离 (region 外框: 线性界, 精确; 矩形之间
-  的缝: 外扩总宽/2 的圆角矩形; 本条路自己的其它直段: 外扩净距 2R 的胶囊)。腿数 n 从 2 起取首个能装下的; 块沿直段扫 9 个摆放点、
-  先弯左 / 右都试, 取余量最大者; u_k = R + λ (room_k − R) 由目标长度解出 λ ∈ [0, 1]。记账:
-  M = S − 2Rn + nπR + 2Σu_k − 2R, 多出 E = M − S, 全 u_k = R 时 E_min = R (nπ − 4)。没给 region 时 (须显式 n_legs) 腿等长。
+* **填充** (给了 ``length``): 在骨架的直段上放蛇形块 (块首 90° 弧 + n 条垂直腿 + 腿间 180° 弯 + 块尾 90° 弧)。每个弯 k 有自己的
+  外推量 u_k ≥ R, 腿因此**不等长、随沿轴的可用宽度变**: 弯的**余量** room_k = 基准半圆沿法向可推多远才碰界, **精确**算 (半圆取样点射线
+  + 界的角点 / 端点沿反向射进加厚半圆 + 两弧外切; 界 = region 外框、矩形之间的缝、本条路自己的其它直段与弧 (净距 2R)、已放好的其它块)。
+  u_k = R + λ (room_k − R), λ 由目标解出; 腿数从 2 起取首个能装下的; 摆放沿直段按 R/2 网格扫、先弯左 / 右都试, 取余量最大者。
+  单段装不下 → **多段分摊**: 按各段容量比例把长度分到 2, 3, … 条直段, 容量小的先放, 先放好的块进后面块的障碍集 (拐角处两块的腿互相垂直
+  也不交叉), 最大的一段吃精确余数; 显式 n_legs 是总腿数, 多段时按容量分。记账: M = S − 2Rn + nπR + 2Σu_k − 2R, 多出 E = M − S,
+  全 u_k = R 时 E_min = R (nπ − 4)。没给 region 时 (须显式 n_legs) 腿等长。
+* **自身净距**: 骨架与填好的路都查 —— 沿路间隔 ≥ πR 的任意两段原语中心线距离 ≥ 2R (间隔更短的是同一个弯的两侧, 天然贴着); 过不了的
+  骨架淘汰 (回头路穿过自己的引出等), 过不了的填充换摆放。
 * **区域** ``region`` = ``[x0, y0, x1, y1]`` 或若干个这样的矩形 (并集, 可拼成 L / T / 回字): 全部原语含总宽/2 落在并集内 —— 外框 (凸) 查取样点
   (直段两端, 弧两端 + 落在弧内的 0/90/180/270° 点, 对轴对齐矩形是精确极值), 外框内不属于任何矩形的格子 (缝) 查原语到格子的**精确距离** ≥ 总宽/2。
 * **自检**: 输出前整条路重跑区域检查、记账与目标比对; 不过 → ``internal:`` raise (抓实现 bug, 不静默)。
@@ -24,18 +28,19 @@
 
 原语 (与 ``LIB_CPW_ARC`` 同约定, 每段弧 |a1 − a0| ≤ π/2, 长弧拆段): ``("line", x1, y1, x2, y2)`` / ``("arc", cx, cy, R, a0, a1)`` (a0 → a1 增 = 逆时针)。
 
-# ponytail: 区域 = 矩形并集, 不做多边形 (升级: 多边形边当直线障碍, 外框检查改 point-in-polygon); 曼哈顿模板到三折为止, 自由参数只试规则值 + 格子中心;
-#   蛇形只放一条直段; 障碍只查直段 (弧不当障碍), 障碍端圆与缝的矩形角处取样点近似; 不做 CCC 型 Dubins / taper / 分端 lead;
+# ponytail: 区域 = 矩形并集, 不做多边形 (升级: 多边形边当直线障碍, 外框检查改 point-in-polygon); 曼哈顿模板到三折为止 (升级: region 网格上
+#   的最少转弯 Dijkstra), 自由参数只试规则值 + 格子中心; 多段分摊按容量比例顺序放、不做联合优化; 不做 CCC 型 Dubins / taper / 分端 lead;
 #   不同 cpw_route 之间不互避 (重叠由短路检查 raise)。
 """
 
 from __future__ import annotations
 
 import math
+from itertools import combinations
 
 from .errors import QuantumDslError
 
-__all__ = ["plan_cpw", "path_length"]
+__all__ = ["plan_cpw", "auto_radius", "path_length"]
 
 _HALF_PI = math.pi / 2
 _TWO_PI = 2 * math.pi
@@ -142,6 +147,60 @@ def _dist_arc_seg(cx, cy, R, a0, a1, ax, ay, bx, by) -> float:
     return min(cands)
 
 
+def _dist_arc_arc(cx, cy, Ra, a0, a1, ex, ey, Rb, b0, b1) -> float:
+    """两段弧的最小距离 (精确): 相交 → 0; 否则在「端点 – 另一弧」与「圆心连线方向上的圆上点对」里取最小
+    (两圆曲线的距离驻点只在圆心连线上; 落在弧外的驻点由端点接管)。"""
+    cands = [_dist_pt_arc(cx + Ra * math.cos(t), cy + Ra * math.sin(t), ex, ey, Rb, b0, b1) for t in (a0, a1)]
+    cands += [_dist_pt_arc(ex + Rb * math.cos(t), ey + Rb * math.sin(t), cx, cy, Ra, a0, a1) for t in (b0, b1)]
+    d = math.hypot(ex - cx, ey - cy)
+    if d < _EPS:                                          # 同心: 角度范围重叠 → 半径差
+        for t in (a0, a1):
+            if _in_arc(t, b0, b1):
+                cands.append(abs(Ra - Rb))
+        return min(cands)
+    ux, uy = (ex - cx) / d, (ey - cy) / d
+    if abs(Ra - Rb) <= d <= Ra + Rb:                      # 两圆相交: 交点同时落在两弧上 → 0
+        a = (Ra * Ra - Rb * Rb + d * d) / (2 * d)
+        h = math.sqrt(max(0.0, Ra * Ra - a * a))
+        for sg in (1, -1):
+            qx, qy = cx + a * ux - sg * h * uy, cy + a * uy + sg * h * ux
+            if _in_arc(math.atan2(qy - cy, qx - cx), a0, a1) and _in_arc(math.atan2(qy - ey, qx - ex), b0, b1):
+                return 0.0
+    phi = math.atan2(uy, ux)
+    for ta in (phi, phi + math.pi):
+        for tb in (phi, phi + math.pi):
+            if _in_arc(ta, a0, a1) and _in_arc(tb, b0, b1):
+                cands.append(math.hypot(cx + Ra * math.cos(ta) - ex - Rb * math.cos(tb),
+                                        cy + Ra * math.sin(ta) - ey - Rb * math.sin(tb)))
+    return min(cands)
+
+
+def _dist_prim_prim(p, q) -> float:
+    """两条原语 (直段 / 弧) 中心线的最小距离 (精确)。"""
+    if p[0] == "line" and q[0] == "line":
+        return _dist_seg_seg(*p[1:], *q[1:])
+    if p[0] == "arc" and q[0] == "arc":
+        return _dist_arc_arc(*p[1:], *q[1:])
+    arc, seg = (p, q) if p[0] == "arc" else (q, p)
+    return _dist_arc_seg(*arc[1:], *seg[1:])
+
+
+def _self_clear(prims, R, clr):
+    """路径自身净距: 沿路间隔 (前者终点到后者起点的路长) ≥ πR 的两段原语, 中心线距离须 ≥ clr − 1e-6 —— 间隔更短的两段是同一个弯
+    的两侧 (180° 弯两腿恰间隔 πR、相距 2R), 天然更近, 不算冲突。返回首个违规 (i, j, 距离) 或 None。"""
+    cum = [0.0]
+    for p in prims:
+        cum.append(cum[-1] + path_length([p]))
+    for i in range(len(prims)):
+        for j in range(i + 1, len(prims)):
+            if cum[j] - cum[i + 1] < math.pi * R - _TOL:
+                continue
+            d = _dist_prim_prim(prims[i], prims[j])
+            if d < clr - _TOL:
+                return i, j, d
+    return None
+
+
 def _dist_prim_rect(p, rect) -> float:
     """原语到轴对齐矩形的距离; 原语起点在矩形内或与边相交 → 0。"""
     x0, y0, x1, y1 = rect
@@ -194,13 +253,6 @@ def _ray_exit_rect(px, py, dx, dy, x0, y0, x1, y1) -> float:
     return u
 
 
-def _ray_rounded(px, py, dx, dy, rect, r) -> float:
-    """射线首次进入「矩形外扩 r」(圆角矩形) 的 u。"""
-    x0, y0, x1, y1 = rect
-    return min(_ray_slab(px, py, dx, dy, x0 - r, y0, x1 + r, y1), _ray_slab(px, py, dx, dy, x0, y0 - r, x1, y1 + r),
-               *(_ray_disc(px, py, dx, dy, cx, cy, r) for cx in (x0, x1) for cy in (y0, y1)))
-
-
 def _ray_capsule(px, py, dx, dy, ax, ay, bx, by, r) -> float:
     """射线首次进入「线段 ab 外扩 r」(胶囊) 的 u。"""
     u = min(_ray_disc(px, py, dx, dy, ax, ay, r), _ray_disc(px, py, dx, dy, bx, by, r))
@@ -212,6 +264,38 @@ def _ray_capsule(px, py, dx, dy, ax, ay, bx, by, r) -> float:
     nx, ny = -ey, ex
     s0, w0 = (px - ax) * ex + (py - ay) * ey, (px - ax) * nx + (py - ay) * ny
     return min(u, _ray_slab(s0, w0, dx * ex + dy * ey, dx * nx + dy * ny, 0.0, -r, L, r))
+
+
+def _ray_arc(px, py, dx, dy, cx, cy, Ra, a0, a1, r) -> float:
+    """射线首次进入「弧外扩 r」(环带扇形 ∪ 两端圆; r = 0 即弧曲线本身) 的 u; 起点在内 → 0; 不交 → inf。
+    扇形的两条径向边落在端圆的直径上, 所以边界 = 外圆弧 + 内圆弧 (角度在范围内) + 端圆。"""
+    u = min(_ray_disc(px, py, dx, dy, cx + Ra * math.cos(a0), cy + Ra * math.sin(a0), r),
+            _ray_disc(px, py, dx, dy, cx + Ra * math.cos(a1), cy + Ra * math.sin(a1), r))
+    fx, fy = px - cx, py - cy
+    d0 = math.hypot(fx, fy)
+    if r > 0 and Ra - r <= d0 <= Ra + r and _in_arc(math.atan2(fy, fx), a0, a1):
+        return 0.0
+    b = fx * dx + fy * dy
+    for rad in (Ra + r, Ra - r):
+        if rad <= 0:
+            continue
+        disc = b * b - (fx * fx + fy * fy - rad * rad)
+        if disc < 0:
+            continue
+        s = math.sqrt(disc)
+        for t in (-b - s, -b + s):
+            if 0 <= t < u:
+                qx, qy = px + t * dx, py + t * dy
+                if _in_arc(math.atan2(qy - cy, qx - cx), a0, a1):
+                    u = t
+    return u
+
+
+def _prim_ends(p):
+    if p[0] == "line":
+        return (p[1], p[2]), (p[3], p[4])
+    _, cx, cy, R, a0, a1 = p
+    return (cx + R * math.cos(a0), cy + R * math.sin(a0)), (cx + R * math.cos(a1), cy + R * math.sin(a1))
 
 
 # ---------------------------------------------------------------- 区域: 矩形并集
@@ -252,15 +336,21 @@ class _Region:
                             f"rectangles by {self.inset - d:.6g} um (CPW half width {self.inset:.6g})")
         return None
 
-    def ray_room(self, px, py, dx, dy) -> tuple[float, str]:
+    def ray_exit(self, px, py, dx, dy) -> float:
+        """射线离开内缩外框的 u。"""
         x0, y0, x1, y1 = self.bbox
         i = self.inset
-        u, why = _ray_exit_rect(px, py, dx, dy, x0 + i, y0 + i, x1 - i, y1 - i), "the region edge"
-        for g in self.gaps:
-            v = _ray_rounded(px, py, dx, dy, g, i)
-            if v < u:
-                u, why = v, f"the gap {[round(c, 6) for c in g]} between the region's rectangles"
-        return u, why
+        return _ray_exit_rect(px, py, dx, dy, x0 + i, y0 + i, x1 - i, y1 - i)
+
+    def ray_gap_edges(self, px, py, dx, dy, g) -> float:
+        """射线首次进入缝 g 外扩 inset 的两条直边 slab 的 u (圆角部分由 _room 用角点对半圆的对偶射线精确算)。"""
+        x0, y0, x1, y1 = g
+        i = self.inset
+        return min(_ray_slab(px, py, dx, dy, x0 - i, y0, x1 + i, y1), _ray_slab(px, py, dx, dy, x0, y0 - i, x1, y1 + i))
+
+    @staticmethod
+    def gap_label(g) -> str:
+        return f"the gap {[round(c, 6) for c in g]} between the region's rectangles"
 
     def _label(self) -> str:
         return str([list(r) for r in self.rects]) if len(self.rects) > 1 else str(list(self.rects[0]))
@@ -449,42 +539,110 @@ def _manhattan_skeletons(s2, e2, R, alpha, reg) -> list[tuple[str, list[tuple]]]
 
 
 # ---------------------------------------------------------------- 填充
-def _obstacles(full, i):
-    """直段 i 的障碍 = 本条路其它直段, 除去与它共端点的 (零弧相接的共线邻段)。"""
-    a, b = (full[i][1], full[i][2]), (full[i][3], full[i][4])
+def _e_min(R, n) -> float:
+    """n 条腿的最小蛇形 (全部 u_k = R) 比原直段多出的长度。"""
+    return R * (n * math.pi - 4)
+
+
+def _obstacles(full, i, extra=()):
+    """直段 i 的障碍 = 本条路其它部件 (直段与弧, 含引出), 除去与它共端点的 (相邻圆角 / 端弧 / 零弧相接的共线邻段 —— 它们和这段
+    一起构成同一个弯, 天然贴着); 再加已放好的其它蛇形块 ``extra``。返回 [(名字, 部件)]。"""
+    a, b = _prim_ends(full[i])
     obs = []
     for j, p in enumerate(full):
-        if j == i or p[0] != "line":
+        if j == i:
             continue
-        ends = ((p[1], p[2]), (p[3], p[4]))
-        if any(math.hypot(e[0] - q[0], e[1] - q[1]) < _TOL for e in ends for q in (a, b)):
+        if any(math.hypot(e[0] - q[0], e[1] - q[1]) < _TOL for e in _prim_ends(p) for q in (a, b)):
             continue
-        obs.append((j, p[1], p[2], p[3], p[4]))
-    return obs
+        obs.append((f"the route's own segment #{j}", p))
+    return obs + [("another meander block", p) for p in extra]
 
 
-def _room(ox, oy, th, R, sigma, region, obstacles, clr) -> tuple[float, str]:
-    """圆心 (ox, oy) 在轴上、弧从 th+π 经 th+σπ/2 到 th 的半圆, 沿 σ·n 可外推的最大距离与限制者。"""
-    nx, ny = -math.sin(th) * sigma, math.cos(th) * sigma
+class _Run:
+    """一条直段上放蛇形块的工作台: 几何、障碍、逐位置的余量缓存。摆放网格 = R/2 (加居中与贴末端), 所有腿数共用同一套位置,
+    余量 (只依赖位置与侧) 只算一次。"""
 
-    def in_sweep(a):
-        return (sigma * (th + math.pi - a)) % _TWO_PI <= math.pi + 1e-9
-    angs = [th + math.pi, th + sigma * _HALF_PI, th] + [a for a in (0.0, _HALF_PI, math.pi, 3 * _HALF_PI) if in_sweep(a)]
-    for _, ax, ay, bx, by in obstacles:
-        beta = math.atan2(by - ay, bx - ax)
-        angs += [a for a in (beta + _HALF_PI, beta - _HALF_PI) if in_sweep(a)]
-    room, lim = math.inf, "nothing"
-    for a in angs:
-        px, py = ox + R * math.cos(a), oy + R * math.sin(a)
-        if region is not None:
-            u, why = region.ray_room(px, py, nx, ny)
-            if u < room:
-                room, lim = u, why
-        for j, ax, ay, bx, by in obstacles:
-            u = _ray_capsule(px, py, nx, ny, ax, ay, bx, by, clr - _TOL)
-            if u < room:
-                room, lim = u, f"the route's own segment #{j}"
-    return room, lim
+    def __init__(self, full, i, R, region, clr, extra=()):
+        _, ax, ay, bx, by = full[i]
+        self.i, self.ax, self.ay, self.R, self.region, self.clr = i, ax, ay, R, region, clr
+        self.S = math.hypot(bx - ax, by - ay)
+        self.th = math.atan2(by - ay, bx - ax)
+        self.tx, self.ty = math.cos(self.th), math.sin(self.th)
+        self.n_max = int(self.S / (2 * R) + 1e-9)
+        self.obstacles = _obstacles(full, i, extra)
+        self._cache: dict = {}
+
+    def places(self, n) -> list[float]:
+        free = self.S - 2 * self.R * n
+        step = self.R / 2
+        vals = {round(k * step, 9) for k in range(int(free / step + 1e-9) + 1)} | {round(free / 2, 9), round(free, 9)}
+        return sorted(v for v in vals if -_TOL <= v <= free + _TOL)
+
+    def rooms(self, l_in, n, sigma1) -> list[tuple[float, str]]:
+        """弯 k = 1..n−1 (轴向 ℓ_in + 2kR, 侧 σ₁·(−1)^(k−1)) 的余量。"""
+        return [self.room(l_in + 2 * k * self.R, sigma1 if k % 2 else -sigma1) for k in range(1, n)]
+
+    def room(self, c, sigma) -> tuple[float, str]:
+        key = (round(c, 9), sigma)
+        if key not in self._cache:
+            self._cache[key] = self._room(c, sigma)
+        return self._cache[key]
+
+    def _room(self, c, sigma) -> tuple[float, str]:
+        """圆心在轴上 (轴向 c)、开口朝 −σn 的基准半圆, 沿 σn 可外推的最大距离与限制者。**精确**: 每种界都取「半圆 → 界」与「界的角点 /
+        端点 → 半圆」两个方向的射线 (后者 = 点沿 −σn 进入加厚半圆), 两圆弧体–体接触用外切。"""
+        R, th = self.R, self.th
+        ox, oy = self.ax + c * self.tx, self.ay + c * self.ty
+        nx, ny = -self.ty * sigma, self.tx * sigma                       # 外推方向 σn
+        a0, a1 = th + math.pi, th + math.pi - sigma * math.pi             # 半圆: 从 th+π 经 th+σπ/2 到 th
+
+        def pt(a):
+            return ox + R * math.cos(a), oy + R * math.sin(a)
+        base = [pt(a) for a in (a0, a1, th + sigma * _HALF_PI)]
+        base += [pt(a) for a in (0.0, _HALF_PI, math.pi, 3 * _HALF_PI) if _in_arc(a, a0, a1)]
+        best = [math.inf, "nothing"]
+
+        def hit(u, why):
+            if u < best[0]:
+                best[0], best[1] = u, why
+        reg = self.region
+        if reg is not None:
+            for px, py in base:
+                hit(reg.ray_exit(px, py, nx, ny), "the region edge")
+            for g in reg.gaps:
+                lab = reg.gap_label(g)
+                for px, py in base:
+                    hit(reg.ray_gap_edges(px, py, nx, ny, g), lab)
+                for gx in (g[0], g[2]):
+                    for gy in (g[1], g[3]):
+                        hit(_ray_arc(gx, gy, -nx, -ny, ox, oy, R, a0, a1, reg.inset), lab)
+        clr = self.clr - _TOL                                            # 开集: 恰等于净距的放行
+        for lab, p in self.obstacles:
+            if p[0] == "line":
+                _, ax, ay, bx, by = p
+                beta = math.atan2(by - ay, bx - ax)
+                pts = [pt(a0), pt(a1)] + [pt(a) for a in (beta + _HALF_PI, beta - _HALF_PI) if _in_arc(a, a0, a1)]
+                for px, py in pts:
+                    hit(_ray_capsule(px, py, nx, ny, ax, ay, bx, by, clr), lab)
+                for qx, qy in ((ax, ay), (bx, by)):
+                    hit(_ray_arc(qx, qy, -nx, -ny, ox, oy, R, a0, a1, clr), lab)
+            else:
+                _, cx, cy, Rb, b0, b1 = p
+                for px, py in (pt(a0), pt(a1)):
+                    hit(_ray_arc(px, py, nx, ny, cx, cy, Rb, b0, b1, clr), lab)
+                for qx, qy in _prim_ends(p):
+                    hit(_ray_arc(qx, qy, -nx, -ny, ox, oy, R, a0, a1, clr), lab)
+                fx, fy = ox - cx, oy - cy                                # 体–体: 两圆外切 (弧都同半径, 内切不会先发生)
+                rad = R + Rb + clr
+                bq, cq = fx * nx + fy * ny, fx * fx + fy * fy - rad * rad
+                disc = bq * bq - cq
+                if cq > 0 and disc >= 0:
+                    u = -bq - math.sqrt(disc)
+                    if 0 <= u < best[0]:
+                        phi = math.atan2(cy - (oy + u * ny), cx - (ox + u * nx))
+                        if _in_arc(phi, a0, a1) and _in_arc(phi + math.pi, b0, b1):
+                            hit(u, lab)
+        return best[0], best[1]
 
 
 def _meander_parts(ax, ay, th, S, R, l_in, us, sigma1) -> list[tuple]:
@@ -510,44 +668,33 @@ def _meander_parts(ax, ay, th, S, R, l_in, us, sigma1) -> list[tuple]:
     return parts
 
 
-def _fill(full, i, R, X, n_legs, region, clr, errors, label):
-    """在 full[i] (直段) 上放蛇形补 X µm。可行 → (n, slack, 新部件列表); 否则 None 并把原因记进 errors。"""
-    _, ax, ay, bx, by = full[i]
-    S = math.hypot(bx - ax, by - ay)
-    th = math.atan2(by - ay, bx - ax)
-    n_max = int(S / (2 * R) + 1e-9)
-    tag = f"{label}, straight run #{i} ({S:.6g} um)"
-    if n_legs and n_legs > n_max:
-        errors.append(f"{tag}: {n_legs} legs need 2*R*n = {2 * R * n_legs:.6g} um of run but only {S:.6g} fits "
-                      f"({n_max} legs at most) — fewer legs (n_legs) or smaller R")
-        return None
-    obstacles = _obstacles(full, i)
-    ns = (n_legs,) if n_legs else range(2, n_max + 1)
-    if not ns:
-        errors.append(f"{tag}: fits no meander with R = {R} (2*R*2 > S)")
-        return None
+def _fill(run: _Run, X, n_legs):
+    """在 run 上放一块蛇形补 X µm (n_legs = 0 → 从 2 起取首个装得下的腿数)。可行 → ((n, 余量, 块部件), None); 否则 (None, 原因)。"""
+    R, S = run.R, run.S
+    tag = f"straight run #{run.i} ({S:.6g} um)"
+    if run.n_max < 2:
+        return None, f"{tag}: shorter than 4R = {4 * R:.6g} um, no room for a meander"
+    if n_legs and n_legs > run.n_max:
+        return None, (f"{tag}: {n_legs} legs need 2*R*n = {2 * R * n_legs:.6g} um of run but only {S:.6g} fits "
+                      f"({run.n_max} legs at most) — fewer legs (n_legs) or smaller R")
     last = ""
-    for n in ns:
-        e_min = R * (n * math.pi - 4)
+    for n in ((n_legs,) if n_legs else range(2, run.n_max + 1)):
+        e_min = _e_min(R, n)
         if X < e_min - _TOL:
-            errors.append(f"{tag}: {last + '; ' if last else ''}{n} legs add at least {e_min:.6g} um but only {X:.6g} um "
+            return None, (f"{tag}: {last + '; ' if last else ''}{n} legs add at least {e_min:.6g} um but only {X:.6g} um "
                           f"is needed — lengthen the target, shorten lead or use fewer legs")
-            return None
         free = S - 2 * R * n
-        places = [0.0] if free < _TOL else [free * k / (_PLACEMENTS - 1) for k in range(_PLACEMENTS)]
         best, best_e, tight = None, -math.inf, ""
-        for l_in in places:
-            rooms = [[_room(*(ax + c * math.cos(th), ay + c * math.sin(th)), th, R, s, region, obstacles, clr)
-                      for c in (l_in + 2 * k * R for k in range(1, n))] for s in (1, -1)]
+        for l_in in run.places(n):
             for sigma1 in (1, -1):
-                rk = [rooms[0 if (sigma1 if k % 2 == 0 else -sigma1) == 1 else 1][k] for k in range(n - 1)]
+                rk = run.rooms(l_in, n, sigma1)
                 short = [(r, why) for r, why in rk if r < R - _TOL]
                 if short:
                     r, why = min(short)
-                    tight = f"a bend of radius {R} has only {max(r, 0):.6g} um beside {why}"
+                    tight = f"a bend of radius {R:.6g} has only {max(r, 0):.6g} um beside {why}"
                     continue
-                if region is None:
-                    u = (X + 2 * R - R * (n * math.pi - 2 * n)) / (2 * (n - 1))      # 等腿
+                if run.region is None:
+                    u = (X + 2 * R - R * (n * math.pi - 2 * n)) / (2 * (n - 1))      # 无区域: 等腿
                     over = [r for r, _ in rk if u > r + _TOL]
                     if over:
                         tight = f"equal legs of {u:.6g} um hit the route's own path (room {min(over):.6g} um)"
@@ -565,11 +712,132 @@ def _fill(full, i, R, X, n_legs, region, clr, errors, label):
                     best = (key, l_in, sigma1, us)
         if best is not None:
             (slack, _, _), l_in, sigma1, us = best
-            return n, slack, full[:i] + _meander_parts(ax, ay, th, S, R, l_in, us, sigma1) + full[i + 1:]
+            return (n, slack, _meander_parts(run.ax, run.ay, run.th, S, R, l_in, us, sigma1)), None
         last = (f"{n} legs reach at most +{best_e:.6g} um, {X:.6g} needed" if best_e > -math.inf
                 else tight or f"no placement fits {n} legs")
-        if n_legs or n == n_max:
-            errors.append(f"{tag}: {'' if n_legs else 'even '}{last}")
+    return None, f"{tag}: {'' if n_legs else 'even '}{last}"
+
+
+def _capacity(run: _Run, n_legs) -> float:
+    """run 上一块蛇形最多能补多少 (腿数 / 摆放 / 先弯侧取最大); 无可行 → −inf; 无区域又不碰自身 → inf。"""
+    R = run.R
+    if n_legs and n_legs > run.n_max:
+        return -math.inf
+    cap = -math.inf
+    for n in ((n_legs,) if n_legs else range(2, run.n_max + 1)):
+        for l_in in run.places(n):
+            for sigma1 in (1, -1):
+                rk = run.rooms(l_in, n, sigma1)
+                if any(r < R - _TOL for r, _ in rk):
+                    continue
+                cap = max(cap, 2 * sum(r for r, _ in rk) - 2 * R + R * (n * math.pi - 2 * n))
+    return cap
+
+
+def _assemble(full, blocks) -> list[tuple]:
+    out: list[tuple] = []
+    for idx, p in enumerate(full):
+        out += blocks.get(idx, [p])
+    return out
+
+
+def _split_legs(total, weights):
+    """总腿数按权重分给各段 (最大余数法), 每段 ≥ 2; 分不开 → None。"""
+    k = len(weights)
+    if total < 2 * k:
+        return None
+    spare, w = total - 2 * k, sum(weights)
+    raw = [spare * wi / w for wi in weights]
+    base = [int(r) for r in raw]
+    for i in sorted(range(k), key=lambda i: raw[i] - base[i], reverse=True)[:spare - sum(base)]:
+        base[i] += 1
+    return [2 + b for b in base]
+
+
+def _finite(c) -> float:
+    return c if math.isfinite(c) else 1e12
+
+
+def _fill_subset(full, sub, caps, R, X, n_legs, region, clr, reasons):
+    """把 X 分到 sub 里的几条直段: 容量小的先放 (占的地方少), 每段的份额 = 剩余 × 该段当前容量 / 剩余各段当前容量之和 (容量随已放的块
+    重算), 最大的一段最后吃精确余数; 先放好的块进后面块的障碍集 → 拐角处两块的腿互相垂直也不会交叉。"""
+    order = sorted(sub, key=lambda i: caps[i])
+    names = ", ".join(f"#{i}" for i in order)
+    if n_legs:
+        split = _split_legs(n_legs, [_finite(caps[i]) for i in order])
+        if split is None:
+            reasons.append(f"runs {names}: {n_legs} legs cannot give every run >= 2")
+            return None
+        legs = dict(zip(order, split))
+    else:
+        legs = {i: 0 for i in order}
+    rem, extra, blocks, total_legs, slack = X, [], {}, 0, math.inf
+    for idx, i in enumerate(order):
+        rest = order[idx:]
+        runs_now = {j: _Run(full, j, R, region, clr, extra) for j in rest}
+        caps_now = {j: _capacity(runs_now[j], legs[j]) for j in rest}
+        dead = [j for j, c in caps_now.items() if c == -math.inf]
+        if dead:
+            reasons.append(f"runs {names}: run #{dead[0]} has no room left once the other blocks are placed")
+            return None
+        if sum(caps_now.values()) < rem - _TOL:
+            reasons.append(f"runs {names}: together they reach at most +{X - rem + sum(caps_now.values()):.6g} um, "
+                           f"{X:.6g} needed")
+            return None
+        tot = sum(_finite(c) for c in caps_now.values())
+        share = rem if idx == len(order) - 1 else rem * _finite(caps_now[i]) / tot
+        got, why = _fill(runs_now[i], share, legs[i])
+        if got is None:
+            reasons.append(f"runs {names}: {why}")
+            return None
+        n, sl, parts = got
+        blocks[i] = parts
+        extra = extra + parts
+        rem -= share
+        total_legs += n
+        slack = min(slack, sl)
+    new_full = _assemble(full, blocks)
+    viol = _self_clear(_emit(new_full), R, clr)
+    if viol is not None:
+        reasons.append(f"runs {names}: the meanders come within {viol[2]:.6g} um of each other or of the path (< 2R)")
+        return None
+    return len(order), total_legs, slack, new_full
+
+
+def _fill_runs(full, R, X, n_legs, region, clr, lead_idx, errors, label):
+    """给骨架 full 补 X µm: 先试单段 (腿最少、余量最大者胜), 单段都装不下再把 X 分到 2, 3, … 段 (按容量之和从大到小试子集)。
+    可行 → (块数, 总腿数, 最小余量, 新部件列表); 否则 None 并把原因记进 errors。显式 n_legs = 总腿数, 多段时按容量分。"""
+    runs = [i for i, p in enumerate(full)
+            if p[0] == "line" and i not in lead_idx and math.hypot(p[3] - p[1], p[4] - p[2]) >= 4 * R - _EPS]
+    if not runs:
+        errors.append(f"{label}: no straight run >= 4R = {4 * R:.6g} um to meander on")
+        return None
+    base = {i: _Run(full, i, R, region, clr) for i in runs}
+    reasons: list[str] = []
+    singles = []
+    for i in runs:
+        got, why = _fill(base[i], X, n_legs)
+        if got is None:
+            reasons.append(why)
+        else:
+            singles.append((got[0], -got[1], i, got[2]))
+    for n, neg, i, parts in sorted(singles):
+        new_full = _assemble(full, {i: parts})
+        viol = _self_clear(_emit(new_full), R, clr)
+        if viol is None:
+            return 1, n, -neg, new_full
+        reasons.append(f"straight run #{i}: its meander comes within {viol[2]:.6g} um of segment #{viol[1]} (< 2R)")
+    caps = {i: _capacity(base[i], 0) for i in runs}
+    pool = sorted((i for i in runs if caps[i] > 0), key=lambda i: -caps[i])
+    for k in range(2, len(pool) + 1):
+        for sub in sorted(combinations(pool, k), key=lambda s: -sum(_finite(caps[i]) for i in s)):
+            got = _fill_subset(full, sub, caps, R, X, n_legs, region, clr, reasons)
+            if got is not None:
+                return got
+    total = sum(_finite(caps[i]) for i in pool)
+    errors.append(f"{label}: no single straight run holds +{X:.6g} um"
+                  + (f", and splitting it across all {len(pool)} runs reaches at most +{total:.6g} um" if len(pool) > 1 else "")
+                  + " — " + "; ".join(reasons[:3]))
     return None
 
 
@@ -577,12 +845,59 @@ def _fill(full, i, R, X, n_legs, region, clr, errors, label):
 def plan_cpw(start, end, R, length=None, region=None, n_legs=0, width=0.0, lead=0.0, axis=0.0) -> list[tuple]:
     """两位姿之间的 CPW 中心线原语。``start`` / ``end`` = ``(x, y, heading)`` **行进方向** (rad):
     start 的 heading = from 口外法向, end 的 heading = to 口外法向 + π (驶入 to 口)。
+    ``R`` = 弯半径 (µm) 或 ``"auto"`` (取最大可行的整数半径, 见 ``auto_radius``)。
     ``length`` = 目标画出长度 (µm, 已减两端等效长度, 含两段引出), None = 最短骨架。``region`` = 矩形或矩形列表 (并集)。
-    ``n_legs`` 只在给 ``length`` 时有意义, 0 = 自动 (须给 region)。``width`` = CPW 总宽 (中心导体 + 两缝), 区域检查内缩其半。
+    ``n_legs`` 只在给 ``length`` 时有意义, 0 = 自动 (须给 region); 多段分摊时是总腿数。``width`` = CPW 总宽 (中心导体 + 两缝), 区域检查内缩其半。
     ``lead`` = 两端各先沿端口法向直走的长度 (µm), 弧只在其后开始; 0 = 弧从端口面起。
-    ``axis`` = 曼哈顿框架角度 (deg, 默认 0 = 横平竖直) 或 ``"free"`` (Dubins 自由角)。"""
-    if not (isinstance(R, (int, float)) and math.isfinite(R) and R > 0):
-        raise QuantumDslError(f"route: R must be a positive finite number, got {R!r}")
+    ``axis`` = 曼哈顿框架角度 (deg, 默认 0 = 横平竖直) 或 ``"free"`` (Dubins 自由角)。
+    装不下时 raise 并逐骨架说明; 给定的 R 装不下而更小的 R 装得下时, 提示里给出能装下的最大 R。"""
+    if isinstance(R, str) and R == "auto":
+        R = auto_radius(start, end, length, region, n_legs, width, lead, axis)
+    return _plan_impl(start, end, R, length, region, n_legs, width, lead, axis, with_hint=True)
+
+
+def auto_radius(start, end, length=None, region=None, n_legs=0, width=0.0, lead=0.0, axis=0.0, R_max=None) -> float:
+    """**最大可行弯半径** (整数 µm)。可行性对 R 单调递减 (R 越小越好装: 骨架条件 dx ≥ R 等放松、腿装得更多、余量 ≥ R 更容易), 所以唯一有
+    意义的最优是「能装下的最大 R」—— 弯越缓寄生越小。在整数区间 [⌈width⌉, ⌊R_max⌋] 上二分, 每步跑一次完整规划 (~10 步);
+    ``R_max`` 默认 = min(region 外框短边, 两口距离) / 2。下界 ⌈width⌉ (弯内径 ≥ 半个总宽) 都不行 → raise 带那次的原因。"""
+    if isinstance(width, bool) or not (isinstance(width, (int, float)) and math.isfinite(width) and width >= 0):
+        raise QuantumDslError(f"route: CPW total width must be a finite number >= 0, got {width!r}")
+    dist = math.hypot(end[0] - start[0], end[1] - start[1])
+    if R_max is None:
+        rects = _parse_region(region)
+        R_max = dist / 2
+        if rects is not None:
+            xs = [v for r in rects for v in (r[0], r[2])]
+            ys = [v for r in rects for v in (r[1], r[3])]
+            R_max = min(R_max, (min(max(xs) - min(xs), max(ys) - min(ys))) / 2)
+    lo, hi = max(1, math.ceil(width - 1e-9)), math.floor(R_max + 1e-9)
+    if hi < lo:
+        raise QuantumDslError(f"route: R: auto — the search range is empty: the smallest sane radius {lo} um (>= the CPW "
+                              f"width {width:.6g}) exceeds R_max {R_max:.6g} um (half the region's short side / port distance)")
+    last_err: list[str] = []
+
+    def ok(R) -> bool:
+        try:
+            _plan_impl(start, end, float(R), length, region, n_legs, width, lead, axis, with_hint=False)
+            return True
+        except QuantumDslError as exc:
+            last_err[:] = [str(exc)]
+            return False
+    if not ok(lo):
+        raise QuantumDslError(f"route: R: auto — even R = {lo} um (the smallest sane radius, >= the CPW width) fails: "
+                              + last_err[0].removeprefix("route: "))
+    while lo < hi:                                     # 不变量: ok(lo); 找最大的 ok
+        mid = (lo + hi + 1) // 2
+        if ok(mid):
+            lo = mid
+        else:
+            hi = mid - 1
+    return float(lo)
+
+
+def _plan_impl(start, end, R, length, region, n_legs, width, lead, axis, with_hint) -> list[tuple]:
+    if not (isinstance(R, (int, float)) and not isinstance(R, bool) and math.isfinite(R) and R > 0):
+        raise QuantumDslError(f"route: R must be a positive finite number or 'auto', got {R!r}")
     if length is not None and not (math.isfinite(length) and length > 0):
         raise QuantumDslError(f"route: length must be positive, got {length!r}")
     if isinstance(width, bool) or not (isinstance(width, (int, float)) and math.isfinite(width) and 0 <= width < 2 * R):
@@ -625,48 +940,54 @@ def plan_cpw(start, end, R, length=None, region=None, n_legs=0, width=0.0, lead=
         for turns, skel_len, lab, parts in group:
             full = pre + parts + post
             label = f"{lab}, {skel_len + path_length(pre) + path_length(post):.6g} um"
-            why = reg.violation(_emit(full)) if reg is not None else None
+            sk = _emit(full)
+            why = reg.violation(sk) if reg is not None else None
             if why is not None:
                 errors.append(f"{label}: {why}")
                 continue
+            viol = _self_clear(sk, R, clr)
+            if viol is not None:
+                errors.append(f"{label}: segments #{viol[0]} and #{viol[1]} come within {viol[2]:.6g} um of each other "
+                              f"(< 2R = {clr:.6g})")
+                continue
             total = path_length(full)
             if length is None or abs(length - total) <= _TOL:
-                cand = (0, math.inf, full)
+                cand = (0, 0, math.inf, full)
             elif length < total:
                 errors.append(f"{label}: target {length:.6g} um is shorter than this path (incl. 2 x lead {lead:.6g}) — "
                               f"lengthen the target, shorten lead or move the ports")
                 continue
             else:
-                X = length - total
-                cand = None
                 lead_idx = {0 if pre else -1, len(full) - 1 if post else -1}
-                for i, p in enumerate(full):
-                    if p[0] != "line" or i in lead_idx or math.hypot(p[3] - p[1], p[4] - p[2]) < 4 * R - _EPS:
-                        continue
-                    got = _fill(full, i, R, X, n_legs, reg, clr, errors, label)
-                    if got is not None and (cand is None or (got[0], -got[1]) < (cand[0], -cand[1])):
-                        cand = got
+                cand = _fill_runs(full, R, length - total, n_legs, reg, clr, lead_idx, errors, label)
                 if cand is None:
-                    if not any(p[0] == "line" and i not in lead_idx and math.hypot(p[3] - p[1], p[4] - p[2]) >= 4 * R - _EPS
-                               for i, p in enumerate(full)):
-                        errors.append(f"{label}: no straight run >= 4R = {4 * R:.6g} um to meander on")
                     continue
-            if best is None or (cand[0], -cand[1]) < (best[0], -best[1]):
+            if best is None or (cand[0], cand[1], -cand[2]) < (best[0], best[1], -best[2]):   # 块少 → 腿少 → 余量大
                 best = cand
         if best is not None:
-            prims = _emit(best[2])
+            prims = _emit(best[3])
             why = reg.violation(prims) if reg is not None else None
             if why is not None:
                 raise QuantumDslError(f"route: internal: planned path fails its own region check — {why}")
+            viol = _self_clear(prims, R, clr)
+            if viol is not None:
+                raise QuantumDslError(f"route: internal: planned path fails its own clearance check — segments #{viol[0]} "
+                                      f"and #{viol[1]} are {viol[2]:.6g} um apart (< 2R)")
             if length is not None and abs(path_length(prims) - length) > _TOL:
                 raise QuantumDslError(f"route: internal: drawn length {path_length(prims):.9g} != target {length:.9g}")
             return prims
     if length is None:
-        hint = "smaller R / a larger region / another axis"
+        hint = "smaller R / a larger region / another axis / a shorter lead"
     elif n_legs:
         hint = "more or fewer legs (n_legs) / smaller R / a larger region / another axis"
     else:
         hint = ("smaller R / a larger region / a longer or shorter target / another axis "
-                "(every leg count 2..S/2R was tried on every straight run)")
+                "(every leg count 2..S/2R was tried on every straight run and on every split across runs)")
     shown = errors[:_MAX_REPORT] + ([f"... and {len(errors) - _MAX_REPORT} more candidate(s)"] if len(errors) > _MAX_REPORT else [])
+    if with_hint and R > math.ceil(width - 1e-9):
+        try:                                           # 更小的 R 装得下吗? 给出能装下的最大整数 R (只在失败路径上多跑几次规划)
+            fit = auto_radius(start, end, length, region, n_legs, width, lead, axis, R_max=math.ceil(R) - 1)
+            hint = f"R <= {fit:.0f} um would fit (R: auto picks it); otherwise " + hint
+        except QuantumDslError:
+            pass
     raise QuantumDslError("route: no feasible CPW path between the ports — " + hint + ":\n  " + "\n  ".join(shown))

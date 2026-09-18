@@ -39,7 +39,7 @@ Palace（静电求解器）不是 pip 依赖：`build(solve=True)` 通过环境�
 P=~/miniconda3/envs/qdsl313/bin/python
 export PYTHONPATH=src
 
-$P -m pytest tests/ -q                       # 47 passed, 2 skipped (live 默认关)
+$P -m pytest tests/ -q                       # 51 passed, 2 skipped (live 默认关)
 $P -c "from quantum_dsl import build; print(build('examples/two_pads.meta.yaml', 'build/two_pads'))"
                                              # GDS + 3D 网格 + Palace config + manifest, ~4 s
 QDSL_RUN_PALACE=1 $P -m pytest tests/test_live.py -k two_pads -q   # 真实求解回归 (~2 min)

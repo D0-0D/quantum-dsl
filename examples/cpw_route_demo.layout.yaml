@@ -1,8 +1,9 @@
-# cpw_route_demo.layout.yaml — 自动布线演示 (planner: cpw, 设计稿 docs/design/auto-route.md): 三对 Xmon 的读出桨各连一条 3000 µm 的
-# CPW 总线, 同一对几何 (Q_odd.RO 朝 +x, Q_even 转 90° 桨朝 +y, 错位 900 × 900) 右移三次, 只换环境:
+# cpw_route_demo.layout.yaml — 自动布线演示 (planner: cpw, 设计稿 docs/design/auto-route.md): 四对 Xmon 的读出桨各连一条 3000 µm 的
+# CPW 总线, 同一对几何 (Q_odd.RO 朝 +x, Q_even 转 90° 桨朝 +y, 错位 900 × 900) 右移四次, 只换环境:
 #   A  R1  region 一个矩形, 默认 axis 0 (横平竖直) → 骨架 L (一个圆角), 蛇形在横臂上, 上侧余量 ≈ 50 / 下侧 ≈ 670 → 腿上短下长, 腿数自动取最小可行。
 #   B  R2  region 是两个矩形的并集 (右上角挖掉): L 的拐角落在缝里 → L 淘汰, 换 3 转弯骨架绕过去; 腿按缝的形状不等长。
 #   C  R3  axis: free = Dubins 自由角 (v1 的斜轴 RSR), 腿按矩形斜截面的余量定, 不再等腿。
+#   D  R4  params R: auto = 最大可行弯半径 (整数 µm 二分, 每步一次完整规划): 同 A 的环境下得 70 → 弯更缓、腿更少; subsystems 记 R_um。
 # lead 60 = 两端各先沿桨法向直走 60 µm 再拐 (端口面上永远是直的 CPW, 接口形状归端口模板管)。两端都是外挂面 → 总线 net = 步骤名。
 # region 不是几何, PNG 里不画, 坐标见各步骤。两口都是岛 (如两个 pad) 会 raise「两岛端无唯一 net 名」—— 那是 net 规则 (grammar §4.3)。
 schema: quantum-dsl/layout/1
@@ -20,4 +21,8 @@ steps:
   - {template: xmon, name: Q6, at: [3900, -900], rot: 90, layers: {metal: m1, jj: jj}, E_J: 11.8GHz}
   - {template: cpw_route, name: R3, from: Q5.RO, to: Q6.RO, params: {R: 40, gap: 6, lead: 60},
      length: {mode: fixed, L: 3000um}, region: [3180, -720, 4000, 100], axis: free}
+  - {template: xmon, name: Q7, at: [4500, 0], layers: {metal: m1, jj: jj}, E_J: 12.2GHz}
+  - {template: xmon, name: Q8, at: [5400, -900], rot: 90, layers: {metal: m1, jj: jj}, E_J: 11.8GHz}
+  - {template: cpw_route, name: R4, from: Q7.RO, to: Q8.RO, params: {R: auto, gap: 6, lead: 60},
+     length: {mode: fixed, L: 3000um}, region: [4680, -720, 5500, 100]}
 ground: {sheet: {layer: m1, margin_um: 200}}

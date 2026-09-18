@@ -22,7 +22,7 @@ cd /home/administrator/quantum_dsl-v4
 source ~/miniconda3/etc/profile.d/conda.sh && conda activate qdsl313
 export PYTHONPATH=src
 
-python -m pytest tests/ -q                  # 47 passed, 2 skipped, ~70 s (2026-09-18)
+python -m pytest tests/ -q                  # 51 passed, 2 skipped, ~3 min (2026-09-18)
 python -c "from quantum_dsl import build; print(build('examples/chen_2025_3x3.meta.yaml', 'build/report/chen', solve=False, blocks=['H01']))"
                                             # 3×3 GDS + PNG + H01 块网格/config, ~30 s
 python -c "from quantum_dsl import build; build('examples/cpw_route_demo.meta.yaml', 'build/report/route', solve=False)"

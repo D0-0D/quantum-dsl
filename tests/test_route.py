@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""自动布线 v2 (契约「自动布线」): ``route.plan_cpw`` (曼哈顿框架 / Dubins 骨架 + 逐弯余量的蛇形填充 + 矩形并集区域, 纯 math) 与
+"""自动布线 v2 (契约「自动布线」): ``route.plan_cpw`` (曼哈顿框架 / Dubins 骨架 + 逐弯精确余量的蛇形填充、多段分摊 + 矩形并集区域 + 自身净距, 纯 math) 与
 ``lib/cpw_route`` 模板 (``planner: cpw``: 两口不必正对, 位姿恒等, 原语按列表变量注入 .geo)。设计稿 docs/design/auto-route.md。"""
 from __future__ import annotations
 
@@ -153,6 +153,102 @@ def test_plan_cpw_rotated_frame_self_clearance_and_axis_errors():
         plan_cpw(su, eu, R, axis=float("nan"))
 
 
+def _min_clearance(prims, R):
+    """独立 oracle: 沿路间隔 (前者终点到后者起点的路长) ≥ πR 的任意两段原语, 中心线最小距离 (shapely, 密采 0.2 µm)。"""
+    from shapely.geometry import LineString
+    from quantum_dsl.route import path_length
+    geoms = [LineString(_dense(p)) for p in prims]
+    cum = [0.0]
+    for p in prims:
+        cum.append(cum[-1] + path_length([p]))
+    return min((geoms[i].distance(geoms[j]) for i in range(len(prims)) for j in range(i + 1, len(prims))
+                if cum[j] - cum[i + 1] >= math.pi * R - 1e-6), default=math.inf)
+
+
+def test_plan_cpw_splits_meander_across_runs_with_clearance():
+    """契约「自动布线」 多段分摊: L 形走廊 (两矩形拼成, 半宽 130 → 每条臂一块蛇形最多补 ≈ +1190 µm), 目标多出 ≈ +1820 → 蛇形分到两条臂
+    (两臂都有腿), 记账 == 目标, 含缝宽落在并集内; 拐角处两块的腿互相垂直但不交叉 —— 沿路间隔 ≥ πR 的任意两段原语中心线距离 ≥ 2R
+    (shapely 独立 oracle, 恰 = 2R 是蛇形腿距); 显式 n_legs 是**总腿数** (12 = 两块之和); 单段装得下时仍只放一块 (块数优先)。"""
+    from quantum_dsl.route import path_length, plan_cpw
+    kw = dict(start=(0, 0, 0.0), end=(700, -700, -math.pi / 2), R=R, width=W, lead=40,
+              region=[[-30, -130, 760, 130], [570, -760, 830, 130]])
+
+    def legs(prims):
+        arm1 = [p for p in prims if p[0] == "line" and abs(p[3] - p[1]) < 1e-9 and p[1] < 690]     # 横臂上的竖腿
+        arm2 = [p for p in prims if p[0] == "line" and abs(p[4] - p[2]) < 1e-9 and p[2] < -140]    # 竖臂上的横腿
+        return arm1, arm2
+    prims = plan_cpw(**kw, length=3200)
+    _assert_g1(prims, kw["start"], kw["end"])
+    assert path_length(prims) == pytest.approx(3200, rel=1e-12)
+    a1, a2 = legs(prims)
+    assert len(a1) >= 2 and len(a2) >= 2
+    assert _strip(prims, W / 2).within(_union(kw["region"]).buffer(1e-3))
+    assert _min_clearance(prims, R) >= 2 * R - 1e-3
+    a1, a2 = legs(plan_cpw(**kw, length=3200, n_legs=12))
+    assert len(a1) + len(a2) == 12 and min(len(a1), len(a2)) >= 2
+    a1, a2 = legs(plan_cpw(**kw, length=2300))
+    assert (len(a1) == 0) != (len(a2) == 0)                                                        # 只一块
+
+
+def test_plan_cpw_legs_follow_the_region_profile_exactly():
+    """契约「自动布线」 R2 逐弯余量: 正对两口, 区域 = 窄走廊 (半高 100) + 中段宽块 (半高 400):
+    自动腿数时块整个落进宽块 (腿 > 500); 显式 8 腿时块横跨三段 → 窄段腿 ≤ 2 × 89、宽段腿 > 300 (「2×2 + 2×4 + 2×2 → 中间长腿」);
+    宽块只在轴一侧时上长 (> 300) 下短 (≥ −89); 弯的肩部跨过台阶角: 余量用「角点 → 加厚半圆」的对偶射线精确算 —— 3 腿最多补 +841.16,
+    +840 通过且含缝宽在并集内, +870 raise (只用取样点会按 +913 放行, 肩部出界 ≈ 24 µm)。"""
+    from quantum_dsl import QuantumDslError
+    from quantum_dsl.route import plan_cpw
+    kw = dict(start=(0, 0, 0.0), end=(800, 0, 0.0), R=R, width=W, lead=40)
+    step = [[-30, -100, 830, 100], [250, -400, 550, 400]]
+
+    def vlegs(prims):
+        return [(p[1], abs(p[4] - p[2])) for p in prims if p[0] == "line" and abs(p[3] - p[1]) < 1e-9]
+    prims = plan_cpw(**kw, length=2600, region=step)
+    assert _strip(prims, W / 2).within(_union(step).buffer(1e-3)) and _min_clearance(prims, R) >= 2 * R - 1e-3
+    assert all(250 < x < 550 and L > 200 for x, L in vlegs(prims)) and max(L for _, L in vlegs(prims)) > 500
+    prims = plan_cpw(**kw, length=2600, region=step, n_legs=8)
+    assert _strip(prims, W / 2).within(_union(step).buffer(1e-3))
+    narrow = [L for x, L in vlegs(prims) if not 250 < x < 550]
+    wide = [L for x, L in vlegs(prims) if 250 < x < 550]
+    assert narrow and wide and max(narrow) <= 2 * 89 + 1e-6 and max(wide) > 300
+    prims = plan_cpw(**kw, length=2400, region=[[-30, -100, 830, 100], [250, -100, 550, 450]])
+    ys = [y for p in prims if p[0] == "line" and abs(p[3] - p[1]) < 1e-9 for y in (p[2], p[4])]
+    assert max(ys) > 300 and min(ys) >= -89 - 1e-6
+    ex = dict(start=(0, 0, 0.0), end=(320, 0, 0.0), R=R, width=W, lead=40, region=[[-30, -90, 350, 90], [100, -400, 300, 400]])
+    prims = plan_cpw(**ex, length=320 + 840)
+    assert _strip(prims, W / 2).within(_union(ex["region"]).buffer(1e-3))
+    with pytest.raises(QuantumDslError, match=r"3 legs reach at most \+841\.1"):
+        plan_cpw(**ex, length=320 + 870)
+
+
+def test_plan_cpw_rejects_paths_that_approach_themselves():
+    """契约「自动布线」 自身净距: 两口相距 50 µm 同向 (回头连接的两条引出平行相距 50 < 2R = 80): 每条骨架都被自身净距检查淘汰,
+    raise 报「segments #i and #j come within 50 um」; 净距规则对骨架与蛇形一致 (沿路间隔 ≥ πR 的两段 ≥ 2R)。"""
+    from quantum_dsl import QuantumDslError
+    from quantum_dsl.route import plan_cpw
+    with pytest.raises(QuantumDslError, match=r"come within 50 um of each other \(< 2R = 80\)"):
+        plan_cpw((0, 0, 0.0), (0, 50, math.pi), R, width=W, lead=40, region=[-300, -200, 400, 300])
+
+
+def test_plan_cpw_auto_radius_is_the_largest_that_fits():
+    """契约「自动布线」 R 自动: auto_radius 在整数区间 [⌈width⌉, min(外框短边, 两口距离)/2] 上二分, 返回最大可行弯半径 —— demo 一对桨 +
+    3000 µm 得 70: R = 70 装得下、71 装不下, 且 71 的报错提示「R <= 70 um would fit」; plan_cpw(R="auto") == plan_cpw(R=70);
+    无 length 时最短骨架能容最大的 R (外框短边一半 = 410, 一个大圆角); 拼接走廊 (半宽 130) 得 59; 搜索区间为空 / 最小半径也不行 → raise。"""
+    from quantum_dsl import QuantumDslError
+    from quantum_dsl.route import auto_radius, plan_cpw
+    kw = dict(width=W, lead=60, length=3000, region=REGION)
+    assert auto_radius(A_START, A_END, **kw) == 70.0
+    assert plan_cpw(A_START, A_END, "auto", **kw) == plan_cpw(A_START, A_END, 70, **kw)
+    with pytest.raises(QuantumDslError, match=r"R <= 70 um would fit \(R: auto picks it\)"):
+        plan_cpw(A_START, A_END, 71, **kw)
+    assert auto_radius(A_START, A_END, width=W, lead=60, region=REGION) == 410.0
+    corridor = dict(width=W, lead=40, length=3200, region=[[-30, -130, 760, 130], [570, -760, 830, 130]])
+    assert auto_radius((0, 0, 0.0), (700, -700, -math.pi / 2), **corridor) == 59.0
+    with pytest.raises(QuantumDslError, match="search range is empty"):
+        auto_radius((0, 0, 0.0), (30, 0, 0.0), width=W)
+    with pytest.raises(QuantumDslError, match=r"even R = 22 um .* fails"):                       # 两口相距 40 < 2 × 22
+        auto_radius((0, 0, 0.0), (0, 40, math.pi), width=W, lead=40, region=[-300, -200, 400, 300], R_max=100)
+
+
 # ---------------------------------------------------------------- 纯规划器: 自由角 (axis: free = v1 的 Dubins)
 def test_plan_cpw_free_axis_dubins_four_types_g1_and_bookkeeping():
     """契约「自动布线」 axis: free: 四型 CSC 都会被选中 (首弧 / 末弧转向的四种组合); 每条路 G1 连续、端点位姿精确、弧段 ≤ π/2;
@@ -299,7 +395,7 @@ def test_cpw_route_degenerates_to_cpw_meander_when_ports_face(tmp_path):
 
 
 def test_cpw_route_discipline_raises(tmp_path):
-    """契约「自动布线」 纪律: 非 planner 模板写 region: / axis: raise; planner 模板写 mirror: raise; 两口宽不同 raise (taper 未实现);
+    """契约「自动布线」 纪律: 非 planner 模板写 region: / axis: / params R: auto raise; planner 模板写 mirror: raise; 两口宽不同 raise (taper 未实现);
     n_legs: 0 (自动) 没给 region raise; 步骤显式给 n_legs 却没 length: raise (不静默忽略); axis 取值非法 raise (带步骤名);
     模板 planner: 取值 / kind / 必需参数不对 raise; 规划失败的信息带步骤名。"""
     from quantum_dsl import QuantumDslError
@@ -319,6 +415,8 @@ def test_cpw_route_discipline_raises(tmp_path):
         _compile(tmp_path, pair + "- {template: cpw_route, name: C, from: A.E, to: B.E, params: {n_legs: 4}}")
     with pytest.raises(QuantumDslError, match=r"step #2 C \(cpw_route.yaml\): route: axis must be"):
         _compile(tmp_path, pair + "- {template: cpw_route, name: C, from: A.E, to: B.E, axis: diag}")
+    with pytest.raises(QuantumDslError, match=r"param 'R' must be a finite number, got 'auto'"):       # R: auto 只给 planner 模板
+        _compile(tmp_path, pair + f"- {{template: cpw_meander, name: C, from: A.E, to: B.E, params: {{R: auto}}, {L}}}")
     # 不正对 + 非 planner 模板: 仍 raise, 提示改用 cpw_route
     with pytest.raises(QuantumDslError, match="face each other.*cpw_route"):
         _compile(tmp_path, pair.replace("rot: 180", "rot: 90") + f"- {{template: cpw_meander, name: C, from: A.E, to: B.E, {L}}}")
@@ -343,14 +441,16 @@ ROUTES = {   # 步骤名: (region, 两只比特中心, from 口面外 lead/2 处
     "R2": ([[x + 1500 if i % 2 == 0 else x for i, x in enumerate(r)] for r in REGION_B], ((1500, 0), (2400, -900)),
            (1740.0, 0.0), (2400.0, -660.0), [2200, -300, 2500, 100]),
     "R3": ([[3180, -720, 4000, 100]], ((3000, 0), (3900, -900)), (3240.0, 0.0), (3900.0, -660.0), None),
+    "R4": ([[4680, -720, 5500, 100]], ((4500, 0), (5400, -900)), (4740.0, 0.0), (5400.0, -660.0), None),
 }
 
 
 def test_cpw_route_demo_builds_inside_region(tmp_path):
-    """契约「自动布线」 版图集成: cpw_route_demo (三对 xmon 的读出桨, 每对 Q_odd.RO 朝 +x → Q_even.RO 朝 +y, fixed 3000 µm, n_legs 自动,
-    lead 60; R1 默认横平竖直 / R2 拼接 region 绕开挖掉的角 / R3 axis: free) compile_layout + build(solve=False) 通过; 每条总线 net = 步骤名,
-    subsystems 记 length_drawn_um == 3000 − Σleq 与 route_primitives; 六个端口 used; GDS 里每条总线 (两只桨 + CPW) 的多边形落在其 region
-    并集内 (shapely), R2 的 CPW 与挖掉的角不交; CPW 在两个端口面外 lead/2 处仍在端口法向上; region 太小 → 规划失败, 报段号与建议, 不静默。"""
+    """契约「自动布线」 版图集成: cpw_route_demo (四对 xmon 的读出桨, 每对 Q_odd.RO 朝 +x → Q_even.RO 朝 +y, fixed 3000 µm, n_legs 自动,
+    lead 60; R1 默认横平竖直 / R2 拼接 region 绕开挖掉的角 / R3 axis: free / R4 params R: auto) compile_layout + build(solve=False) 通过;
+    每条总线 net = 步骤名, subsystems 记 length_drawn_um == 3000 − Σleq、route_primitives 与 R_um (R4 的 R_um = 70 = 同环境下最大可行整数半径,
+    R1–R3 为 40); 八个端口 used; GDS 里每条总线 (两只桨 + CPW) 的多边形落在其 region 并集内 (shapely), R2 的 CPW 与挖掉的角不交;
+    CPW 在两个端口面外 lead/2 处仍在端口法向上; region 太小 (挡住端口本身) → 规划失败, 报段号与建议, 不静默。"""
     import gdstk
     from shapely.geometry import Polygon
 
@@ -359,7 +459,8 @@ def test_cpw_route_demo_builds_inside_region(tmp_path):
     r = build(m, tmp_path / "demo", solve=False)
     lay = r["layout"]
     subs = {s["name"]: s for s in lay.subsystems}
-    assert set(subs) == set(ROUTES) and lay.used == {f"Q{i}.RO" for i in range(1, 7)}
+    assert set(subs) == set(ROUTES) and lay.used == {f"Q{i}.RO" for i in range(1, 9)}
+    assert {k: subs[k]["R_um"] for k in subs} == {"R1": 40.0, "R2": 40.0, "R3": 40.0, "R4": 70.0}
     (cell,) = gdstk.read_gds(str(r["gds"])).top_level()
     polys = [p for p in cell.polygons if p.layer == 1]                 # GDS 按 Physical 组各出一块: 地 / 岛 / 桨 / CPW
     ground = max(polys, key=lambda p: p.area())
@@ -390,5 +491,5 @@ def test_cpw_route_demo_builds_inside_region(tmp_path):
     doc["steps"][2]["region"] = [180, -720, 890, 100]        # x1 挡住 Q2.RO 口本身
     _write(tmp_path / "tight.layout.yaml", yaml.safe_dump(doc))
     meta_txt = DEMO.read_text(encoding="utf-8").replace("layout: cpw_route_demo.layout.yaml", "layout: tight.layout.yaml")
-    with pytest.raises(QuantumDslError, match=r"(?s)R1 .*no feasible CPW path.*leaves the region"):
+    with pytest.raises(QuantumDslError, match=r"(?s)R1 .*no feasible CPW path.*leaves the region"):   # 口在区域外: 任何 R 都不行, 无 R 提示
         compile_layout(load_meta(_write(tmp_path / "tight.meta.yaml", meta_txt)))

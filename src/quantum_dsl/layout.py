@@ -468,6 +468,8 @@ class Layout:
                                   f"{sorted(params)}")
         params.update(step.get("params") or {})
         for k, v in params.items():
+            if k == "R" and v == "auto" and tpl.doc.get("planner") is not None:
+                continue                                # 规划器选最大可行弯半径, _plan 里换成数字再注入
             if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v):
                 raise QuantumDslError(f"{where}: param {k!r} must be a finite number, got {v!r}")
         lmap = self._layer_map(step, tpl, ctx, where)
@@ -505,6 +507,7 @@ class Layout:
                 inject.update(prims)
                 if target is not None:
                     target["route_primitives"] = int(prims["_rt_n"])
+                    target["R_um"] = float(params["R"])
         else:
             at = step.get("at", [0, 0])
             if not (isinstance(at, list) and len(at) == 2):
@@ -743,15 +746,17 @@ class Layout:
         """planner: cpw —— 两口 (不必正对) 之间在芯片坐标里规划中心线 (``route.plan_cpw``), 原语按列展开成
         gmsh 列表变量: ``_rt_n`` 段数, ``_rt_kind(k)`` 0 直段 / 1 弧, ``_rt_p0(k)..._rt_p4(k)`` =
         直段 (x1, y1, x2, y2, 0) / 弧 (cx, cy, R, a0, a1); 模板 ``.geo`` 用 For 循环逐段 Call 宏。"""
-        from .route import plan_cpw
+        from .route import auto_radius, plan_cpw
         (_, p), (_, q) = ends
         if L is None and "n_legs" in (step.get("params") or {}):
             raise QuantumDslError(f"{where}: n_legs: given but no length: — without a target length the route is the "
                                   f"shortest path and has no meander; drop n_legs or give length:")
+        kw = dict(length=L, region=step.get("region"), n_legs=params["n_legs"], width=w + 2 * params["gap"],
+                  lead=params["lead"], axis=step.get("axis", 0.0))
         try:
-            prims = plan_cpw((p.x, p.y, p.a), (q.x, q.y, q.a + math.pi), params["R"], length=L,
-                             region=step.get("region"), n_legs=params["n_legs"], width=w + 2 * params["gap"],
-                             lead=params["lead"], axis=step.get("axis", 0.0))
+            if params["R"] == "auto":                  # 最大可行弯半径; 换成数字后照常注入 (模板参数 R 进 .geo)
+                params["R"] = auto_radius((p.x, p.y, p.a), (q.x, q.y, q.a + math.pi), **kw)
+            prims = plan_cpw((p.x, p.y, p.a), (q.x, q.y, q.a + math.pi), params["R"], **kw)
         except QuantumDslError as exc:
             raise QuantumDslError(f"{where}: {exc}") from exc
         cols: dict[str, list[float]] = {f"_rt_p{i}": [] for i in range(5)}
