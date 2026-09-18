@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
-"""Chen 2025 圆盘比特模板 → 3×3 (契约 N17): disc_transmon (两半盘 + 跨缝结 + 可选爪外挂面) 与 bar_coupler
-(连接型: 条 + 五边形 + 结, 两端爪并入条的 net) 在 N16 框架上排成 9 比特 + 12 耦合器; 几何数字来自
+"""Chen 2025 圆盘比特模板 → 3×3 (Chen 2025 模板契约): disc_transmon (两半盘 + 跨缝结 + 可选爪外挂面) 与 bar_coupler
+(连接型: 条 + 五边形 + 结, 两端爪并入条的 net) 在版图编排框架上排成 9 比特 + 12 耦合器; 几何数字来自
 docs/design/paper-chen2025-geometry.md; 载片地 = airbox.top_um。"""
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ COARSE = {"max_size_um": 300, "min_size_um": 20}       # 测试用秒级网格; 
 
 
 def test_chen_2025_3x3_layout_compiles_to_21_junctions_and_paper_geometry(tmp_path):
-    """契约 N17: (a) 9 个浮动比特 (islands [Q_a, Q_b]) + 12 个浮动耦合器 (islands [C, C_pent]) 自动进 circuit_model,
+    """契约「Chen 2025 模板」: (a) 9 个浮动比特 (islands [Q_a, Q_b]) + 12 个浮动耦合器 (islands [C, C_pent]) 自动进 circuit_model,
     连接型模板的路由体 component 就是 net 名 (结记账与 Physical 名一致); (b) 24 个爪端口全部被耦合器消费;
     (c) GDS 面积对照片参数: 半盘 = 圆缺 195²·acos(35/195) − 35·√(195²−35²), 五边形 378×(125 + 175/2), 条 30×849, 24 只爪; (d) 手性: 横向
     五边形在条 +y 侧靠东侧比特, 纵向 (mirror: x) 在条 +x 侧靠上方比特, 中心距该比特 540。"""
@@ -59,7 +59,7 @@ def test_chen_2025_3x3_layout_compiles_to_21_junctions_and_paper_geometry(tmp_pa
         assert ((y0 + y1) / 2) % P == pytest.approx(P - 540)
 
 def test_chen_2025_qcq_block_is_si_isolated_qcq(tmp_path):
-    """契约 N17: extract.blocks 的每块 = SI §D 孤立 QCQ 口径 (6 terminal: 两比特四半盘 + 条 + 板); 块网格标签
+    """契约「Chen 2025 模板」: extract.blocks 的每块 = SI §D 孤立 QCQ 口径 (6 terminal: 两比特四半盘 + 条 + 板); 块网格标签
     = 这 6 个 component, 载片地 = 5 µm 盒顶 (Palace config Ground 只有 outer)。"""
     from quantum_dsl import build_mesh, compile_layout, load_meta
     from quantum_dsl.palace import palace_config
@@ -99,3 +99,28 @@ def test_chen_2025_hand_written_bars_equal_template_route(tmp_path):
     assert hand[2] == tpl[2] and len(tpl[2]) == 21 and len(hand[3].qubits) == 9      # 12 条耦合器结来自 meta
     assert hand[3].used == tpl[3].used and len(hand[3].used) == 24
     assert {"chen_2025_3x3_bars.geo", "chen_2025_3x3_bar_macros.geo"} <= {p.name for p in hand[3].inputs}
+
+
+def test_chen_2025_cross_is_one_four_coordinated_qubit_solved_whole(tmp_path):
+    """契约「Chen 2025 模板」: 十字例子 = 中心 Q11 四爪全开 + 四臂比特各一只朝中心的爪 + 4 耦合器 → 18 导体 / 9 浮动结, 整片一次解 (无 extract.blocks)。
+    中心比特的 C_Σ 是真晶格口径 (↔ Table SI 实测 α), 臂比特只有一只爪 = SI §D 孤立 QCQ 的比特侧口径; 同一张网格作差 = 周边结构效应。"""
+    import gdstk
+
+    from quantum_dsl import build_gds, compile_layout, load_geo, load_meta
+    m = load_meta(EXAMPLES / "chen_2025_cross.meta.yaml")
+    assert not (m.extract or {}).get("blocks") and m.airbox["top_um"] == 5
+    lay = compile_layout(m)
+    comps = {p.component for p in load_geo(lay).physicals if p.role == "metal"}
+    assert len(comps) == 18 and len(lay.qubits) == 9 and {c for q in lay.qubits for c in q["islands"]} == comps
+    assert set(lay.ports) == {"Q11.E", "Q11.N", "Q11.W", "Q11.S", "Q01.E", "Q21.W", "Q10.N", "Q12.S"} == set(lay.used)
+    (cell,) = gdstk.read_gds(str(build_gds(lay, m, tmp_path / "x.gds"))).top_level()
+    metal = [p for p in cell.polygons if p.layer == 1]
+    assert len(metal) == 10 + 4 * 2 + 8 and len([p for p in cell.polygons if p.layer == 20]) == 9
+    claw = 40 * (2 * math.radians(20)) * 227 + 20 * 30
+    claws = [p for p in metal if abs(p.area() - claw) <= 2e-2 * claw]
+    assert len(claws) == 8
+    centres = {"Q11": (1383, 1383), "Q01": (0, 1383), "Q21": (2766, 1383), "Q10": (1383, 0), "Q12": (1383, 2766)}
+    def n_claws(cx, cy):          # 爪 bbox 中心离盘心 ≈ (207 + 267) / 2 = 237 < 300
+        return sum(math.hypot((b[0][0] + b[1][0]) / 2 - cx, (b[0][1] + b[1][1]) / 2 - cy) < 300
+                   for b in (p.bounding_box() for p in claws))
+    assert n_claws(*centres["Q11"]) == 4 and all(n_claws(*centres[q]) == 1 for q in ("Q01", "Q21", "Q10", "Q12"))

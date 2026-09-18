@@ -1,0 +1,20 @@
+# chen_2025_cross.layout.yaml — Chen et al. 2025 (Nat. Phys. 21, 1489) 圆盘比特「十字」: 中心 Q11 (四配位, 4 爪全开) + 4 只邻居比特 (各只留朝中心的爪)
+# + 4 只 bar_coupler = 18 导体, 9 个浮动结。坐标与 chen_2025_3x3 一致 (Q<i><j> 在 (i·1383, j·1383)), 名字可直接对照。
+# 用途 (docs/physics.md §13 / .claude/session/2609180210.md): 一次求解同时给出
+#   (a) 中心比特的真晶格 C_Σ → E_C ↔ Table SI 实测 α = −179～−200 MHz (12 只, 均值 −192 ± 6) —— α = −E_C 不含 E_J, 是唯一「多样本实测 + 无调参预测」的锚;
+#   (b) 臂比特只有一只爪 = SI §D 孤立 QCQ 的比特侧口径 (SI 六块板拓扑), 可逐项对 11 个电容;
+#   (a) − (b) = 周边结构效应 (几何稿 §5.2 要求「两种口径都算一遍」), 同一张网格同一个 d, 不掺 d 的拟合。
+# 不画读出结构 (爪 225° / 焊盘 / λ/4): 估 C_Σ +3% (α −3%), 方向已知, 报数时作系统偏差标出。整片一次解 (不写 extract.blocks), 上云 (≈3 M tets)。
+schema: quantum-dsl/layout/1
+templates: [lib]
+steps:
+  - {template: disc_transmon, name: Q11, at: [1383, 1383], layers: {metal: ta, jj: jj}, E_J: 12.4GHz}
+  - {template: disc_transmon, name: Q01, at: [0, 1383],    layers: {metal: ta, jj: jj}, E_J: 12.4GHz, params: {claw_W: 0, claw_N: 0, claw_S: 0}}
+  - {template: disc_transmon, name: Q21, at: [2766, 1383], layers: {metal: ta, jj: jj}, E_J: 12.4GHz, params: {claw_E: 0, claw_N: 0, claw_S: 0}}
+  - {template: disc_transmon, name: Q10, at: [1383, 0],    layers: {metal: ta, jj: jj}, E_J: 12.4GHz, params: {claw_E: 0, claw_W: 0, claw_S: 0}}
+  - {template: disc_transmon, name: Q12, at: [1383, 2766], layers: {metal: ta, jj: jj}, E_J: 12.4GHz, params: {claw_E: 0, claw_W: 0, claw_N: 0}}
+  - {template: bar_coupler, name: H01, from: Q01.E, to: Q11.W, layers: {metal: ta, jj: jj}, E_J: 21.1GHz}
+  - {template: bar_coupler, name: H11, from: Q11.E, to: Q21.W, layers: {metal: ta, jj: jj}, E_J: 21.1GHz}
+  - {template: bar_coupler, name: V10, from: Q10.N, to: Q11.S, mirror: x, layers: {metal: ta, jj: jj}, E_J: 21.1GHz}
+  - {template: bar_coupler, name: V11, from: Q11.N, to: Q12.S, mirror: x, layers: {metal: ta, jj: jj}, E_J: 21.1GHz}
+ground: none

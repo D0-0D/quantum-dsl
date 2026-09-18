@@ -1,55 +1,50 @@
 # quantum_dsl — Current Status
 
-每个 session 开工前读这份 + [`plan.md`](plan.md)。快照日期 **2026-09-16**。
+每个 session 开工前读这份 + [`plan.md`](plan.md)。快照 **2026-09-18**。硬约束与跑法在 `CLAUDE.md`, 这里不重复。
 
-## 最新动态（给刚接手的人：5 分钟版）
+## 现在有什么
 
-1. **产品在哪**：`main` = v4 产品（tag `v4.0`，2026-08-26）。手写 `.geo` + `*.meta.yaml` → GDS / 3D 网格 / Palace 静电 / 电容矩阵 /
-   哈密顿量（逆电容 LOM），只有 Python API（入口 `quantum_dsl.build`）。契约 = `SPEC.md` N0–N17 ↔ `tests/`。
-2. **最近两天新增两层**：
-   - **N16 版图编排**（2026-09-12）：`*.layout.yaml` 顶替手写 `.geo` 作几何源——一张有序步骤表，实例化模板（`examples/lib/<name>.geo`
-     局部坐标几何 + `<name>.yaml` 接口）或混入手写 `.geo` 步骤，全部写进**同一个 gmsh 模型**；meta 照旧，只多一张 `layers:` 表（模板层槽位 → 芯片层）。
-     实现 `src/quantum_dsl/layout.py`（≈1 000 行），语法 `docs/grammar.md` §4，设计稿 `docs/design/component-library.md`。
-   - **N17 Chen 2025 圆盘比特 3×3**（2026-09-13）：模板 `disc_transmon`（两半盘 + 跨缝结 + 可选爪）/ `bar_coupler`（连接型：条 + 五边形 + 结）
-     + 例子 `examples/chen_2025_3x3.{layout,meta}.yaml`（9 比特 + 12 耦合器，21 个结条目自动生成；**无读出结构**）。几何全部是论文
-     Fig. 1a 照片量出值（`docs/design/paper-chen2025-geometry.md`，≤15 µm 的量 ±30–50%）。flip-chip：顶片无地 `ground: none`，载片地 = `airbox.top_um: 5`。
-     `extract.blocks` = 12 个 SI §D 口径的孤立 QCQ 块（6 terminal）。
-3. **首批数字**（本机 Palace，QCQ 块 H01，75 万 tets order 2，8 rank 570 s，**单网格未收敛**）：对 SI §D 的 11 个电容——对地项随 d 5→7 µm
-   从 ×1.1–1.45 落到 ×0.9–1.2；互容始终只有 SI 的一半（×0.4–0.5）⇒ 缺口在缝 / 间隙几何或 SI 模型口径，**不在 d**。派生 E_C(q) 220→259 MHz、
-   g_qc 66→85 MHz，夹住 SI 自身闭合值（209 / 71）与设计值（185 / 90）——量级检验，不是命中。账 `.claude/session/2609131337.md`，
-   产物 `.claude/chen-evidence/`，物理口径 `docs/physics.md` §13。
-4. **怎么跑**：`~/miniconda3/envs/qdsl313/bin/python -m pytest tests/ -q` → **39 passed / 2 skipped**（~30 s；live 两条要 Palace）。
-   Chen 例子：`compile_layout` 0.7 s、`build_gds` 1 s、单块网格 22 s。只要块就 `build(m, out, blocks=["H01"])`
-   （2026-09-13 加：跳过整片网格，`solve=True` 时逐块跑 Palace 并写 `block_<name>.results.yaml`）；不带 `blocks=` 的
-   `build(solve=False)` 会按 100/4 给全片出网格（~9M tets）。看图直接 `build_gds` + `render_gds_png`
-   （PNG 落在 gitignore 的 `build/` 下，本地跑一次即有，仓库里没有）。
-5. **下一步**（`plan.md`「Chen 2025 phase 2」）：缝宽 / 盘–爪 / 条–板间隙灵敏度 → 再谈 d 单量拟合；整片 42 导体上云一次解
-   （QCQ 块两两共享比特几何，**不能** `assemble()` 叠加）；读出爪 / 45° 焊盘 / λ/4 蛇形；网格两档收敛。
-6. **开放决策**：等效长度 / 爪电容来源（依赖工艺栈）；读出焊盘进不进版图（浮岛无结，静电前须 Schur 消掉或标 `ground::`）。
-7. **代码审查已修**（2026-09-13 晚，`.claude/session/2609132030.md`）：`layout.py` 9 处静默路径全部改成 raise（net 遮蔽、`port(i)` 逃过 NaN 置毒、
-   连接型 `mirror: y` / `at:` / `rot:`、外挂端口背后无面、`if:` 指未声明参数、子字典键与 `kind` 不校验、`body:` 伪造岛键、`Include` 不进 manifest）；
-   `examples/lib` 的宏名与入参加 `LIB_`/`_lib_` 前缀（与 `qlib.geo` 的 `Macro CPW` 撞名会炸掉整个 session，裸名入参会漏给后续手写步骤）；
-   `bar_coupler.geo` 加前置守卫。**⚠ §13 的 QCQ 块数字有已知系统偏差**：块会把块内比特伸向块外耦合器的爪一起删掉（H01 少 5 只），对地项偏低。
-8. **手写步骤 `connect:`**（2026-09-16，`.claude/session/2609161007.md`）：手写 `.geo` 步骤可用 `connect: {net: [端口…]}` 认领模板画的外挂面（爪），
-   与连接型模板走同一条 `_connect`；对照件 `examples/chen_2025_3x3_hand`（12 个 `bar_coupler` 换成一步手写 `.geo`，Physical 名 / GDS / H01 块网格与模板路线逐项相同）。
-   顺带堵的静默路径：路由体 / 手写金属没碰到端口那一端（曾把悬空的爪记进 net）、步骤键不按类型查、merge 文件里定义 Macro（同进程第二次跑段错误）、
-   手写 `etch` 的 `layers:` 拼错。文档 grammar §4.1 / §4.3 / §5 #10 #18。
+- **v4.0 产品**（tag `v4.0`, 2026-08-26）: 手写 `.geo` + `*.meta.yaml` → GDS / 3D 网格 / Palace 静电 / 电容矩阵 / 逆电容 LOM 哈密顿量; 只有 Python API（`quantum_dsl.build`）。
+  契约 `SPEC.md`（条目按名字）↔ `tests/`。`main` = 产品; `v3` = 旧实现（只读参考）; `v4-dev` = 开发痕迹与原始调研存档。
+- **版图编排**（2026-09-12/13, `src/quantum_dsl/layout.py` ≈1 000 行）: `*.layout.yaml` 有序步骤实例化模板（`examples/lib/<name>.geo` 局部坐标 + `<name>.yaml` 接口）
+  或混入手写 `.geo`, 全部写进同一个 gmsh 模型; meta 多一张 `layers:` 表。语法 `docs/grammar.md` §4, 设计稿 `docs/design/component-library.md`。
+- **Chen 2025 圆盘比特 3×3**（2026-09-13）: 模板 `disc_transmon` / `bar_coupler`, 例子 `examples/chen_2025_3x3.*`（9 比特 + 12 耦合器, 21 个结条目自动生成;
+  flip-chip: `ground: none`, 载片地 = `airbox.top_um: 5`）, `extract.blocks` = 12 个 SI §D 口径的孤立 QCQ 块（6 terminal）。
+- **手写步骤 `connect:`**（2026-09-16）: 手写 `.geo` 认领模板画的外挂面（爪）, 与连接型模板同一条路; 对照件 `examples/chen_2025_3x3_hand`
+  与模板路线 Physical 名 / GDS 多边形逐点相同。同批堵掉的静默路径: 路由体没碰到端口那一端、步骤键不按类型查、merge 文件里定义 Macro（同进程二次跑段错误）、
+  分块删手写 Physical 组留残名（出网格崩）。
+- **自动布线 `cpw_route`**（2026-09-18, `src/quantum_dsl/route.py` + `lib/cpw_route`, `planner: cpw`）: 两个不正对的同宽端口之间, Dubins CSC 四型 + 中段直段换蛇形（定长走 `length:`）, `region:` 矩形区域校验;
+  规划在芯片坐标, Python 只注入原语列表, `.geo` 用 `LIB_CPW` / `LIB_CPW_ARC` 画。正对共线时与 `cpw_meander` 逐段相同。设计稿 `docs/design/auto-route.md`, 例子 `cpw_route_demo`, 三处待拍板见 `plan.md` 方向 2。
+- **Chen 2025 十字例子**（2026-09-18, `examples/chen_2025_cross`）: 中心 Q11 四爪 + 4 臂比特各一爪 + 4 耦合器 = 18 导体整片一次解; 中心 = 真晶格口径 ↔ 实测 α, 臂 = SI 孤立 QCQ 口径。
+  上云 (c24a1) 三档 d: **d = 4 µm 时中心 α = −190.7 MHz 命中实测 −192 ± 6**; 环境效应只 −2.5%（`docs/physics.md` §13.1）。
+- **已知偏差**: QCQ 块解删掉块内比特伸向块外耦合器的爪 → 只影响多爪比特, 且只有 −2.5% E_C（十字实测, §13.1）; 互容仍是 SI 的 0.4–0.5 倍, 与 d / 环境无关, 是几何（缝 / 间隙）的账。
 
-## At a glance
+## 怎么跑
 
-| | |
+- 全套: `~/miniconda3/envs/qdsl313/bin/python -m pytest tests/ -q` → **44 passed / 2 skipped**（~40 s; live 两条要 Palace）。
+- Chen: `compile_layout` 0.7 s、`build_gds` 1 s、单块网格 22 s。只要块就 `build(m, out, solve=True, blocks=["H01"])`（本机 8 rank ~10 min, 75 万 tets order 2）;
+  不带 `blocks=` 会先给全片出 ~9M tets 网格。PNG 在 gitignore 的 `build/` 下, 本地跑一次即有。
+- 上云跑法（2026-09-18 实测, c24a1 64c/128G 有 spack Palace 0.16、无 gmsh）: 本机 `build(..., solve=False)` 出 msh + json → `rr -p` 推 → 远端 `palace -np N cfg`（`OMPI_ALLOW_RUN_AS_ROOT=1`, mpirun 在 spack openmpi bin）→ `rr -f` 拉 `postpro/` → `parse_capacitance` + `solve_circuit_model`。
+  规模: 十字 100/4 = 2.39 M tets / 3.34 M 未知量 / np=24 19 min / 峰值 28 GB; 3×3 整片 100/4 = 5.82 M tets / 8.12 M 未知量 / np=32 常驻 65 GB（**128 G 机装得下**）; 经验 8.5–10 GB / 百万未知量。
+- sung 外部锚: `QDSL_RUN_PALACE_SUNG=1 PALACE_BIN=tools/palace_remote.sh QDSL_REMOTE_HOST=<64C+/384G 机> QDSL_PALACE_NP=32`（峰值内存 154 G, 128 G 机必 OOM）。
+
+## 实测锚
+
+| 例子 | 结果 |
 |---|---|
-| 版本 | **v4.0 已发布**(tag `v4.0`, 2026-08-26) + N16(2026-09-12) + N17(2026-09-13)。`main` = 产品;`v3` = 旧实现(只读参考);`v4-dev` = 开发痕迹与原始调研存档(session logs / codex 取证 / N15 原始 CSV / 原型脚本) |
-| 契约 | [`SPEC.md`](../SPEC.md)(N0–N17 需求索引)↔ `tests/`(39 passed / 2 skipped;live 两条各自实测通过一次) |
-| 文档 | [`docs/README.md`](../docs/README.md) 是入口;物理口径与数值决策在 `docs/physics.md`(§13 = flip-chip 与 Chen 首解),汇报材料在 `docs/report/`(04 = sung 论文验证闭环账) |
-| 测试跑法 | `~/miniconda3/envs/qdsl313/bin/python -m pytest tests/ -q`;live 加 `QDSL_RUN_PALACE=1`(~4 min);sung 加 `QDSL_RUN_PALACE_SUNG=1 PALACE_BIN=tools/palace_remote.sh QDSL_REMOTE_HOST=<64C+/384G 机> QDSL_PALACE_NP=32`(峰值内存 154 G, 128G 机必 OOM) |
-| 实测锚 | two_pads C 对 `[[24.5324,-1.9472],[-1.9472,24.5353]]` fF <2%;sung 对 PRX 11.021058: C_Σ ×0.940–0.969(±8% 内), β_qc +8%(±20% 内);Chen QCQ 对 SI §D: 见上 3 |
-| 论文真版图(无调参) | `examples/sung_2021_xmon`(接地 Xmon×2 + 梳齿 coupler, 照片量出 ~20 个参数): C_Σ = 论文 ×0.874/0.701/0.873, β_qc +12~17%, **不命中**——与被 Elmer 标定过的 sung_2021_device(±3~6%)对照, 分清「标定命中」与「预测精度」; 账在 `docs/report/04` §8 |
+| two_pads（live 回归锚） | C 对 `[[24.5324,-1.9472],[-1.9472,24.5353]]` fF <2%; 实测 123 s, 逐位相同 |
+| sung_2021_device（外部锚, Elmer 标定过的替代几何） | 对 PRX 11.021058: C_Σ ×0.940–0.969（±8% 内）, β_qc +8%（±20% 内） |
+| sung_2021_xmon（真版图, 无调参, 不断言） | C_Σ = 论文 ×0.874/0.701/0.873, β_qc +12~17%, **不命中**; 账 `docs/report/Aug27/04` §8 |
+| **Chen 十字 d = 4 µm（整片 18 导体, 100/4 单网格）** | 中心比特 α = −190.7 MHz ↔ 实测 12 只 −192 ± 6 **命中**; f01 4.16 GHz（实测 4.03–4.25）; g_qc 55 / g_qq 2.6 MHz（设计 90 / 5）偏低 = 互容缺口; d 三点 4 / 5 / 7 → E_C 191 / 215 / 250, ∝ d^0.49; 外部锚 d = 5 ± 0.4 差 2.5σ; 网格两档 100/4 → 80/3 E_C 只移 +0.3%（§13.1） |
+| Chen 3×3 整片（42 导体, d = 5, 100/4, 69 GB / 86 min） | 中心 Q11 E_C 214.5 = 十字; 角 / 边 / 中心 218.1 / 216.3 / 214.5（每爪 −1.8 MHz）; 最近邻 g_qq 3.7, 对角次近邻 0.03–0.05 MHz（SI 实测残余 ~2 MHz 非静电直接项） |
+| Chen QCQ 块 H01（单网格未收敛） | 对 SI §D 11 个电容: 对地项随 d 5→7 µm 从 ×1.1–1.45 落到 ×0.9–1.2, 互容只有 SI 一半（×0.4–0.5）⇒ 缺口不在 d; E_C(q) 220→259 MHz、g_qc 66→85 MHz 夹住 SI 闭合值（209 / 71）与设计值（185 / 90）。账 `.claude/session/2609131337.md`, 产物 `.claude/chen-evidence/` |
 
-## 硬约束
+## 开放决策
 
-- ⚠ MPI/Palace 必须 `HWLOC_COMPONENTS=-gl`(qdsl313 已持久化;`build()` 也会注入;新 env 必须照做)。
-- 无 qiskit_metal(3.13 下装不上, 平台即护栏)、无 `.metal.yaml`、无 v3 模板引擎;`import quantum_dsl` 不拉 gmsh/gdstk。
-- 内部单位 µm;GDS µm verbatim;唯一 µm→m 换算点 = Palace config `Model.L0=1e-6`。JJ 是集总元件(进 GDS 不进静电网格)。
-- `Solver.Order=2` 是承重件(同网格 order 1 偏 +7.3%);golden 不锚参考实现, 只锚物理与闭式。
-- gmsh session 进程级共享、从不 finalize(`.geo` Macro 是进程级永久状态);每个调用点显式设全 gmsh.option。
+- 自动布线三处拍板（腿数取最小/最大 n、pad↔pad 的 net 命名、CCC）; 方向 1 只剩 `cpw_meander` 退不退役（`plan.md`「方向」）。
+- Chen: d 标定 4.0 vs 外部锚 5 ± 0.4 的缺口归因（读出爪 / 间隙照片误差 / 网格收敛）; 互容 ×0.4–0.5 要不要做 gap ±3 µm 灵敏度。
+- 等效长度 / 爪电容的来源（依赖工艺栈）; 读出焊盘进不进版图（浮岛无结, 静电前须 Schur 消掉或标 `ground::`）。
+
+## 文档入口
+
+`docs/README.md`; 物理口径与数值决策 `docs/physics.md`（§13 = flip-chip 与 Chen 首解, §13.1 = 十字整片解与 d 标定）; 汇报材料 `docs/report/`（04 = sung 论文验证闭环账）。

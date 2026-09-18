@@ -1,0 +1,82 @@
+{
+  "ElapsedTime": {
+    "Counts": {
+      "Adaptation": 0,
+      "CoarseSolve": 234,
+      "Construction": 1,
+      "DiskIO": 3,
+      "Div.-FreeProjection": 0,
+      "EigenvalueSolve": 0,
+      "Estimation": 18,
+      "FarFields": 0,
+      "Gridfunction": 0,
+      "Initialization": 2,
+      "LinearSolve": 18,
+      "MeshPreprocessing": 1,
+      "OperatorConstruction": 1,
+      "PROMConstruction": 0,
+      "PROMSolve": 0,
+      "Paraview": 0,
+      "Postprocessing": 38,
+      "Preconditioner": 234,
+      "Rebalancing": 0,
+      "Setup": 1,
+      "Solve": 18,
+      "TimeStepping": 0,
+      "Total": 1,
+      "WavePorts": 0
+    },
+    "Durations": {
+      "Adaptation": 0.0,
+      "CoarseSolve": 0.6972038520000001,
+      "Construction": 15.654411252,
+      "DiskIO": 33.120269541999996,
+      "Div.-FreeProjection": 0.0,
+      "EigenvalueSolve": 0.0,
+      "Estimation": 1.1591346879999997,
+      "FarFields": 0.0,
+      "Gridfunction": 0.0,
+      "Initialization": 0.32854222200000005,
+      "LinearSolve": 10.980393907999996,
+      "MeshPreprocessing": 47.740495249,
+      "OperatorConstruction": 1.690867424,
+      "PROMConstruction": 0.0,
+      "PROMSolve": 0.0,
+      "Paraview": 0.0,
+      "Postprocessing": 2.347384888,
+      "Preconditioner": 89.48812222299996,
+      "Rebalancing": 0.0,
+      "Setup": 7.848208518,
+      "Solve": 928.547657309,
+      "TimeStepping": 0.0,
+      "Total": 1139.656645812,
+      "WavePorts": 0.0
+    }
+  },
+  "GitTag": "869ee5c",
+  "LinearSolver": {
+    "TotalIts": 198,
+    "TotalSolves": 18
+  },
+  "PeakMemoryMegabytes": {
+    "Average": 1220.82421875,
+    "Max": 1732.640625,
+    "Min": 1172.421875,
+    "Total": 29299.78125
+  },
+  "PeakNodeMemoryMegabytes": {
+    "Average": 29299.78125,
+    "Max": 29299.78125,
+    "Min": 29299.78125,
+    "Total": 29299.78125
+  },
+  "Problem": {
+    "DegreesOfFreedom": 3343345,
+    "MPISize": 24,
+    "MeshElements": 2394646,
+    "MultigridDegreesOfFreedom": [
+      430535,
+      3343345
+    ]
+  }
+}

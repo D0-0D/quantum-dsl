@@ -1,0 +1,15 @@
+# chen_2025_cross.meta.yaml — chen_2025_cross.layout.yaml 的 sidecar; 物理口径与 chen_2025_3x3.meta.yaml 逐字相同 (flip-chip: 顶片无地, 载片地 = airbox.top_um = d = 5 µm,
+# 蓝宝石标量 ε 10 / 430 µm, 网格 100/4, order 2, 盒外表面接地)。唯一差别: **没有 extract.blocks** —— 十字就是要 18 导体一次解, 中心比特带全部 4 只爪。
+# 报数前按 grammar 常见坑 #6 做两档网格 (100/4 与 80/3); d 只用一个电容标定, 其余作预测 (docs/design/paper-chen2025-geometry.md §5.2)。
+schema: quantum-dsl/meta/1
+
+layout: chen_2025_cross.layout.yaml
+layers:
+  ta: {kind: conductor, gds: [1, 0]}      # 顶片 Ta 金属
+  jj: {kind: junction,  gds: [20, 0]}     # 结 (集总: 进 GDS 不进网格)
+
+materials:
+  substrate: {eps_r: 10.0, thickness_um: 430}
+airbox: {top_um: 5, bottom_um: 500, side_um: 300}   # top_um = flip-chip 间隙 d
+mesh: {max_size_um: 100, min_size_um: 4}
+solver: {type: electrostatic, order: 2, outer_boundary: ground}

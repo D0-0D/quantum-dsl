@@ -1,0 +1,9 @@
+blockH01 | SUMMARY dir=/root/qdsl/blockH01 np=32 rc=0 elapsed_s=93 peak_palace_rss_GB=10.4 peak_sys_used_GB=11.1  Operator assembly level: Partial  Mes | palace_peak: 10.5G
+cross_100_4 | SUMMARY dir=/root/qdsl/cross_100_4 np=24 rc=0 elapsed_s=1140 peak_palace_rss_GB=94.0 peak_sys_used_GB=92.8  Operator assembly level: Partial | palace_peak: 28.6G
+cross_d7 | SUMMARY dir=/root/qdsl/cross_d7 np=24 rc=0 elapsed_s=1123 peak_palace_rss_GB=28.1 peak_sys_used_GB=93.3  Operator assembly level: Partial  M | palace_peak: 28.5G
+cross_d4 | SUMMARY dir=/root/qdsl/cross_d4 np=24 rc=0 elapsed_s=1158 peak_palace_rss_GB=28.3 peak_sys_used_GB=94.0  Operator assembly level: Partial  M | palace_peak: 28.8G
+cross_80_3 | SUMMARY dir=/root/qdsl/cross_80_3 np=32 rc=0 elapsed_s=1405 peak_palace_rss_GB=57.8 peak_sys_used_GB=57.8  Operator assembly level: Partial  | palace_peak: 59.0G
+full_100_4 | SUMMARY dir=/root/qdsl/full_100_4 np=32 rc=0 elapsed_s=5158 peak_palace_rss_GB=95.1 peak_sys_used_GB=94.0  Operator assembly level: Partial  | palace_peak: 69.2G
+full_100_4_np16 | SUMMARY dir=/root/qdsl/full_100_4_np16 np=16 rc=1 elapsed_s=641 peak_palace_rss_GB=63.4 peak_sys_used_GB=64.6  Operator assembly level: Part | palace_peak: 
+full_100_4_aggr | SUMMARY dir=/root/qdsl/full_100_4_aggr np=32 rc=1 elapsed_s=440 peak_palace_rss_GB=65.6 peak_sys_used_GB=65.7  Operator assembly level: Part | palace_peak: 
+full_150_6 | SUMMARY dir=/root/qdsl/full_150_6 np=32 rc=0 elapsed_s=1934 peak_palace_rss_GB=25.4 peak_sys_used_GB=25.6  Operator assembly level: Partial  | palace_peak: 25.7G

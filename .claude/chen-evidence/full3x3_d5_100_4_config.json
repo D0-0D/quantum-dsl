@@ -1,0 +1,82 @@
+{
+  "ElapsedTime": {
+    "Counts": {
+      "Adaptation": 0,
+      "CoarseSolve": 547,
+      "Construction": 1,
+      "DiskIO": 3,
+      "Div.-FreeProjection": 0,
+      "EigenvalueSolve": 0,
+      "Estimation": 42,
+      "FarFields": 0,
+      "Gridfunction": 0,
+      "Initialization": 2,
+      "LinearSolve": 42,
+      "MeshPreprocessing": 1,
+      "OperatorConstruction": 1,
+      "PROMConstruction": 0,
+      "PROMSolve": 0,
+      "Paraview": 0,
+      "Postprocessing": 86,
+      "Preconditioner": 547,
+      "Rebalancing": 0,
+      "Setup": 1,
+      "Solve": 42,
+      "TimeStepping": 0,
+      "Total": 1,
+      "WavePorts": 0
+    },
+    "Durations": {
+      "Adaptation": 0.0,
+      "CoarseSolve": 2.809515243999998,
+      "Construction": 24.091045784,
+      "DiskIO": 66.238853813,
+      "Div.-FreeProjection": 0.0,
+      "EigenvalueSolve": 0.0,
+      "Estimation": 5.308495611000002,
+      "FarFields": 0.0,
+      "Gridfunction": 0.0,
+      "Initialization": 0.599109785,
+      "LinearSolve": 43.569846705000025,
+      "MeshPreprocessing": 104.79735063999999,
+      "OperatorConstruction": 4.8903169129999995,
+      "PROMConstruction": 0.0,
+      "PROMSolve": 0.0,
+      "Paraview": 0.0,
+      "Postprocessing": 9.864848239,
+      "Preconditioner": 380.5938289090002,
+      "Rebalancing": 0.0,
+      "Setup": 5.450887285,
+      "Solve": 4509.515582227999,
+      "TimeStepping": 0.0,
+      "Total": 5157.773978209,
+      "WavePorts": 0.0
+    }
+  },
+  "GitTag": "869ee5c",
+  "LinearSolver": {
+    "TotalIts": 463,
+    "TotalSolves": 42
+  },
+  "PeakMemoryMegabytes": {
+    "Average": 2215.7974853515625,
+    "Max": 4110.83984375,
+    "Min": 2094.3046875,
+    "Total": 70905.51953125
+  },
+  "PeakNodeMemoryMegabytes": {
+    "Average": 70905.51953125,
+    "Max": 70905.51953125,
+    "Min": 70905.51953125,
+    "Total": 70905.51953125
+  },
+  "Problem": {
+    "DegreesOfFreedom": 8123703,
+    "MPISize": 32,
+    "MeshElements": 5824568,
+    "MultigridDegreesOfFreedom": [
+      1044989,
+      8123703
+    ]
+  }
+}
