@@ -16,7 +16,8 @@
 #   (注: 论文的 C 值本身是"设计仿真+对实测频率拟合", 频率才是直接实测。)
 #
 # ---------------------------------------------------------------------
-# 本版图的可复现边界(2026-08-25 整片 order-2 首测后翻案, 逐条有账):
+# 本版图的可复现边界(2026-08-25 整片 order-2 首测后翻案, 逐条有账;
+# 可断言的两类写成文末 targets:, build(solve=True) 在 results.yaml 的 validation 段报偏差):
 #   可断言: C_Σ ×3 → sung 契约判据 **±8%**。账: 本配方(80/2, o2, 14.1M tets)
 #     实测 95.8/220.7/95.8 fF = 论文 ×0.965/0.969/0.940 —— 简化版图结构性
 #     缺失(无 junction leads/读出爪/控制线)系统性低 4~6%。旧判据 ±5% 按
@@ -64,3 +65,14 @@ circuit_model:
     - {name: QB1,  islands: [QB1_t, QB1_b],   E_J: 12.2GHz}
     - {name: CPLR, islands: [CPLR_t, CPLR_b], E_J: 71GHz}
     - {name: QB2,  islands: [QB2_t, QB2_b],   E_J: 15.8GHz}
+
+# 可断言的两类量 (判据与排除项的账见头注「可复现边界」; 排除项不进 targets)。
+targets:
+  source: "Sung et al., PRX 11, 021058 (2021) 补充材料; C_Σ 由论文 E_C 换算, β 由论文电容表换算"
+  qubits:
+    QB1:  {C_sigma_fF: 99.3,  tol: 8%}
+    CPLR: {C_sigma_fF: 227.9, tol: 8%}
+    QB2:  {C_sigma_fF: 101.9, tol: 8%}
+  couplings:
+    - {pair: [QB1, CPLR], beta: 0.0364, tol: 20%}
+    - {pair: [QB2, CPLR], beta: 0.0364, tol: 20%}

@@ -5,16 +5,20 @@
 ``circuit_model.qubits`` 里的结参数在加载时就解析成数:
 ``L_J`` → 亨利 (SI); ``E_J``/``E_J1``/``E_J2`` 按论文惯例写成频率 (如
 ``12.2GHz``) → 解析成 **Hz (E_J/h)**, 换算焦耳 (×h) 是 build 接线时的事。
+``targets:`` (issue #23) 在加载时展平成逐项核对条目 (键即 results.yaml 的字段名, 值是裸数),
+名字能否对上 qubit 由 build 在网格化之前查。
 """
 
 from __future__ import annotations
 
 import copy
-from dataclasses import dataclass, field
+import math
+from dataclasses import dataclass, field, fields
 from pathlib import Path
 
 import yaml
 
+from .circuit_model import CouplingResult, QubitResult
 from .errors import QuantumDslError
 from .units import parse_quantity
 
@@ -22,9 +26,12 @@ __all__ = ["Meta", "load_meta"]
 
 _SCHEMA = "quantum-dsl/meta/1"
 _TOP_KEYS = frozenset({"schema", "geo", "layout", "layers", "materials", "airbox", "mesh",
-                       "solver", "gds", "circuit_model", "extract", "subsystems"})
+                       "solver", "gds", "circuit_model", "extract", "subsystems", "targets"})
 _LAYER_KEYS = frozenset({"kind", "gds"})
 _LAYER_KINDS = frozenset({"conductor", "junction", "drawing"})
+# 可核对的量 = results.yaml hamiltonian 段里的数值字段 (单位在字段名后缀里)
+_QUBIT_FIELDS = frozenset(f.name for f in fields(QubitResult)) - {"name", "islands"}
+_COUPLING_FIELDS = frozenset(f.name for f in fields(CouplingResult)) - {"qubit_a", "qubit_b"}
 
 
 @dataclass(frozen=True)
@@ -43,6 +50,59 @@ class Meta:
     circuit_model: dict = field(default_factory=dict)
     extract: dict = field(default_factory=dict)
     subsystems: list = field(default_factory=list)
+    targets: dict = field(default_factory=dict)  # {source, checks: [{qubit|pair, field, expected, tol}]}
+
+
+def _targets(tbl, path) -> dict:
+    """``targets: {source, qubits: {Q: {C_sigma_fF: 99.3, tol: 8%}}, couplings: [{pair: [a, b], beta: .., tol: ..}]}``
+    → ``{source, checks: [...]}``, 每个 (对象, 字段) 一条。tol 只收 ``"8%"`` 写法 (裸数 8 是 8% 还是 800% 说不清)。"""
+    where = f"load_meta: {path}: targets"
+    if not isinstance(tbl, dict) or set(tbl) - {"source", "qubits", "couplings"}:
+        raise QuantumDslError(f"{where} must be a mapping with keys source / qubits / couplings, got {tbl!r}")
+
+    def entry(spec, allowed, head, what):   # head = 定位键 ({"qubit": ..} / {"pair": ..})
+        if not isinstance(spec, dict):
+            raise QuantumDslError(f"{where}: {what} must be a mapping, got {spec!r}")
+        unknown = sorted(set(spec) - allowed - {"tol"} - ({"pair"} & set(head)))
+        if unknown:
+            raise QuantumDslError(f"{where}: {what}: unknown key(s) {unknown} (known: {sorted(allowed)} + tol)")
+        tol = spec.get("tol")
+        try:
+            t = float(tol[:-1]) / 100 if isinstance(tol, str) and tol.endswith("%") else math.nan
+        except ValueError:
+            t = math.nan
+        if not 0 < t < math.inf:
+            raise QuantumDslError(f"{where}: {what}: tol must be a positive percentage like '8%', got {tol!r}")
+        quantities = sorted(set(spec) & allowed)
+        if not quantities:
+            raise QuantumDslError(f"{where}: {what}: no quantity to check (known: {sorted(allowed)})")
+        out = []
+        for q in quantities:
+            v = spec[q]
+            if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) or v == 0:
+                raise QuantumDslError(f"{where}: {what}.{q} must be a finite non-zero number "
+                                      f"(unit is in the key name), got {v!r}")
+            out.append({**copy.deepcopy(head), "field": q, "expected": float(v), "tol": t})  # 共享 list 会让 yaml 出锚点
+        return out
+
+    checks = []
+    qubits = tbl.get("qubits") or {}
+    if not isinstance(qubits, dict):
+        raise QuantumDslError(f"{where}.qubits must map qubit name → quantities")
+    for name, spec in qubits.items():
+        checks += entry(spec, _QUBIT_FIELDS, {"qubit": str(name)}, f"qubits[{name!r}]")
+    couplings = tbl.get("couplings") or []
+    if not isinstance(couplings, list):
+        raise QuantumDslError(f"{where}.couplings must be a list of {{pair: [a, b], ...}}")
+    for i, spec in enumerate(couplings):
+        pair = spec.get("pair") if isinstance(spec, dict) else None
+        if not (isinstance(pair, list) and len(pair) == 2 and all(isinstance(n, str) for n in pair)
+                and pair[0] != pair[1]):
+            raise QuantumDslError(f"{where}: couplings[{i}] needs pair: [qubit_a, qubit_b], got {spec!r}")
+        checks += entry(spec, _COUPLING_FIELDS, {"pair": list(pair)}, f"couplings[{i}]")
+    if not checks:
+        raise QuantumDslError(f"{where}: declares no qubits / couplings to check")
+    return {"source": tbl.get("source"), "checks": checks}
 
 
 def _layers(tbl, path) -> dict:
@@ -129,4 +189,5 @@ def load_meta(path) -> Meta:
         circuit_model=circuit_model,
         extract=doc.get("extract") or {},
         subsystems=doc.get("subsystems") or [],
+        targets=_targets(doc["targets"], path) if "targets" in doc else {},
     )

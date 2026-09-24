@@ -155,3 +155,74 @@ def test_build_blocks_only_skips_the_whole_chip(tmp_path):
     assert json.loads((tmp_path / "block_A.json").read_text())["Problem"]["Output"] == "postpro_block_A"
     with pytest.raises(QuantumDslError, match="unknown block name"):
         build(BLOCKS_META, tmp_path / "x", blocks=["A", "Nope"])
+
+
+# ---------------------------------------------------------------- targets / 收敛 (假 Palace)
+def _fake_palace(monkeypatch, maxwell_fF):
+    """把 build 里的 Palace 换成按 config 目录名写 verbatim terminal-C.csv 的桩 (fF → F)。"""
+    def run(cfg):
+        m = maxwell_fF(cfg.parent.name)
+        p = cfg.parent / "postpro"
+        p.mkdir()
+        lines = [" i, " + ", ".join(f"C[i][{j + 1}] (F)" for j in range(len(m)))]
+        lines += [f" {i + 1}, " + ", ".join(f"{v * 1e-15:.15e}" for v in row) for i, row in enumerate(m)]
+        (p / "terminal-C.csv").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    monkeypatch.setattr(sys.modules["quantum_dsl.build"], "_run_palace", run)
+
+
+def _two_pads_meta(tmp_path, **extra) -> Path:
+    doc = yaml.safe_load(TWO_PADS_META.read_text(encoding="utf-8"))
+    doc["geo"] = str(EXAMPLES / "two_pads.geo")
+    doc.update(extra)
+    p = tmp_path / "t.meta.yaml"
+    p.write_text(yaml.safe_dump(doc, allow_unicode=True), encoding="utf-8")
+    return p
+
+
+def test_targets_validation_in_results(tmp_path, monkeypatch):
+    """契约「targets」: meta ``targets:`` → results.yaml 的 validation 段 (期望 / 实测 / 偏差 / pass),
+    未命中只 warn 不 raise; 拼错 qubit 名在网格化之前 raise。
+    闭式: Maxwell [[25, −2], [−2, 25]] fF → C_Σ = (25² − 2²)/25 = 24.84 fF, β = 2/25。"""
+    from quantum_dsl import QuantumDslError, build
+    _fake_palace(monkeypatch, lambda run: [[25.0, -2.0], [-2.0, 25.0]])
+    meta = _two_pads_meta(tmp_path, targets={
+        "source": "闭式",
+        "qubits": {"A": {"C_sigma_fF": 24.84, "tol": "1%"}, "B": {"C_sigma_fF": 30, "tol": "5%"}},
+        "couplings": [{"pair": ["A", "B"], "beta": 0.08, "tol": "1%"}]})
+    with pytest.warns(UserWarning, match=r"targets: 1/3 missed — B\.C_sigma_fF"):
+        r = build(meta, tmp_path / "out", solve=True)
+    v = yaml.safe_load(Path(r["results"]).read_text(encoding="utf-8"))["validation"]
+    assert v["source"] == "闭式" and v["passed"] is False
+    rows = {(c.get("qubit") or tuple(c["pair"])): c for c in v["checks"]}
+    assert rows["A"]["actual"] == pytest.approx(24.84) and rows["A"]["pass"]
+    assert rows["A"]["deviation"] == pytest.approx(0.0, abs=1e-9)
+    assert rows["B"]["deviation"] == pytest.approx(24.84 / 30 - 1) and not rows["B"]["pass"]
+    assert rows[("A", "B")]["actual"] == pytest.approx(0.08) and rows[("A", "B")]["pass"]
+
+    typo = _two_pads_meta(tmp_path, targets={"qubits": {"C": {"f01_GHz": 5, "tol": "5%"}}})
+    with pytest.raises(QuantumDslError, match=r"unknown qubit\(s\) \['C'\]"):
+        build(typo, tmp_path / "typo", solve=True)
+    assert not list((tmp_path / "typo").glob("*.msh"))       # 网格化之前就拦下
+
+
+def test_converge_scales_mesh_and_diffs_finest_two(tmp_path, monkeypatch):
+    """契约「网格收敛」: 每档 mesh 尺寸同比缩放、各自整片求解, convergence.yaml 记最细两档的
+    相对变化 (细 − 次细)/|细|。桩: 细档 C_AA 25.25 vs 粗档 25 → (25.25 − 25)/25.25, 其余不变 = 0。"""
+    from quantum_dsl import QuantumDslError, converge
+    _fake_palace(monkeypatch, lambda run: [[25.25 if run == "mesh_x1" else 25.0, -2.0],
+                                           [-2.0, 25.0]])
+    r = converge(TWO_PADS_META, tmp_path, scales=(1, 2))
+    doc = yaml.safe_load(r["convergence"].read_text(encoding="utf-8"))
+    assert doc == r["doc"]
+    assert [(x["scale"], x["max_size_um"], x["min_size_um"]) for x in doc["runs"]] == [
+        (2.0, 80.0, 8.0), (1.0, 40.0, 4.0)]                  # 粗 → 细
+    coarse, fine = (Path(run["mesh"]) for run in r["runs"])
+    assert fine.stat().st_size > coarse.stat().st_size      # 缩放真的进了网格
+    rel = doc["capacitance"]["maxwell_rel_change"]
+    assert rel[0][0] == pytest.approx(0.25 / 25.25)
+    assert rel[0][1] == rel[1][0] == rel[1][1] == 0.0
+    qa = doc["hamiltonian"]["qubits"]["A"]
+    assert qa["C_sigma_fF"] > 0 and qa["E_C_GHz"] < 0 and qa["E_J_GHz"] == 0.0
+    assert set(doc["hamiltonian"]["couplings"][0]) == {"pair", "beta", "g_MHz"}
+    with pytest.raises(QuantumDslError, match="distinct positive scales"):
+        converge(TWO_PADS_META, tmp_path, scales=(1.0, 1))

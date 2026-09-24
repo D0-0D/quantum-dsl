@@ -56,17 +56,33 @@ def test_sung_2021_against_paper(tmp_path):
     排除项 (结构性, 见 meta 头注): β_12/C_12 (本版图无直接 q-q 路径,
     差分远场相消, Elmer 也只得论文的 2%), 绝对 g 与 CPLR/QB2 的 f01
     (论文在磁通工作点, 本模型坐零磁通)。
+
+    判据写在 sung meta 的 ``targets:`` (契约「targets」), 这里读 results.yaml 的 validation 段;
+    核对集合与容差在此锁死 —— 放宽 meta 里的 tol 不能让本锚静默变松。
     """
     from quantum_dsl import build
     result = build(SUNG_META, tmp_path, solve=True)
     doc = yaml.safe_load(Path(result["results"]).read_text(encoding="utf-8"))
 
-    qubits = {q["name"]: q for q in doc["hamiltonian"]["qubits"]}
-    paper = {"QB1": 99.3, "CPLR": 227.9, "QB2": 101.9}  # fF, 由论文 E_C 换算
-    for name, ref in paper.items():
-        assert qubits[name]["C_sigma_fF"] == pytest.approx(ref, rel=0.08), name
+    checks = doc["validation"]["checks"]
+    assert {(c.get("qubit") or tuple(c["pair"]), c["field"], c["expected"], c["tol"])
+            for c in checks} == {
+        ("QB1", "C_sigma_fF", 99.3, 0.08), ("CPLR", "C_sigma_fF", 227.9, 0.08),
+        ("QB2", "C_sigma_fF", 101.9, 0.08),           # fF, 由论文 E_C 换算
+        (("QB1", "CPLR"), "beta", 0.0364, 0.20), (("QB2", "CPLR"), "beta", 0.0364, 0.20)}
+    assert doc["validation"]["passed"], [c for c in checks if not c["pass"]]
 
-    betas = {frozenset((c["qubit_a"], c["qubit_b"])): c["beta"]
-             for c in doc["hamiltonian"]["couplings"]}
-    assert betas[frozenset(("QB1", "CPLR"))] == pytest.approx(0.0364, rel=0.20)
-    assert betas[frozenset(("QB2", "CPLR"))] == pytest.approx(0.0364, rel=0.20)
+
+@live
+def test_two_pads_converge(tmp_path):
+    """契约「网格收敛」: two_pads 80/8 → 40/4 (细档 = 锚配方) 两档真解。2026-09-24 实测:
+    细档与 golden 逐位相同; 相对变化 C_AA −1.55% / C_BB −1.65% / C_AB +3.03% (physics §6)。"""
+    from quantum_dsl import converge
+    r = converge(TWO_PADS_META, tmp_path, scales=(2, 1))
+    fine = r["runs"][-1]["capacitance"].maxwell_fF
+    for i in range(2):
+        for j in range(2):
+            assert fine[i][j] == pytest.approx(LIVE_MAXWELL_GOLDEN[i][j], rel=0.02)
+    rel = r["doc"]["capacitance"]["maxwell_rel_change"]
+    assert -0.03 < rel[0][0] < 0 and -0.03 < rel[1][1] < 0     # 加密 → 自电容降
+    assert 0 < rel[0][1] < 0.06

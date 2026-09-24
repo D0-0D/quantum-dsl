@@ -119,6 +119,8 @@ C 矩阵行序 = `Mesh.labels` = `sorted(metal component)`，是全链唯一真�
 | `palace_config(mesh, meta, out)` | → `dict`（同时写 JSON） | |
 | `parse_capacitance(postpro_dir, labels)` | → `Cap(.labels, .maxwell_fF, .mutual_fF)` | NaN/Inf raise |
 | `solve_circuit_model(labels, maxwell_fF, junctions)` | → `CircuitModelResult(.qubits[QubitResult], .couplings[CouplingResult])` | junction = `{name, islands:[1 或 2 个], L_J│E_J│squid}` |
+| `build(meta, out, solve, blocks)` | → 产物路径 dict（§6） | meta 有 `targets:` 时整片 results 多 `validation` 段 |
+| `converge(meta, out, scales=(1.0, 0.6))` | → `{runs, convergence, doc}` | mesh 尺寸同比缩放、各档整片求解，`convergence.yaml` = 最细两档相对变化 |
 | `assemble(cells, keep)` | → `AssembledMatrix(.labels, .maxwell_fF, .eliminated)` | keep 拼错 raise |
 | `lumped_cpw(freq, line_width, line_gap, substrate_thickness, film_thickness, *, eps_r, loss_tangent, london_penetration_depth)` | → `CpwLumped(Lk, Lext, C, G, Z0, eps_eff, q, lambda_g)` | ⚠ 入参 **SI 米 / Hz** |
 | `guided_wavelength(...)` | → `GuidedWavelength(lambda_g, eps_eff, q, Lk, Lext, C, G)` | 与 `lumped_cpw` 同一段计算 |
@@ -154,6 +156,8 @@ hamiltonian:
   method: lumped_oscillator_inverse_cap
   qubits:    [{name, islands, C_sigma_fF, E_C_GHz, E_J_GHz, f01_GHz, anharmonicity_MHz, EJ_over_EC}, ...]
   couplings: [{qubit_a, qubit_b, beta, g_MHz}, ...]
+validation:  # 仅 meta 有 targets: 时
+  {source, passed, checks: [{qubit | pair, field, expected, tol, actual, deviation, pass}, ...]}
 ```
 
 分块（`extract.blocks`）在 v4.0 里只做到**派生 + 各块 mesh/config**；把各块 Palace 结果喂给

@@ -16,7 +16,11 @@
 ``solve=True``: 跑 Palace (env ``PALACE_BIN``, ⚠ ``HWLOC_COMPONENTS=-gl``
 在 WSL 必须; ``QDSL_PALACE_NP`` 控 rank 数, 默认 1) → parse_capacitance →
 circuit_model (meta 的 E_J 系频率 Hz = E_J/h, 此处 ×h 转焦耳) →
-``results.yaml`` (hamiltonian + capacitance)。
+``results.yaml`` (hamiltonian + capacitance); meta 有 ``targets:`` 时另有 ``validation`` 段 (只核对整片)。
+
+``converge(meta, out_dir, scales)``: 网格收敛扫描 —— mesh 尺寸同比缩放, 每档整片求解一次,
+``convergence.yaml`` 记最细两档每个 C 元素 / hamiltonian 字段的相对变化 (docs/physics.md §6:
+单网格数字没有误差棒)。
 """
 
 from __future__ import annotations
@@ -28,7 +32,7 @@ import os
 import re
 import subprocess
 import warnings
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from itertools import combinations
 from pathlib import Path
 
@@ -42,7 +46,7 @@ from .mesh import build_mesh
 from .meta import Meta, load_meta
 from .palace import palace_config, parse_capacitance
 
-__all__ = ["build"]
+__all__ = ["build", "converge"]
 
 _PHYS_LINE = re.compile(r'Physical\s+Surface\s*\(\s*"([^"]+)"')
 
@@ -204,6 +208,36 @@ def _results_doc(cap, subsystems, qubits) -> dict:
     return doc
 
 
+def _check_target_names(targets, qubits) -> None:
+    """targets 点的 qubit 名在网格化之前就查 (sung 级求解是小时级, 拼错名不能等解完才 raise)。"""
+    known = {q.get("name") for q in qubits}
+    for c in targets.get("checks", ()):
+        missing = [n for n in ([c["qubit"]] if "qubit" in c else c["pair"]) if n not in known]
+        if missing:
+            raise QuantumDslError(f"build: targets name unknown qubit(s) {missing}; "
+                                  f"circuit_model.qubits has {sorted(known)}")
+
+
+def _validation(doc, targets) -> dict:
+    """targets 对 results 文档逐项核对 → ``validation`` 段 (deviation = 实测/期望 − 1)。
+    未命中只 warn: 偏差是要报的信息, 不是管线错误。"""
+    ham = doc["hamiltonian"]
+    qubits = {q["name"]: q for q in ham["qubits"]}
+    pairs = {frozenset((c["qubit_a"], c["qubit_b"])): c for c in ham["couplings"]}
+    rows = []
+    for c in targets["checks"]:
+        actual = (qubits[c["qubit"]] if "qubit" in c else pairs[frozenset(c["pair"])])[c["field"]]
+        dev = actual / c["expected"] - 1.0
+        rows.append({**c, "actual": actual, "deviation": dev, "pass": abs(dev) <= c["tol"]})
+    missed = [r for r in rows if not r["pass"]]
+    if missed:
+        warnings.warn(f"targets: {len(missed)}/{len(rows)} missed — " + "; ".join(
+            f"{r.get('qubit') or '~'.join(r['pair'])}.{r['field']} = {r['actual']:.4g} vs "
+            f"{r['expected']:.4g} ({r['deviation']:+.1%}, tol ±{r['tol']:.0%})" for r in missed),
+            stacklevel=3)
+    return {"source": targets.get("source"), "passed": not missed, "checks": rows}
+
+
 def _in_scope(items, labels, key) -> list:
     """只留下全部 island / net 都落在 ``labels`` 里的条目 (分块求解用)。"""
     out = []
@@ -243,6 +277,7 @@ def build(meta, out_dir, solve: bool = False, blocks=None) -> dict:
         result["layout"] = lay
     else:
         src, stem, inputs = m.geo_path, m.geo_path.stem, [m.path, m.geo_path]
+    _check_target_names(m.targets, circuit_model.get("qubits") or [])
 
     blocks_spec = (m.extract or {}).get("blocks") or []
     if blocks is not None:
@@ -318,11 +353,16 @@ def build(meta, out_dir, solve: bool = False, blocks=None) -> dict:
             _run_palace(cfg_path)
             cap = parse_capacitance(out / "postpro", labels=mesh.labels)
             result["capacitance"] = cap
+            doc = _results_doc(cap, subsystems, all_qubits)
+            if m.targets:
+                doc["validation"] = _validation(doc, m.targets)
             results_path = out / "results.yaml"
-            results_path.write_text(
-                yaml.safe_dump(_results_doc(cap, subsystems, all_qubits),
-                               sort_keys=False), encoding="utf-8")
+            results_path.write_text(yaml.safe_dump(doc, sort_keys=False, allow_unicode=True),
+                                    encoding="utf-8")
             result["results"] = results_path
+        elif m.targets:
+            warnings.warn("build: meta targets are checked against whole-chip results only — "
+                          "block results carry no validation section", stacklevel=2)
         for entry in result.get("blocks", []) if blocks is not None else []:
             _run_palace(entry["config"])
             bcap = parse_capacitance(out / f"postpro_block_{entry['name']}",
@@ -336,3 +376,46 @@ def build(meta, out_dir, solve: bool = False, blocks=None) -> dict:
                 encoding="utf-8")
             entry["results"] = bres
     return result
+
+
+def _rel(a: float, b: float) -> float:
+    return 0.0 if a == b else (b - a) / abs(b) if b else math.inf
+
+
+def converge(meta, out_dir, scales=(1.0, 0.6)) -> dict:
+    """网格收敛扫描 (issue #26): ``mesh.max_size_um`` / ``min_size_um`` 同乘每个 scale, 每档一次整片
+    ``build(solve=True)`` 落在 ``out/mesh_x<s>/``; 最细两档的相对变化 (细 − 次细)/|细| 逐个 C 元素与
+    hamiltonian 数值字段写进 ``out/convergence.yaml``。返回 ``{runs: [build 结果…], convergence: path, doc}``。
+    代价 = 各档求解之和, 细档单元数 ∝ s⁻³ (0.6 ≈ ×4.6); ``PALACE_BIN=tools/palace_remote.sh`` 同样适用。
+    只缩放尺寸 (h 加密), 边缘细化渐变区 10 → 130 µm 与 order 不动。"""
+    m = meta if isinstance(meta, Meta) else load_meta(meta)
+    ss = sorted({float(s) for s in scales}, reverse=True)
+    if len(ss) < 2 or ss[-1] <= 0:
+        raise QuantumDslError(f"converge: need >= 2 distinct positive scales, got {scales!r}")
+    if not {"max_size_um", "min_size_um"} <= set(m.mesh):
+        raise QuantumDslError("converge: meta.mesh needs max_size_um and min_size_um")
+    out = Path(out_dir)
+    runs, docs, rows = [], [], []
+    for s in ss:
+        sizes = {k: s * float(m.mesh[k]) for k in ("max_size_um", "min_size_um")}
+        r = build(replace(m, mesh={**m.mesh, **sizes}), out / f"mesh_x{s:g}", solve=True)
+        runs.append(r)
+        docs.append(yaml.safe_load(Path(r["results"]).read_text(encoding="utf-8")))
+        rows.append({"scale": s, **sizes, "results": str(r["results"])})
+
+    a, b = docs[-2], docs[-1]
+    doc: dict = {"runs": rows, "compared": ss[-2:], "capacitance": {
+        "labels": b["capacitance"]["labels"],
+        "maxwell_rel_change": [[_rel(x, y) for x, y in zip(ra, rb)] for ra, rb in
+                               zip(a["capacitance"]["maxwell_fF"], b["capacitance"]["maxwell_fF"])]}}
+    if "hamiltonian" in b:
+        ha, hb = a["hamiltonian"], b["hamiltonian"]
+        doc["hamiltonian"] = {
+            "qubits": {qb["name"]: {k: _rel(qa[k], v) for k, v in qb.items() if isinstance(v, float)}
+                       for qa, qb in zip(ha["qubits"], hb["qubits"])},
+            "couplings": [{"pair": [cb["qubit_a"], cb["qubit_b"]],
+                           **{k: _rel(ca[k], cb[k]) for k in ("beta", "g_MHz")}}
+                          for ca, cb in zip(ha["couplings"], hb["couplings"])]}
+    path = out / "convergence.yaml"
+    path.write_text(yaml.safe_dump(doc, sort_keys=False, allow_unicode=True), encoding="utf-8")
+    return {"runs": runs, "convergence": path, "doc": doc}

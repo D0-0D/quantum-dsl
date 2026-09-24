@@ -6,7 +6,7 @@ import math
 
 import pytest
 
-from conftest import EXAMPLES, TWO_PADS_META
+from conftest import EXAMPLES, SUNG_META, TWO_PADS_META
 
 
 # ---------------------------------------------------------------- 单位
@@ -88,6 +88,29 @@ def test_load_meta_rejects_unknown_key_and_wrong_schema(tmp_path):
                    encoding="utf-8")
     with pytest.raises(QuantumDslError):
         load_meta(bad)
+
+
+def test_load_meta_targets_flattened_and_strict(tmp_path):
+    """契约「targets」: 展平成 (对象, 字段) 条目, tol 只收百分比; 含糊或拼错一律 raise。"""
+    from quantum_dsl import QuantumDslError, load_meta
+    t = load_meta(SUNG_META).targets
+    assert t["checks"][0] == {"qubit": "QB1", "field": "C_sigma_fF", "expected": 99.3, "tol": 0.08}
+    assert t["checks"][-1] == {"pair": ["QB2", "CPLR"], "field": "beta", "expected": 0.0364, "tol": 0.2}
+    assert load_meta(TWO_PADS_META).targets == {}
+    bad = tmp_path / "bad.meta.yaml"
+    for body in ("qubits: {A: {C_sigma_fF: 25, tol: 8}}",         # 裸数 tol: 8% 还是 800%?
+                 "qubits: {A: {C_sigma_fF: 25}}",                  # 没 tol
+                 "qubits: {A: {C_sigma: 25, tol: 8%}}",            # 字段名不带单位 = 拼错
+                 "qubits: {A: {C_sigma_fF: 0, tol: 8%}}",          # 相对偏差无定义
+                 "qubits: {A: {C_sigma_fF: 25fF, tol: 8%}}",       # 单位在键名里, 值是裸数
+                 "couplings: [{pair: [A], beta: 0.1, tol: 8%}]",
+                 "couplings: [{pair: [A, B], C_sigma_fF: 25, tol: 8%}]",
+                 "qubit: {A: {C_sigma_fF: 25, tol: 8%}}",
+                 "source: only"):
+        bad.write_text(f"schema: quantum-dsl/meta/1\ngeo: x.geo\ntargets: {{{body}}}\n",
+                       encoding="utf-8")
+        with pytest.raises(QuantumDslError, match="targets"):
+            load_meta(bad)
 
 
 # ---------------------------------------------------------------- cells

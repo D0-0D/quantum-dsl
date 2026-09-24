@@ -123,8 +123,8 @@ Physical Surface("metal::1::QB1_t::pad") = { sret };
 
 ## 3. `*.meta.yaml` 字段参考
 
-顶层只允许这 12 个键，出现别的键（typo）直接 raise：
-`schema` `geo` `layout` `layers` `materials` `airbox` `mesh` `solver` `gds` `circuit_model` `extract` `subsystems`。
+顶层只允许这 13 个键，出现别的键（typo）直接 raise：
+`schema` `geo` `layout` `layers` `materials` `airbox` `mesh` `solver` `gds` `circuit_model` `extract` `subsystems` `targets`。
 
 ### 3.1 骨架（`examples/two_pads.meta.yaml`）
 
@@ -181,6 +181,11 @@ circuit_model:
 | `circuit_model.qubits[].squid`                | `{E_J1: 46GHz, E_J2: 25GHz, flux: 0.0}`      | 三选一                                | 非对称 SQUID，`flux` = Φ/Φ₀（无量纲，默认 0），两支都必填                                                                                                                                                                    |
 | `extract.blocks[]`                            | `{name: A, components: [A, ...]}`            | 可选                                  | 分块提取（§3.3）：每块只含这些 component 的 Physical 组                                                                                                                                                                          |
 | `subsystems`                                  | list                                           | 可选                                  | 记账用：**原样透传**进 `results.yaml` 的 `subsystems` 段，不驱动任何计算（TL 谐振器 / χ 的计算器 `resonator_lumped_lc` / `dispersive_shift_hz` 需手动调用）。版图路线的定长路由会往这里**追加**条目（§4.6） |
+| `targets.source` | str | 可选 | 期望值出处，原样进 `validation.source` |
+| `targets.qubits.<name>` | `{C_sigma_fF: 99.3, tol: 8%}` | 与 couplings 至少一个 | 键 = `results.yaml` qubit 的数值字段（`C_sigma_fF` `E_C_GHz` `E_J_GHz` `f01_GHz` `anharmonicity_MHz` `EJ_over_EC`），值裸数（单位在键名里），非零；`tol` 必填且只收百分比字串 |
+| `targets.couplings[]` | `{pair: [QB1, CPLR], beta: 0.0364, tol: 20%}` | 同上 | 字段 `beta` / `g_MHz`；pair 两个不同 qubit 名 |
+
+`targets:`（issue #23）：`build(solve=True)` 在整片 `results.yaml` 追加 `validation` 段（每项 expected / actual / deviation = 实测/期望 − 1 / pass），未命中发 `UserWarning` 不 raise；qubit 名拼错在网格化之前 raise；`blocks=` 求解不核对。例子：`examples/sung_2021_device.meta.yaml` 文末。
 
 版图路线下 meta 手写的 `circuit_model.qubits` 与编排器生成的合并：同名条目必须**逐字段一致**，否则 raise（要么删掉 meta 里的，要么改成一致）。
 

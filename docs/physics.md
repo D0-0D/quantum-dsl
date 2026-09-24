@@ -137,6 +137,7 @@ two_pads 实测（Palace 0.16，接地盒）。"偏差"列以 **v3 旧 golden** 
   真实器件膜厚 100–200 nm，(a) 才是更忠实的模型。
 - C′ 离旧 golden 2.87% 不是 (a) 的缺陷，而是旧 golden 绑定了 v3 的板厚 + 粗网格两个工件偏置——这正是 §7 重钉的动机。
 - **报任何 C 值都应给两档网格的相对变化**——单网格数字在复杂几何上带 6–21% 不确定度（旧仓 sung / Elmer 实测）。
+  工具 = `converge(meta, out, scales)`（issue #26）；two_pads 80/8 → 40/4 实测（2026-09-24）：C_AA −1.55% / C_BB −1.65% / C_AB +3.03%，细档与 golden 逐位相同。
 - **order 2 多 rank 在干净环境无恙**（64 核 / 128 G 裸机实测）：C′ 同款 20/2 网格（~1.7M 未知量）在 spack 全新构建
   的 Palace 0.16 + openmpi 5.0.10 上 np = 4 与 np = 32 均 rc = 0，C 一致到 1e-12 且与 WSL 实测逐位吻合——v3 issue #22
   的"静默掉 rank"是运行环境 / 构建问题，不是 Palace bug。

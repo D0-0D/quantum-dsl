@@ -1,6 +1,6 @@
 # quantum_dsl — Current Status
 
-每个 session 开工前读这份 + [`plan.md`](plan.md)。快照 **2026-09-18**。硬约束与跑法在 `CLAUDE.md`, 这里不重复。
+每个 session 开工前读这份 + [`plan.md`](plan.md)。快照 **2026-09-24**。硬约束与跑法在 `CLAUDE.md`, 这里不重复。
 
 ## 现在有什么
 
@@ -18,11 +18,12 @@
   正对共线、lead: 0 且无 region 时与 `cpw_meander` 逐段相同。设计稿 `docs/design/auto-route.md`（v2, 含五个已定决定与天花板）, 例子 `cpw_route_demo`（四对 xmon: R1 横平竖直不等腿 / R2 拼接区域绕路 / R3 自由角 / R4 `R: auto` → 70, 一张图四条路）, 测试 `test_route.py` 11 条; 调试画廊 `tools/route_gallery.py` 30 场景。
 - **Chen 2025 十字例子**（2026-09-18, `examples/chen_2025_cross`）: 中心 Q11 四爪 + 4 臂比特各一爪 + 4 耦合器 = 18 导体整片一次解; 中心 = 真晶格口径 ↔ 实测 α, 臂 = SI 孤立 QCQ 口径。
   上云 (c24a1) 三档 d: **d = 4 µm 时中心 α = −190.7 MHz 命中实测 −192 ± 6**; 环境效应只 −2.5%（`docs/physics.md` §13.1）。
+- **`targets:` + 网格收敛**（2026-09-24, issue #23 / #26）: meta `targets:` 声明期望的 C_Σ / E_C / f01 / β / g + 百分比容差 → 整片 `results.yaml` 的 `validation` 段报偏差（未命中 warn, 拼错名网格化前 raise）; sung 的论文判据已搬进其 meta。`converge(meta, out, scales)` 各档同比缩放 mesh 尺寸整片求解, `convergence.yaml` = 最细两档相对变化; two_pads 80/8 → 40/4: 对角 −1.6%、非对角 +3.0%。#25（Elmer 后端）已关: 结论在 physics §12。
 - **已知偏差**: QCQ 块解删掉块内比特伸向块外耦合器的爪 → 只影响多爪比特, 且只有 −2.5% E_C（十字实测, §13.1）; 互容仍是 SI 的 0.4–0.5 倍, 与 d / 环境无关, 是几何（缝 / 间隙）的账。
 
 ## 怎么跑
 
-- 全套: `~/miniconda3/envs/qdsl313/bin/python -m pytest tests/ -q` → **51 passed / 2 skipped**（~3 min; live 两条要 Palace）。
+- 全套: `~/miniconda3/envs/qdsl313/bin/python -m pytest tests/ -q` → **54 passed / 3 skipped**（~3 min; live 两条要 Palace）。
 - Chen: `compile_layout` 0.7 s、`build_gds` 1 s、单块网格 22 s。只要块就 `build(m, out, solve=True, blocks=["H01"])`（本机 8 rank ~10 min, 75 万 tets order 2）;
   不带 `blocks=` 会先给全片出 ~9M tets 网格。PNG 在 gitignore 的 `build/` 下, 本地跑一次即有。
 - 上云跑法（2026-09-18 实测, c24a1 64c/128G 有 spack Palace 0.16、无 gmsh）: 本机 `build(..., solve=False)` 出 msh + json → `rr -p` 推 → 远端 `palace -np N cfg`（`OMPI_ALLOW_RUN_AS_ROOT=1`, mpirun 在 spack openmpi bin）→ `rr -f` 拉 `postpro/` → `parse_capacitance` + `solve_circuit_model`。
