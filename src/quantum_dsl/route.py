@@ -10,6 +10,8 @@
   - ``axis`` = 角度 (deg, 默认 0 = 横平竖直): **曼哈顿框架** —— 两端各用一段端弧转到框架的四个方向之一 (≤ 5 个位姿 / 端), 中间用
     直 / Z / U / L / 三折模板 (90° 圆角; 自由参数取居中 / 贴紧, 再加 region 网格格子中心的投影 —— 中段能挑走廊) 相连; 全部候选按 **(转弯数, 长度)** 排序 —— 曼哈顿单调路径多拐一次反而短
     (2 − π/2)R, 按长度排会选三折不选 L。
+  - 模板全部不行 → **轨道图**兜底 (``_Tracks``): 格子中心线 + 矩形边内缩 (半宽 + R) 的线组成的 Hanan 式网格上, (节点, 朝向) 状态的
+    (转弯数, 长度) 字典序 Dijkstra, 直段 ≥ 2R (首末 ≥ R) —— 任意折数 (S 形 / 迷宫走廊); 排序键前加一级, 模板能解的场景不变。
   - ``axis="free"``: v1 的 Dubins CSC 四型 (LSL / RSR / LSR / RSL), 一条中间直段。
   - 出区域 (含总宽/2) 的骨架丢弃。同 (转弯数, 长度) 的一组骨架由填充结果 (腿少、余量大) 定胜负。
 * **填充** (给了 ``length``): 在骨架的直段上放蛇形块 (块首 90° 弧 + n 条垂直腿 + 腿间 180° 弯 + 块尾 90° 弧)。每个弯 k 有自己的
@@ -28,13 +30,14 @@
 
 原语 (与 ``LIB_CPW_ARC`` 同约定, 每段弧 |a1 − a0| ≤ π/2, 长弧拆段): ``("line", x1, y1, x2, y2)`` / ``("arc", cx, cy, R, a0, a1)`` (a0 → a1 增 = 逆时针)。
 
-# ponytail: 区域 = 矩形并集, 不做多边形 (升级: 多边形边当直线障碍, 外框检查改 point-in-polygon); 曼哈顿模板到三折为止 (升级: region 网格上
-#   的最少转弯 Dijkstra), 自由参数只试规则值 + 格子中心; 多段分摊按容量比例顺序放、不做联合优化; 不做 CCC 型 Dubins / taper / 分端 lead;
+# ponytail: 区域 = 矩形并集, 不做多边形 (升级: 多边形边当直线障碍, 外框检查改 point-in-polygon); 曼哈顿模板到三折为止, 其外由轨道图
+#   Dijkstra 兜底 (每对端弧只一条最优, 不做 k 最优; 每次都算, 没做成懒求), 自由参数只试规则值 + 格子中心; 多段分摊按容量比例顺序放、不做联合优化; 不做 CCC 型 Dubins / taper / 分端 lead;
 #   不同 cpw_route 之间不互避 (重叠由短路检查 raise)。
 """
 
 from __future__ import annotations
 
+import heapq
 import math
 from itertools import combinations
 
@@ -409,7 +412,7 @@ def _dubins_csc(start, end, R) -> list[tuple]:
     return sorted(out, key=lambda c: c[0])
 
 
-def _dubins_skeletons(s2, e2, R) -> list[tuple[str, list[tuple]]]:
+def _dubins_skeletons(s2, e2, R) -> list[tuple[str, list[tuple], int]]:
     out = []
     for _, kind, (cx, cy, a0, a1), seg, (ex, ey, b0, b1) in _dubins_csc(s2, e2, R):
         parts: list[tuple] = []
@@ -418,7 +421,7 @@ def _dubins_skeletons(s2, e2, R) -> list[tuple[str, list[tuple]]]:
         parts += _line(*seg)
         if abs(b1 - b0) > _EPS:
             parts.append(("arc", ex, ey, R, b0, b1))
-        out.append((kind, parts))
+        out.append((kind, parts, 0))
     return out
 
 
@@ -520,21 +523,109 @@ def _fillet_path(P1, corners, P2, R):
     return parts
 
 
-def _manhattan_skeletons(s2, e2, R, alpha, reg) -> list[tuple[str, list[tuple]]]:
+class _Tracks:
+    """region 的轨道图 (track graph, 即 Hanan 网格的走廊版): 框架内的横 / 竖轨道 = 格子中心线 + 贴矩形边内缩 (半宽 + R) 的线 (+ 每次查询时
+    两端位姿所在的线); 相邻交点之间的边可走 = 该段直线 (含半宽) 在 region 内 (缓存)。最少转弯 Dijkstra 在上面跑, 给任意折数的骨架拐角。"""
+
+    def __init__(self, reg, alpha, R):
+        self.reg, self.R = reg, R
+        self.c, self.s = math.cos(alpha), math.sin(alpha)
+        xs = sorted({v for r in reg.rects for v in (r[0], r[2])})
+        ys = sorted({v for r in reg.rects for v in (r[1], r[3])})
+        pts = [((xs[i] + xs[i + 1]) / 2, (ys[j] + ys[j + 1]) / 2) for i in range(len(xs) - 1) for j in range(len(ys) - 1)]
+        off = reg.inset + R
+        pts += [(x + sx * off, y + sy * off) for r in reg.rects for x, sx in ((r[0], 1), (r[2], -1))
+                for y, sy in ((r[1], 1), (r[3], -1))]
+        self.us = {round(u, 9) for u, _ in map(self.to_frame, pts)}
+        self.vs = {round(v, 9) for _, v in map(self.to_frame, pts)}
+        self._ok: dict = {}
+
+    def to_frame(self, p):
+        return p[0] * self.c + p[1] * self.s, -p[0] * self.s + p[1] * self.c
+
+    def to_chip(self, u, v):
+        return u * self.c - v * self.s, u * self.s + v * self.c
+
+    def _free(self, a, b) -> bool:
+        key = (a, b) if a <= b else (b, a)
+        if key not in self._ok:
+            self._ok[key] = self.reg.violation([("line", *self.to_chip(*a), *self.to_chip(*b))]) is None
+        return self._ok[key]
+
+    def corners(self, P1, P2, k1, k2) -> list[tuple[float, float]] | None:
+        """P1 (朝框架方向 k1) → P2 (朝 k2) 的最少转弯、其次最短的拐角序列 (芯片坐标); 无路 → None。
+        状态 = (交点, 朝向); 一步 = 沿朝向直走到同一轨道上的某个交点再转 ±90° —— 直段长须 ≥ 2R (首段 / 末段 ≥ R), 圆角才放得下。"""
+        (u1, v1), (u2, v2) = self.to_frame(P1), self.to_frame(P2)
+        us = sorted(self.us | {round(u1, 9), round(u2, 9)})
+        vs = sorted(self.vs | {round(v1, 9), round(v2, 9)})
+        start, goal = (round(u1, 9), round(v1, 9)), (round(u2, 9), round(v2, 9))
+        dirs = ((1, 0), (0, 1), (-1, 0), (0, -1))
+        R = self.R
+        best = {(start, k1, 0): (0, 0.0)}
+        prev: dict = {}
+        heap = [(0, 0.0, start, k1, 0)]                  # (转弯数, 长度, 点, 朝向, 已转过没有)
+        while heap:
+            t, L, p, k, turned = heapq.heappop(heap)
+            if best.get((p, k, turned), (math.inf,)) < (t, L):
+                continue
+            if turned == 2:                              # 终点出堆才算数 (先发现的不一定最短)
+                out, node = [], prev[(p, k, 2)]
+                while node in prev:
+                    out.append(node[0])
+                    node = prev[node]
+                return [self.to_chip(*q) for q in reversed(out)]
+            du, dv = dirs[k]
+            line = us if du else vs
+            i = line.index(p[0] if du else p[1])
+            step = du or dv
+            j, a = i + step, p
+            while 0 <= j < len(line):
+                b = (line[j], p[1]) if du else (p[0], line[j])
+                if not self._free(a, b):
+                    break
+                a = b
+                d = abs(line[j] - line[i])
+                if b == goal and k == k2 and (d >= R - _TOL if turned else True):
+                    key, cost = (b, k, 2), (t, L + d)
+                    if cost < best.get(key, (math.inf,)):
+                        best[key] = cost
+                        prev[key] = (p, k, turned)
+                        heapq.heappush(heap, (t, L + d, b, k, 2))
+                if d >= (2 * R if turned else R) - _TOL:
+                    for k_new in ((k + 1) % 4, (k + 3) % 4):
+                        key, cost = (b, k_new, 1), (t + 1, L + d)
+                        if cost < best.get(key, (math.inf,)):
+                            best[key] = cost
+                            prev[key] = (p, k, turned)
+                            heapq.heappush(heap, (t + 1, L + d, b, k_new, 1))
+                j += step
+        return None
+
+
+def _manhattan_skeletons(s2, e2, R, alpha, reg) -> list[tuple[str, list[tuple], int]]:
     H = [alpha + k * _HALF_PI for k in range(4)]
     centres: list[tuple[float, float]] = []
+    tracks = None
     if reg is not None:                                # region 网格各格子的中心: 中段直段的候选位置 (走廊)
         xs = sorted({v for r in reg.rects for v in (r[0], r[2])})
         ys = sorted({v for r in reg.rects for v in (r[1], r[3])})
         centres = [((xs[i] + xs[i + 1]) / 2, (ys[j] + ys[j + 1]) / 2) for i in range(len(xs) - 1) for j in range(len(ys) - 1)]
+        tracks = _Tracks(reg, alpha, R)
     out = []
     for parts1, P1 in _end_arcs(s2, H, R):
         for parts2, P2 in _end_arcs(e2, H, R, arrive=True):
-            for corners in _connectors(P1, P2, R, centres):
+            cands = [(0, c) for c in _connectors(P1, P2, R, centres)]
+            if tracks is not None:                     # 轨道图上的最少转弯路 (任意折数): 第 1 级, 模板全部不行才轮到它
+                k1, k2 = (round(((P[2] - alpha) % _TWO_PI) / _HALF_PI) % 4 for P in (P1, P2))
+                got = tracks.corners(P1, P2, k1, k2)
+                if got is not None:
+                    cands.append((1, got))
+            for stage, corners in cands:
                 mid = _fillet_path(P1, corners, P2, R)
                 if mid is not None:
                     parts = parts1 + mid + parts2
-                    out.append((f"{_turns(parts)}-turn path via {len(corners)} corner(s)", parts))
+                    via = "track-graph " if stage else ""
+                    out.append((f"{_turns(parts)}-turn {via}path via {len(corners)} corner(s)", parts, stage))
     return out
 
 
@@ -926,18 +1017,18 @@ def _plan_impl(start, end, R, length, region, n_legs, width, lead, axis, with_hi
     reg = _Region(rects, width / 2) if rects is not None else None
     clr = 2 * R
     skels = _dubins_skeletons(s2, e2, R) if free_axis else _manhattan_skeletons(s2, e2, R, math.radians(axis), reg)
-    ranked = sorted(((_turns(p), path_length(p), lab, p) for lab, p in skels), key=lambda c: (c[0], c[1]))
+    ranked = sorted(((st, _turns(p), path_length(p), lab, p) for lab, p, st in skels), key=lambda c: c[:3])
 
     errors: list[str] = []
     k = 0
     while k < len(ranked):                                             # 同 (转弯数, 长度) 的一组由填充结果定胜负
         group = [ranked[k]]
-        while k + len(group) < len(ranked) and ranked[k + len(group)][0] == group[0][0] \
-                and abs(ranked[k + len(group)][1] - group[0][1]) < _TOL:
+        while k + len(group) < len(ranked) and ranked[k + len(group)][:2] == group[0][:2] \
+                and abs(ranked[k + len(group)][2] - group[0][2]) < _TOL:
             group.append(ranked[k + len(group)])
         k += len(group)
         best = None
-        for turns, skel_len, lab, parts in group:
+        for _, turns, skel_len, lab, parts in group:
             full = pre + parts + post
             label = f"{lab}, {skel_len + path_length(pre) + path_length(post):.6g} um"
             sk = _emit(full)

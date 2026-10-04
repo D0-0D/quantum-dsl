@@ -129,6 +129,21 @@ def test_plan_cpw_union_region_detours_and_gap_check():
         plan_cpw(A_START, A_END, region=[[180, -720, 700, 100], [750, -720, 1000]], **kw)
 
 
+def test_plan_cpw_min_bend_tracks_beyond_three_folds():
+    """契约「自动布线」 轨道图: S 形走廊 (宽 300, 两块缝挡着) 要 4 个内部拐角, 模板 (≤ 三折) 覆盖不到 → 轨道图最少转弯 Dijkstra 给出;
+    最短骨架恰 4 转弯、落在并集内不碰缝; 定长 8000 在多段上分摊、记账 == 目标、G1。"""
+    from quantum_dsl.route import path_length, plan_cpw
+    maze = [[-150, -150, 1000, 150], [700, -150, 1000, 850], [-150, 550, 1000, 850], [-150, 550, 150, 1550], [-150, 1250, 1000, 1550]]
+    start, end = (0, 0, 0.0), (900, 1400, 0.0)
+    kw = dict(R=R, width=W, lead=40, region=maze)
+    area = _union(maze).buffer(1e-3)
+    short = plan_cpw(start, end, **kw)
+    assert _turns(short) == 4 and _strip(short, W / 2).within(area)
+    prims = plan_cpw(start, end, length=8000, **kw)
+    _assert_g1(prims, start, end)
+    assert path_length(prims) == pytest.approx(8000, rel=1e-12) and _strip(prims, W / 2).within(area)
+
+
 def test_plan_cpw_rotated_frame_self_clearance_and_axis_errors():
     """契约「自动布线」 R4 + 自身净距: axis: 45 → 全部直段方向 ∈ {45°, 135°}; U 形 (两口同向、目标在后方) 的蛇形腿与引出 / 另一臂
     保持 ≥ 2R 净距 (密采两两距离, 只看相隔 ≥ 3 段的原语); axis 非数值非 free raise。"""
