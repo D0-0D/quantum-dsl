@@ -17,6 +17,7 @@
 | [`design/component-library.md`](design/component-library.md) | **元件库设计稿 v3.1**：为什么是「一个 gmsh 模型 + `.geo`/模板混用 + 层按映射重定位」，查实（业界端口契约、等效长度物理、gmsh fork 评估、混用探针）与实现偏差 | 想改编排器 / 加模板之前 |
 | [`design/auto-route.md`](design/auto-route.md) | **自动布线设计稿**（一页）：`cpw_route` / `planner: cpw` 的输入、输出原语、Dubins CSC + 定长蛇形算法、限制、与手写 `.geo` 的分工、退化一致性锚 | 用 `cpw_route` 或改 `route.py` 之前 |
 | [`report/`](report/README.md) | **汇报材料**：当前阶段（2026-09-12 → 09-18）四篇：01 展示用 · 02 备问用（编排器 / 自动布线 / 分块与上云代码逐段讲）· 03 现场演示手册（Demo A–G + 故障预案）· 04 Chen 2025 论文验证闭环（实测 α 命中 d = 4 µm、逐项偏差表）；v4.0 阶段四篇在 `report/Aug27/`（含 sung 论文验证闭环） | 对外汇报、现场演示、想知道对论文的预测精度 |
+| [`related-work.md`](related-work.md) | **同类工作与定位（结论）**（2026-09-27 调研）：「国内没有全链路」不成立、DSL 是站得住的差异点、发表需补的两样、下一步 feature；完整调研与 10 篇外部工具引用文档在分支 `related-work` | 对外讲定位、写论文 Related Work、排下一步 |
 | [`../SPEC.md`](../SPEC.md) | **契约**：目标与边界、Layer-1 词汇、公共 API 表（条目 ↔ 测试）、验收 | 加需求 / 改测试时 |
 | [`../examples/README.md`](../examples/README.md) | 例子清单、跑法、预期输出、怎么写自己的例子 | 第一次跑 |
 
