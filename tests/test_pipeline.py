@@ -5,6 +5,7 @@ GDS、mesh、Palace config 与 CSV 解析、build 编排、
 from __future__ import annotations
 
 import hashlib
+import math
 import os
 import subprocess
 import sys
@@ -226,3 +227,75 @@ def test_converge_scales_mesh_and_diffs_finest_two(tmp_path, monkeypatch):
     assert set(doc["hamiltonian"]["couplings"][0]) == {"pair", "beta", "g_MHz"}
     with pytest.raises(QuantumDslError, match="distinct positive scales"):
         converge(TWO_PADS_META, tmp_path, scales=(1.0, 1))
+
+
+def _meta_copy(tmp_path, name, **extra) -> Path:
+    """examples 里的 meta 复制到 tmp (layout / geo 改绝对路径) 并加键。"""
+    doc = yaml.safe_load((EXAMPLES / name).read_text(encoding="utf-8"))
+    for k in ("layout", "geo"):
+        if k in doc:
+            doc[k] = str(EXAMPLES / doc[k])
+    doc.update(extra)
+    p = tmp_path / name
+    p.write_text(yaml.safe_dump(doc, allow_unicode=True), encoding="utf-8")
+    return p
+
+
+def test_readout_resonator_generated_from_layout_and_checked(tmp_path, monkeypatch):
+    """契约「读出链路」: 版图里 λ/4 定长路由 R1 (net F0) 自动成 resonator 条目 (f_r = 画长的裸频率, Z0 = 截面自洽集),
+    整片求解出 hamiltonian.resonators / readout; targets 的 resonators / readout 段按名核对; 拼错腔名网格化前 raise。"""
+    from quantum_dsl import QuantumDslError, build, compile_layout, load_meta, solve_circuit_model
+    from quantum_dsl.build import _resonators_from
+    mat = [[700.0, -4.0], [-4.0, 94.0]]                      # 行序 = sorted: F0, Q1
+    _fake_palace(monkeypatch, lambda run: mat)
+    (res,) = _resonators_from(compile_layout(load_meta(EXAMPLES / "xmon_readout.meta.yaml")).subsystems)
+    assert res["name"] == "R1" and res["net"] == "F0" and res["mode"] == "quarter_wave"
+    assert res["f_r"] == pytest.approx(7e9) and res["Z0"] == pytest.approx(51.046, rel=1e-4)
+    ref = solve_circuit_model(("F0", "Q1"), mat, [{"name": "Q1", "islands": ["Q1"], "E_J": 12.2e9 * 6.62607015e-34}],
+                              resonators=[res])
+    f_r, chi = ref.resonators[0].f_r_GHz, ref.readout[0].chi_MHz
+    meta = _meta_copy(tmp_path, "xmon_readout.meta.yaml", targets={
+        "resonators": {"R1": {"f_r_GHz": f_r, "tol": "0.1%"}},
+        "readout": [{"pair": ["Q1", "R1"], "chi_MHz": chi, "tol": "0.1%"}]})
+    r = build(meta, tmp_path / "out", solve=True)
+    doc = yaml.safe_load(Path(r["results"]).read_text(encoding="utf-8"))
+    (rr,), (ro,) = doc["hamiltonian"]["resonators"], doc["hamiltonian"]["readout"]
+    assert rr["name"] == "R1" and rr["net"] == "F0" and rr["f_r_GHz"] < rr["f_bare_GHz"] == pytest.approx(7.0)
+    assert rr["kappa_MHz"] == 0.0 and ro["T1_purcell_us"] == math.inf       # 没有 port = 没有衰减通道
+    assert ro["qubit"] == "Q1" and ro["chi_MHz"] < 0
+    v = doc["validation"]
+    assert v["passed"] and [c.get("resonator") or c.get("readout") for c in v["checks"]] == ["R1", ["Q1", "R1"]]
+    (tmp_path / "t").mkdir()
+    typo = _meta_copy(tmp_path / "t", "xmon_readout.meta.yaml",
+                      targets={"resonators": {"R9": {"f_r_GHz": 7, "tol": "1%"}}})
+    with pytest.raises(QuantumDslError, match=r"unknown resonator\(s\) \['R9'\]"):
+        build(typo, tmp_path / "typo", solve=True)
+
+
+def test_tune_closes_the_loop_and_emits_a_plain_config(tmp_path, monkeypatch):
+    """契约「tune」: 几何旋钮 A.w (pad 模板参数, 缺省 = 模板默认 80) 按比例律 C_Σ ∝ w (law 1) + 对数割线迭代,
+    结旋钮 A.L_J (meta qubit) 在缓存的 C 上二分求根命中 f01_exact; 终版 = 普通 layout + meta (可再编译), 带 results / tune.yaml。
+    桩: C_AA = 0.3·w + 2 fF, C_AB = −2, C_BB = 25 ⇒ C_Σ,A = C_AA − 4/25; 目标 30 fF ⇒ w* = 93.87 µm。
+    律 1 一步到 92.88 (C_Σ −1.0%, 未过 0.5%), 观测指数 0.933 再一步命中 ⇒ 3 次 FEM。"""
+    from quantum_dsl import compile_layout, load_meta, tune
+
+    def maxwell(run):
+        lay = yaml.safe_load((tmp_path / "out" / run / "two_pads.layout.yaml").read_text(encoding="utf-8"))
+        w = next(s for s in lay["steps"] if s["name"] == "A").get("params", {}).get("w", 80)
+        return [[0.3 * w + 2, -2.0], [-2.0, 25.0]]
+    _fake_palace(monkeypatch, maxwell)
+    meta = _meta_copy(tmp_path, "two_pads_layout.meta.yaml",
+                      targets={"qubits": {"A": {"C_sigma_fF": 30.0, "f01_exact_GHz": 6.0, "tol": "0.5%"}}},
+                      tune={"knobs": [{"param": "A.w", "target": "A.C_sigma_fF", "law": 1, "bounds": [40, 200]},
+                                      {"param": "A.L_J", "target": "A.f01_exact_GHz"}]})
+    r = tune(meta, tmp_path / "out")
+    assert r["converged"] and r["iterations"] == 3
+    assert [h["knobs"]["A.w"] for h in r["history"]] == pytest.approx([80, 92.88, 93.87], abs=0.01)
+    final = load_meta(r["meta"])
+    a = next(s for s in yaml.safe_load(r["layout"].read_text(encoding="utf-8"))["steps"] if s["name"] == "A")
+    assert a["params"]["w"] == pytest.approx(93.87, abs=0.01)
+    assert compile_layout(final).qubits == [] and final.circuit_model["qubits"][0]["L_J"] != 1e-8
+    doc = yaml.safe_load(r["results"].read_text(encoding="utf-8"))
+    qa = doc["hamiltonian"]["qubits"][0]
+    assert qa["f01_exact_GHz"] == pytest.approx(6.0, rel=1e-6) and doc["validation"]["passed"]
+    assert yaml.safe_load(r["tune"].read_text(encoding="utf-8"))["converged"] is True

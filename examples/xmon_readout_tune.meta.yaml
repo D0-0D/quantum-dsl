@@ -1,0 +1,33 @@
+# xmon_readout_tune.meta.yaml — FEM 在环综合演示: 同一 xmon_readout 版图, 声明 4 个目标 + 4 个旋钮 (方阵), tune() 迭代到全部命中,
+# 产出一份普通的 layout + meta (配置即综合输出)。跑法: quantum_dsl.tune("examples/xmon_readout_tune.meta.yaml", "build/xr_tune")。
+#   几何旋钮 (每轮一次整片 FEM): Q1.arm_L → α (E_C ∝ 1/C, C 随臂长涨: law -1)、Q1.ro_gap → χ (χ ∝ g² ∝ C_g², C_g 随间距降: law -1)、
+#            R1.length.f_r → 负载后 f_r (腔长 ∝ 1/f_r 设计值: law 1)。律只需趋势对, 第二轮起换成观测指数 (对数割线)。
+#   结旋钮 (缓存的 C 上二分, 不跑 FEM): Q1.E_J → f01_exact。
+# 读出腔 R1 由版图 λ/4 定长路由自动生成 (net F0, f_r = 画长裸频率, Z0 = 截面自洽集); 没有馈线 → κ = 0, 不设 κ 目标。
+# 网格刻意粗 (演示件, 本机 8 rank 每轮 ~15 s); 报数前做 converge()。
+schema: quantum-dsl/meta/1
+
+layout: xmon_readout.layout.yaml
+layers:
+  m1: {kind: conductor, gds: [1, 0]}
+  jj: {kind: junction,  gds: [20, 0]}
+
+materials:
+  substrate: {eps_r: 11.45, thickness_um: 500}
+airbox: {top_um: 600, bottom_um: 800, side_um: 200}
+mesh: {max_size_um: 200, min_size_um: 20}
+solver: {type: electrostatic, order: 2, outer_boundary: open}
+
+targets:
+  source: 演示规格 (非论文值)
+  qubits: {Q1: {anharmonicity_exact_MHz: -250, f01_exact_GHz: 4.8, tol: 1%}}
+  resonators: {R1: {f_r_GHz: 7.2, tol: 0.2%}}
+  readout: [{pair: [Q1, R1], chi_MHz: -0.2, tol: 3%}]
+
+tune:
+  knobs:
+    - {param: Q1.arm_L, target: Q1.anharmonicity_exact_MHz, law: -1, bounds: [150, 500]}
+    - {param: Q1.ro_gap, target: Q1~R1.chi_MHz, law: -1, bounds: [4, 60]}
+    - {param: R1.length.f_r, target: R1.f_r_GHz, law: 1}
+    - {param: Q1.E_J, target: Q1.f01_exact_GHz}
+  max_iter: 8

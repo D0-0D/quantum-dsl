@@ -24,6 +24,18 @@
   (``not (isfinite(v) and v>0)`` — nan 过得了 ``<=0``); 未被认领的 label
   禁止静默接地 (v3 实案: 静默接地删掉 25 MHz 中介耦合 / C_Σ 错 1.70×)。
 
+* **无结导体** (2026-10-04, docs/physics.md §8.1) 必须显式声明处置, 否则照旧 raise:
+  ``floating`` = 电中性浮岛, 先 Schur 消元; ``ports`` = 外接负载 R 的导体 (馈线 / 驱动线),
+  AC 接地后删行列, 但它与各模的互容 C_kp 留作衰减: ``Γ = ω²·Σ_p C_kp²·R_p / C_eff``
+  (Göppl 2008 Eq. 14–21 的 Norton 等效, ωC_κR ≪ 1); ``resonators`` = 传输线谐振腔的集总 LC 节点:
+  ``(C_r, L_r) = resonator_lumped_lc(f_bare, Z0, mode)``, 网格里画的是整条线 (``drawn: full``) 时
+  **用 C_r 换掉该 net 的 FEM 对地电容** (互容全留), 只画耦合爪 (``drawn: claw``) 时 C_r 叠加。
+  腔与 qubit 同进逆电容 → 负载后 f_r = f_bare·√(C_r/C_eff)、g_qr 与 q–q 同式 (β 同口径)、
+  χ = dispersive_shift_hz (精确 f01/f12)、κ/2π、Purcell ``Γ_P = κ·(g/Δ)²`` (Sete 2015 Eq. 2, 单模)。
+* **精确 transmon 能级** (Koch 2007 Eq. 2.1): 电荷基 (2N+1) 三对角 ``4E_C n² − E_J/2 (|n⟩⟨n+1| + h.c.)``,
+  n_g = 0, N = 30 → ``f01_exact`` / ``α_exact`` (α = −E_C 只是领头阶, E_J/E_C = 50 时精确值 −1.15 E_C)。
+  渐近字段 ``f01_GHz`` / ``anharmonicity_MHz`` 是契约 golden, 不改; g 仍钉渐近 f01 支。
+
 单位: 电容矩阵入参 **fF**; 结参数 **SI** (L_J 亨利, E_J/E_J1/E_J2 焦耳);
 能量内部一律焦耳, 只在写结果时转 GHz/MHz。常数 SI-2019 精确, ħ 派生。
 """
@@ -31,6 +43,7 @@
 from __future__ import annotations
 
 import math
+import warnings
 from dataclasses import dataclass
 from typing import Sequence
 
@@ -38,8 +51,8 @@ from .errors import QuantumDslError
 
 __all__ = [
     "ELEM_CHARGE", "H_PLANCK", "HBAR", "FLUX_QUANTUM_REDUCED",
-    "QubitResult", "CouplingResult", "CircuitModelResult",
-    "solve_circuit_model", "resonator_lumped_lc", "dispersive_shift_hz",
+    "QubitResult", "CouplingResult", "ResonatorResult", "ReadoutResult", "CircuitModelResult",
+    "solve_circuit_model", "resonator_lumped_lc", "dispersive_shift_hz", "transmon_levels_hz",
 ]
 
 # --- 常数: SI-2019 精确 (e/h 是定义值); ħ/φ0 派生, 不硬编码舍入字面量 -----
@@ -51,6 +64,8 @@ FLUX_QUANTUM_REDUCED = HBAR / (2.0 * ELEM_CHARGE)  # Wb, φ0 = ħ/2e
 _F_PER_FF = 1.0e-15
 RESONATOR_MODES = frozenset({"half_wave", "quarter_wave"})
 _JUNCTION_KEYS = frozenset({"name", "islands", "L_J", "E_J", "squid"})
+_RESONATOR_KEYS = frozenset({"name", "net", "f_r", "Z0", "mode", "drawn"})
+_PORT_KEYS = frozenset({"name", "net", "R"})
 _SQUID_KEYS = frozenset({"E_J1", "E_J2", "flux"})
 
 
@@ -66,6 +81,9 @@ class QubitResult:
     f01_GHz: float
     anharmonicity_MHz: float  # α = −E_C (负)
     EJ_over_EC: float         # transmon 有效域判据 (微扰式要求 ≫ 1)
+    f01_exact_GHz: float = math.nan            # 电荷基精确对角化 (n_g = 0)
+    anharmonicity_exact_MHz: float = math.nan  # f12 − f01, 精确
+    T1_port_us: float = math.inf               # 经 ports 直接辐射的 T1 (无 port = inf)
 
 
 @dataclass(frozen=True)
@@ -79,10 +97,40 @@ class CouplingResult:
 
 
 @dataclass(frozen=True)
+class ResonatorResult:
+    """传输线谐振腔的集总 LC 模。f_r 是负载后 (逆电容 dressed) 的频率, κ 是 κ/2π。"""
+
+    name: str
+    net: str
+    C_r_fF: float             # TL 等效电容 (resonator_lumped_lc)
+    L_r_nH: float
+    Z0_ohm: float
+    f_bare_GHz: float         # 画出那条线的裸 TL 频率
+    f_r_GHz: float            # 1/(2π√(L_r·C_eff)), C_eff = 1/[C'⁻¹]_rr
+    kappa_MHz: float          # κ/2π 经 ports (Norton, ωC_κR ≪ 1); 无 port = 0
+    C_gnd_fem_over_tl: float  # FEM 对地电容 / 线的静电容 2·C_r —— drawn: full 时应 ≈ 1
+
+
+@dataclass(frozen=True)
+class ReadoutResult:
+    """qubit–腔对: g 与 q–q 同式 (渐近 f01 支), χ = 单边 cavity pull (Zhu 非 RWA 三能级, 精确 f01/f12),
+    Purcell = 单模 κ(g/Δ)²。"""
+
+    qubit: str
+    resonator: str
+    beta: float
+    g_MHz: float
+    chi_MHz: float
+    T1_purcell_us: float
+
+
+@dataclass(frozen=True)
 class CircuitModelResult:
     qubits: tuple[QubitResult, ...]
     couplings: tuple[CouplingResult, ...]
     method: str = "lumped_oscillator_inverse_cap"
+    resonators: tuple[ResonatorResult, ...] = ()
+    readout: tuple[ReadoutResult, ...] = ()
 
 
 # ---------------------------------------------------------------------------
@@ -92,6 +140,20 @@ class CircuitModelResult:
 def transmon_f01_hz(e_c_joule: float, e_j_joule: float) -> float:
     """f01 = (√(8·E_C·E_J) − E_C)/h (Hz)。E_C/E_J 焦耳。"""
     return (math.sqrt(8.0 * e_c_joule * e_j_joule) - e_c_joule) / H_PLANCK
+
+
+def transmon_levels_hz(e_c_joule: float, e_j_joule: float,
+                       n_cut: int = 30) -> tuple[float, float]:
+    """精确 (f01, f12) Hz: 电荷基 ``H = 4E_C n² − (E_J/2)(|n⟩⟨n+1| + h.c.)``, n ∈ [−N, N], n_g = 0
+    (Koch 2007 Eq. 2.1; transmon 域电荷色散可忽略)。E_J = 0 → 能级 0, 4E_C, 4E_C (n = ±1 简并)。
+    numpy 惰性 import (``import quantum_dsl`` 不拉起它)。"""
+    import numpy as np
+
+    n = np.arange(-n_cut, n_cut + 1, dtype=float)
+    off = np.full(2 * n_cut, -0.5 * e_j_joule / H_PLANCK)
+    e = np.linalg.eigvalsh(np.diag(4.0 * e_c_joule / H_PLANCK * n * n)
+                           + np.diag(off, 1) + np.diag(off, -1))
+    return float(e[1] - e[0]), float(e[2] - e[1])
 
 
 def resonator_lumped_lc(f_res_hz: float, z0_ohm: float,
@@ -266,8 +328,31 @@ def _junction_e_j_joule(j: dict) -> float:
 # the solve
 # ---------------------------------------------------------------------------
 
-def solve_circuit_model(labels, maxwell_fF, junctions) -> CircuitModelResult:
-    """Maxwell 电容矩阵 (fF) + 结输入 → transmon 参数 + 成对耦合 (契约「电路模型」)。
+def _entries(items, keys, what) -> list[dict]:
+    """resonators / ports 条目的通用校验: dict、键白名单、name 与 net 是非空字符串。"""
+    out = []
+    for e in items:
+        if not isinstance(e, dict):
+            raise QuantumDslError(f"{what} entries must be dicts, got {e!r}")
+        unknown = sorted(set(e) - keys)
+        if unknown:
+            raise QuantumDslError(f"{what} {e.get('name')!r}: unknown key(s) {unknown} (known: {sorted(keys)})")
+        for k in ("name", "net"):
+            if not isinstance(e.get(k), str) or not e[k]:
+                raise QuantumDslError(f"{what} entry needs a non-empty string {k!r}, got {e!r}")
+        out.append(e)
+    return out
+
+
+def _positive(v, what) -> float:
+    if isinstance(v, bool) or not isinstance(v, (int, float)) or not (math.isfinite(v) and v > 0):
+        raise QuantumDslError(f"{what} must be > 0 and finite (SI), got {v!r}")
+    return float(v)
+
+
+def solve_circuit_model(labels, maxwell_fF, junctions, resonators=(), ports=(),
+                        floating=()) -> CircuitModelResult:
+    """Maxwell 电容矩阵 (fF) + 结输入 → transmon 参数 + 成对耦合 (契约「电路模型」/「读出链路」)。
 
     Args:
         labels:     矩阵行/列的岛名 (顺序 = 行序), = .geo Physical 名的
@@ -276,9 +361,13 @@ def solve_circuit_model(labels, maxwell_fF, junctions) -> CircuitModelResult:
         junctions:  dict 列表: ``name``, ``islands`` (1 个 = 接地 transmon,
                     2 个 = 浮动/差分, 结桥接两岛), 且 ``L_J`` (亨利) /
                     ``E_J`` (焦耳) / ``squid: {E_J1, E_J2, flux}`` 三选一。
+        resonators: dict 列表 ``{name, net, f_r (Hz, 画出那条线的裸频率), Z0 (Ω),
+                    mode: quarter_wave|half_wave, drawn: full|claw (默认 full)}``。
+        ports:      dict 列表 ``{name, net, R (Ω)}``: 外接负载的导体 (直通馈线从耦合点看是 Z0/2)。
+        floating:   net 名列表: 电中性浮岛, 先 Schur 消元。
 
-    每个 label 必须被 **恰好一个** junction 认领: 未认领 = 会被静默接地
-    (v3 实案 C_Σ 错 1.70×) → raise, 先用 assemble() Schur 消元或删掉该行。
+    每个 label 必须被 **恰好一个** junction / resonator / port / floating 认领: 未认领 = 会被静默接地
+    (v3 实案 C_Σ 错 1.70×) → raise。
     """
     if not junctions:
         raise QuantumDslError("solve_circuit_model needs >=1 junction")
@@ -309,38 +398,88 @@ def solve_circuit_model(labels, maxwell_fF, junctions) -> CircuitModelResult:
     c_sym = [[0.5 * (maxwell_fF[i][jc] + maxwell_fF[jc][i]) for jc in range(n)]
              for i in range(n)]
 
+    # --- 无结导体 ①: floating = 电中性浮岛 → Schur 消元 (与 assemble 同一段代码) ------------
+    floating = tuple(floating)
+    bad = [f for f in floating if f not in labels]
+    if bad or len(set(floating)) != len(floating):
+        raise QuantumDslError(f"floating net(s) {bad or list(floating)} are not unique matrix labels "
+                              f"(have: {', '.join(labels)})")
+    if floating:
+        from .assemble import assemble
+        red = assemble([{"name": "chip", "labels": labels, "maxwell_fF": c_sym}],
+                       keep=[lab for lab in labels if lab not in floating])
+        labels, c_sym = red.labels, [list(r) for r in red.maxwell_fF]
+        n = len(labels)
+
     idx = {lab: i for i, lab in enumerate(labels)}
-    node_idx: list[int] = []          # 子矩阵行 → Maxwell 行 (按 junction 序)
-    claimed: dict[int, str] = {}      # Maxwell 行 → 认领它的岛
-    parsed: list[tuple[str, tuple[str, ...], float]] = []
+    claimed: dict[int, str] = {}      # Maxwell 行 → 认领者 (结 / 腔 / port 共用一张表)
     names_seen: set[str] = set()
+
+    def claim(net, who):
+        if net not in idx:
+            raise QuantumDslError(f"{who}: net {net!r} is not a matrix label (have: {', '.join(labels)})")
+        if idx[net] in claimed:
+            raise QuantumDslError(f"{who}: net {net!r} is already claimed by {claimed[idx[net]]!r} — "
+                                  f"every conductor gets exactly one treatment")
+        claimed[idx[net]] = who
+        return idx[net]
+
+    def unique_name(name, what):
+        if not name or not isinstance(name, str) or name in names_seen:
+            raise QuantumDslError(f"{what} name {name!r} must be a unique non-empty string "
+                                  f"(qubits / resonators / ports share one namespace)")
+        names_seen.add(name)
+
+    # --- 无结导体 ②: ports = 外接负载 → AC 接地 (删行列), 互容留给衰减率 ----------------------
+    port_mut: list[tuple[float, list[float]]] = []    # (R Ω, 每行对该 port 的互容 fF)
+    for pt in _entries(ports, _PORT_KEYS, "port"):
+        unique_name(pt["name"], "port")
+        row_p = claim(pt["net"], f"port {pt['name']!r}")
+        port_mut.append((_positive(pt.get("R"), f"port {pt['name']!r}: R"),
+                         [-c_sym[x][row_p] for x in range(n)]))
+
+    # --- 无结导体 ③: resonators = TL 等效 LC; drawn: full 时 C_r 换掉 FEM 对地电容 --------------
+    res_parsed: list[tuple[str, str, int, float, float, float, float, float]] = []
+    for rs in _entries(resonators, _RESONATOR_KEYS, "resonator"):
+        name = rs["name"]
+        unique_name(name, "resonator")
+        row_r = claim(rs["net"], f"resonator {name!r}")
+        if rs.get("mode") not in RESONATOR_MODES:
+            raise QuantumDslError(f"resonator {name!r}: mode must be one of {sorted(RESONATOR_MODES)} "
+                                  f"(λ/4 vs λ/2 halves C_r — no default), got {rs.get('mode')!r}")
+        drawn = rs.get("drawn", "full")
+        if drawn not in ("full", "claw"):
+            raise QuantumDslError(f"resonator {name!r}: drawn must be full|claw, got {drawn!r}")
+        f_bare = _positive(rs.get("f_r"), f"resonator {name!r}: f_r")
+        z0 = _positive(rs.get("Z0"), f"resonator {name!r}: Z0")
+        c_r, l_r = resonator_lumped_lc(f_bare, z0, rs["mode"])
+        c_r_fF = c_r / _F_PER_FF
+        gnd = sum(c_sym[row_r])                       # FEM 对地电容 = Maxwell 行和
+        ratio = gnd / (2.0 * c_r_fF)                  # 线的静电容 c'l = 2·C_r (λ/2 与 λ/4 同)
+        c_sym[row_r][row_r] += c_r_fF - (gnd if drawn == "full" else 0.0)
+        if drawn == "full" and not 0.5 <= ratio <= 2.0:
+            warnings.warn(
+                f"resonator {name!r}: FEM ground capacitance of net {rs['net']!r} is {ratio:.3g}x the "
+                f"TL line capacitance 2*C_r — drawn: full assumes the whole line is in the mesh; if only "
+                f"the coupling claw is drawn, declare drawn: claw", stacklevel=2)
+        res_parsed.append((name, rs["net"], row_r, c_r, l_r, z0, f_bare, ratio))
+
+    node_idx: list[int] = []          # 子矩阵行 → Maxwell 行 (结岛按 junction 序, 再接腔)
+    parsed: list[tuple[str, tuple[str, ...], float]] = []
     for j in junctions:
         if not isinstance(j, dict):
             raise QuantumDslError(f"junctions entries must be dicts, got {j!r}")
         name = j.get("name")
-        if not name or not isinstance(name, str) or name in names_seen:
-            raise QuantumDslError(
-                f"junction name {name!r} must be a unique non-empty string")
-        names_seen.add(name)
+        unique_name(name, "junction")
         islands = tuple(j.get("islands") or ())
         if not 1 <= len(islands) <= 2:
             raise QuantumDslError(
                 f"junction {name!r}: islands must name 1 (grounded) or 2 "
                 f"(floating/differential) conductors, got {list(islands)}")
         for island in islands:
-            if island not in idx:
-                raise QuantumDslError(
-                    f"junction {name!r}: island {island!r} is not a matrix "
-                    f"label (have: {', '.join(labels)})")
-            row = idx[island]
-            if row in claimed:
-                raise QuantumDslError(
-                    f"junction {name!r}: island {island!r} is already claimed "
-                    f"by {claimed[row]!r} — every island must be a distinct "
-                    f"conductor")
-            claimed[row] = island
-            node_idx.append(row)
+            node_idx.append(claim(island, f"junction {name!r}"))
         parsed.append((name, islands, _junction_e_j_joule(j)))
+    node_idx += [r[2] for r in res_parsed]
 
     # 防线 (physics.md §10 #7): 未认领 label 禁止静默接地。
     unclaimed = [lab for i, lab in enumerate(labels) if i not in claimed]
@@ -348,19 +487,20 @@ def solve_circuit_model(labels, maxwell_fF, junctions) -> CircuitModelResult:
         raise QuantumDslError(
             f"label(s) {unclaimed} are not claimed by any junction — refusing "
             f"to silently ground them (that deletes real mediated coupling); "
-            f"Schur-eliminate them first via assemble(cells, keep=...) or drop "
-            f"the row/column from maxwell_fF")
+            f"declare them in circuit_model as resonators / ports / floating, "
+            f"Schur-eliminate them via assemble(cells, keep=...) or drop the row/column")
 
     sub = [[c_sym[a][b] for b in node_idx] for a in node_idx]
 
-    # φ = B ξ, ξ = (θ_0..θ_{nq-1}, σ…): 接地单岛 → 选择列; 浮动双岛 →
+    # φ = B ξ, ξ = (θ_0..θ_{nq-1}, 腔…, σ…): 接地单岛 / 腔 → 选择列; 浮动双岛 →
     # φ_a = σ+θ/2, φ_b = σ−θ/2。全接地时 B = 单位阵 → C' 与 C_S 逐位相同。
     n_theta = len(parsed)
+    n_res = len(res_parsed)
     n_sigma = sum(1 for _, islands, _ in parsed if len(islands) == 2)
-    n_cols = n_theta + n_sigma
+    n_cols = n_theta + n_res + n_sigma
     b_mat = [[0.0] * n_cols for _ in node_idx]
     row = 0
-    sigma_col = n_theta
+    sigma_col = n_theta + n_res
     for k, (_, islands, _) in enumerate(parsed):
         if len(islands) == 1:
             b_mat[row][k] = 1.0
@@ -372,12 +512,23 @@ def solve_circuit_model(labels, maxwell_fF, junctions) -> CircuitModelResult:
             b_mat[row + 1][sigma_col] = 1.0
             row += 2
             sigma_col += 1
+    for k in range(n_res):
+        b_mat[row + k][n_theta + k] = 1.0
 
     cprime = _congruence(sub, b_mat)                 # fF
     cinv = _invert_matrix(                           # F⁻¹, 含 σ 块
         [[v * _F_PER_FF for v in r] for r in cprime])
 
+    def decay(k, f_hz):
+        """模 k (B 的列) 经全部 port 的能量衰减率 Γ (1/s): Norton ωC_κR ≪ 1, Γ = ω²·ΣC_kp²·R / C_eff。"""
+        tot = 0.0
+        for r_ohm, mut in port_mut:
+            c_kp = sum(b_mat[rw][k] * mut[node_idx[rw]] for rw in range(len(node_idx))) * _F_PER_FF
+            tot += c_kp * c_kp * r_ohm
+        return (2.0 * math.pi * f_hz) ** 2 * tot * cinv[k][k]
+
     qubit_results: list[QubitResult] = []
+    levels: list[tuple[float, float]] = []           # 精确 (f01, f12) Hz
     for k, (name, islands, e_j) in enumerate(parsed):
         cinv_kk = cinv[k][k]        # θ 列排最前, θθ 对角下标就是 k
         if cinv_kk <= 0:
@@ -393,6 +544,9 @@ def solve_circuit_model(labels, maxwell_fF, junctions) -> CircuitModelResult:
                 f"increase E_J / decrease E_C (or, for a SQUID, move flux "
                 f"away from 0.5 Phi0 where E_J,eff -> 0)")
         c_sigma = 1.0 / cinv_kk                      # Farad
+        f01_x, f12_x = transmon_levels_hz(e_c, e_j)
+        levels.append((f01_x, f12_x))
+        gamma = decay(k, f01_x)
         qubit_results.append(QubitResult(
             name=name,
             islands=islands,
@@ -402,6 +556,9 @@ def solve_circuit_model(labels, maxwell_fF, junctions) -> CircuitModelResult:
             f01_GHz=f01 / 1e9,
             anharmonicity_MHz=-e_c / H_PLANCK / 1e6,
             EJ_over_EC=e_j / e_c,
+            f01_exact_GHz=f01_x / 1e9,
+            anharmonicity_exact_MHz=(f12_x - f01_x) / 1e6,
+            T1_port_us=1e6 / gamma if gamma > 0 else math.inf,
         ))
 
     couplings: list[CouplingResult] = []
@@ -419,5 +576,27 @@ def solve_circuit_model(labels, maxwell_fF, junctions) -> CircuitModelResult:
                 g_MHz=g_hz / 1e6,
             ))
 
+    res_results: list[ResonatorResult] = []
+    readout: list[ReadoutResult] = []
+    for jr, (name, net, _, c_r, l_r, z0, f_bare, ratio) in enumerate(res_parsed):
+        kr = n_theta + jr
+        f_r = 1.0 / (2.0 * math.pi * math.sqrt(l_r / cinv[kr][kr]))
+        kappa = decay(kr, f_r)                        # rad/s
+        res_results.append(ResonatorResult(
+            name=name, net=net, C_r_fF=c_r / _F_PER_FF, L_r_nH=l_r * 1e9, Z0_ohm=z0,
+            f_bare_GHz=f_bare / 1e9, f_r_GHz=f_r / 1e9, kappa_MHz=kappa / (2.0 * math.pi) / 1e6,
+            C_gnd_fem_over_tl=ratio))
+        for k, q in enumerate(qubit_results):
+            beta = abs(cinv[k][kr]) / math.sqrt(cinv[k][k] * cinv[kr][kr])
+            g_hz = 0.5 * beta * math.sqrt(q.f01_GHz * 1e9 * f_r)
+            f01_x, f12_x = levels[k]
+            chi = dispersive_shift_hz(g_hz, f_r, f01_x, f12_x)
+            gamma_p = kappa * (g_hz / (f01_x - f_r)) ** 2   # 单模 Purcell (Sete 2015 Eq. 2)
+            readout.append(ReadoutResult(
+                qubit=q.name, resonator=name, beta=beta, g_MHz=g_hz / 1e6, chi_MHz=chi / 1e6,
+                T1_purcell_us=1e6 / gamma_p if gamma_p > 0 else math.inf))
+
     return CircuitModelResult(qubits=tuple(qubit_results),
-                              couplings=tuple(couplings))
+                              couplings=tuple(couplings),
+                              resonators=tuple(res_results),
+                              readout=tuple(readout))

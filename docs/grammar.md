@@ -124,7 +124,7 @@ Physical Surface("metal::1::QB1_t::pad") = { sret };
 ## 3. `*.meta.yaml` 字段参考
 
 顶层只允许这 13 个键，出现别的键（typo）直接 raise：
-`schema` `geo` `layout` `layers` `materials` `airbox` `mesh` `solver` `gds` `circuit_model` `extract` `subsystems` `targets`。
+`schema` `geo` `layout` `layers` `materials` `airbox` `mesh` `solver` `gds` `circuit_model` `extract` `subsystems` `targets` `tune`。
 
 ### 3.1 骨架（`examples/two_pads.meta.yaml`）
 
@@ -175,15 +175,22 @@ circuit_model:
 | `gds.by_role.<role>.layer`                    | int                                            | 写 gds 段则必填                       | 无层表时：该 role 的所有面 → 此 GDS layer（jj 要进 GDS 就映射 jj）                                                                                                                                                               |
 | `gds.by_role.<role>.datatype`                 | int                                            | 默认`0`                             |                                                                                                                                                                                                                                   |
 | `circuit_model.qubits[].name`                 | str                                            | ✅                                    | 器件名（结果里的 qubit 名），唯一                                                                                                                                                                                                 |
-| `circuit_model.qubits[].island` / `islands` | component 名 / 两个 component 名的列表         | 二选一                                | 接地单岛 / 浮动双岛。**每个 metal component 必须被恰好一个 qubit 认领**，否则 `solve_circuit_model` raise（未认领 = 静默接地）                                                                                            |
+| `circuit_model.qubits[].island` / `islands` | component 名 / 两个 component 名的列表         | 二选一                                | 接地单岛 / 浮动双岛。**每个 metal component 必须被恰好一个 qubit 认领**（或声明为 resonators / ports / floating），否则 `solve_circuit_model` raise（未认领 = 静默接地）                                                                                            |
 | `circuit_model.qubits[].L_J`                  | 带单位字串（`10nH`）                         | 三选一                                | 结电感 →`E_J = (ħ/2e)²/L_J`                                                                                                                                                                                                  |
 | `circuit_model.qubits[].E_J`                  | 带单位频率（`12.2GHz`）                      | 三选一                                | 论文惯例 E_J/h；加载成 Hz，`build` 接线时 ×h                                                                                                                                                                                   |
 | `circuit_model.qubits[].squid`                | `{E_J1: 46GHz, E_J2: 25GHz, flux: 0.0}`      | 三选一                                | 非对称 SQUID，`flux` = Φ/Φ₀（无量纲，默认 0），两支都必填                                                                                                                                                                    |
+| `circuit_model.resonators[]`                 | `{name: R1, net: F0, f_r: 7GHz, Z0: 50Ohm, mode: quarter_wave, drawn: full}` | 可选                   | 无结导体之一：传输线谐振腔 = 集总 LC 节点（physics §8.1）。`f_r` = **画出那条线**的裸频率；`mode` 必填（λ/4 与 λ/2 的 C_r 差 2 倍，无默认）；`drawn: full`（默认）= 网格里是整条线，C_r 换掉该 net 的 FEM 对地电容；`claw` = 只画了耦合爪，C_r 叠加。版图里 `length: {mode: quarter_wave\|half_wave}` 的路由**自动生成**（name = 路由步骤名，net = 路由 net，f_r = 目标 × 总长/画长，Z0 = 截面自洽集），与 meta 同名条目须逐字段一致 |
+| `circuit_model.ports[]`                       | `{name: feed, net: FL, R: 25Ohm}`              | 可选                                  | 无结导体之二：外接负载的导体（馈线 / 驱动线），电路里 AC 接地，与各模的互容给 κ 与 `T1_port_us`。`R` = 从耦合点看的负载：端接填 Z0，直通馈线填 Z0/2 |
+| `circuit_model.floating`                      | net 名列表                                     | 可选                                  | 无结导体之三：电中性浮岛，求逆前 Schur 消元。**三种都不声明的无结导体照旧 raise**（未认领 = 静默接地）；一个导体只能有一种处置；qubit / 腔 / port 名共用一个命名空间 |
 | `extract.blocks[]`                            | `{name: A, components: [A, ...]}`            | 可选                                  | 分块提取（§3.3）：每块只含这些 component 的 Physical 组                                                                                                                                                                          |
-| `subsystems`                                  | list                                           | 可选                                  | 记账用：**原样透传**进 `results.yaml` 的 `subsystems` 段，不驱动任何计算（TL 谐振器 / χ 的计算器 `resonator_lumped_lc` / `dispersive_shift_hz` 需手动调用）。版图路线的定长路由会往这里**追加**条目（§4.6） |
+| `subsystems`                                  | list                                           | 可选                                  | 记账用：**原样透传**进 `results.yaml` 的 `subsystems` 段。版图路线的定长路由会往这里**追加**条目（§4.6），其中波长模式的条目同时生成 `circuit_model.resonators`（进电路模型的是后者） |
 | `targets.source` | str | 可选 | 期望值出处，原样进 `validation.source` |
 | `targets.qubits.<name>` | `{C_sigma_fF: 99.3, tol: 8%}` | 与 couplings 至少一个 | 键 = `results.yaml` qubit 的数值字段（`C_sigma_fF` `E_C_GHz` `E_J_GHz` `f01_GHz` `anharmonicity_MHz` `EJ_over_EC`），值裸数（单位在键名里），非零；`tol` 必填且只收百分比字串 |
 | `targets.couplings[]` | `{pair: [QB1, CPLR], beta: 0.0364, tol: 20%}` | 同上 | 字段 `beta` / `g_MHz`；pair 两个不同 qubit 名 |
+| `targets.resonators.<name>` | `{f_r_GHz: 7.2, tol: 0.2%}` | 同上 | 字段 = results 的 resonator 数值字段（`f_r_GHz` `f_bare_GHz` `kappa_MHz` `C_r_fF` `L_r_nH` `Z0_ohm` `C_gnd_fem_over_tl`） |
+| `targets.readout[]` | `{pair: [Q1, R1], chi_MHz: -0.2, tol: 3%}` | 同上 | pair = [qubit, 腔]；字段 `beta` `g_MHz` `chi_MHz`（单边 cavity pull）`T1_purcell_us` |
+| `tune.knobs[]` | `{param: Q1.arm_L, target: Q1.anharmonicity_exact_MHz, law: -1, bounds: [150, 500]}` | `tune` 时必填 | FEM 在环综合（§3.5）。`param` = `<版图步骤>.<模板参数>` / `<步骤>.E_J│L_J`（步骤上没有就找 meta 同名 qubit）/ `<步骤>.length.f_r`；`target` = 一条 targets 核对项的引用名（`Q1.f01_exact_GHz` / `R1.f_r_GHz` / `Q1~R1.chi_MHz`）；**方阵**：param 与 target 各唯一。几何旋钮必须给 `law`（target ∝ param^law，只需趋势对），结旋钮不收；`bounds` 可选（几何 µm，E_J / f_r 用 SI） |
+| `tune.max_iter` / `tune.damping` | int / (0, 1] | 默认 8 / 1 | FEM 轮数上限；步长阻尼（ANMod 的 adjustment rate） |
 
 `targets:`（issue #23）：`build(solve=True)` 在整片 `results.yaml` 追加 `validation` 段（每项 expected / actual / deviation = 实测/期望 − 1 / pass），未命中发 `UserWarning` 不 raise；qubit 名拼错在网格化之前 raise；`blocks=` 求解不核对。例子：`examples/sung_2021_device.meta.yaml` 文末。
 
@@ -191,6 +198,9 @@ circuit_model:
 
 单位解析规则（`units.py`）：长度键以 `_um` 后缀命名、裸数即 µm；带量纲的量（`L_J` / `E_J*`）**必须带单位**
 （`nH` `pH` `fF` `GHz` `MHz`… SI 词头 f…T），裸数 `10` 会被拒绝——裸数没有量纲。
+
+读出链路（2026-10-04，physics §8.1）：有腔时 `results.yaml` 的 `hamiltonian` 多两段——`resonators`（每腔 C_r / L_r / Z0 / 裸与负载后 f_r / κ/2π / 自检比）
+与 `readout`（每对 qubit × 腔的 β / g / χ / Purcell T1）；qubit 条目多 `f01_exact_GHz` / `anharmonicity_exact_MHz`（电荷基精确对角化）/ `T1_port_us`。
 
 ### 3.3 分块（`examples/two_pads_blocks.meta.yaml`）
 
@@ -217,6 +227,27 @@ extract:
 展示了手写路线的全部高级用法：`thickness_um: 750` 真实衬底、`outer_boundary: open` + `ground::` sheet、`jj` 进 GDS layer 20、
 三个浮动 transmon（`islands` 列表）、`E_J` 用论文频率写法。文件头注是该例子"哪些量可对论文断言、哪些结构性排除"
 的单一出处。flip-chip 口径的 sidecar 看 `examples/chen_2025_3x3.meta.yaml`（无片上地、`top_um` = 间隙、12 个 QCQ 块）。
+
+### 3.5 FEM 在环综合 `tune:`（`examples/xmon_readout_tune.meta.yaml`）
+
+```yaml
+targets:
+  qubits: {Q1: {anharmonicity_exact_MHz: -250, f01_exact_GHz: 4.8, tol: 1%}}
+  resonators: {R1: {f_r_GHz: 7.2, tol: 0.2%}}
+  readout: [{pair: [Q1, R1], chi_MHz: -0.2, tol: 3%}]
+tune:
+  knobs:
+    - {param: Q1.arm_L, target: Q1.anharmonicity_exact_MHz, law: -1, bounds: [150, 500]}   # 几何: 每轮一次 FEM
+    - {param: Q1.ro_gap, target: Q1~R1.chi_MHz, law: -1, bounds: [4, 60]}
+    - {param: R1.length.f_r, target: R1.f_r_GHz, law: 1}
+    - {param: Q1.E_J, target: Q1.f01_exact_GHz}                                            # 结: 缓存 C 上求根
+```
+
+- `quantum_dsl.tune(meta, out)`：每轮把旋钮写进配置副本、整片 `build(solve=True)`；结旋钮在这次的 C 矩阵上对数二分（不跑 FEM），
+  几何旋钮按 `x ← x·(y*/y)^(damping/p)` 一步，第二轮起 p 换成观测指数（与 `law` 同号才用）。旋钮核对项全部 pass 即停，`max_iter` 用完 warn。
+- 产物：`out/iter_<k>/`（每轮完整配置 + build 产物与 manifest）；`out/<layout>` + `out/<meta>` = **终版配置**（普通文件，可直接 `build`；
+  相对路径已改写到 out；YAML 注释不保留）；`out/results.yaml`（终版在最后一轮 C 上的结果 + validation）；`out/tune.yaml`（逐轮旋钮值与偏差）。
+- 只支持版图路线（旋钮是版图步骤键）；顶层步骤的模板参数（嵌套模板内部的参数不行）。
 
 ## 4. 版图与模板（`*.layout.yaml`，schema `quantum-dsl/layout/1`）
 

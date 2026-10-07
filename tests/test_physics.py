@@ -204,3 +204,96 @@ def test_dispersive_shift_golden():
     from quantum_dsl import dispersive_shift_hz
     chi = dispersive_shift_hz(41.19e6, 7.0e9, 5.2e9, 4.95e9)
     assert chi == pytest.approx(-117856.23947910377, rel=1e-9)
+
+
+def test_transmon_exact_levels_limits():
+    """契约「读出链路」: 电荷基精确能级 (Koch 2007 Eq. 2.1, n_g = 0)。闭式锚: E_J = 0 → 能级 0, 4E_C, 4E_C
+    (n = ±1 简并) ⇒ f01 = 4E_C, f12 = 0; 深 transmon 区回到渐近式 (f01 差 < 0.2%, α/E_C 介于 −1.2 与 −1),
+    且 α = −E_C 只是领头阶 (E_J/E_C = 50 时 α_exact/E_C ≈ −1.149, 偏 ~15%)。N = 30 已截断收敛。"""
+    from quantum_dsl import H_PLANCK
+    from quantum_dsl.circuit_model import transmon_levels_hz
+    ec = 0.2e9 * H_PLANCK
+    f01, f12 = transmon_levels_hz(ec, 0.0)
+    assert f01 == pytest.approx(0.8e9, rel=1e-12) and f12 == pytest.approx(0.0, abs=1.0)
+    for ratio, alpha_over_ec in ((50, -1.1492), (100, -1.0955)):
+        f01, f12 = transmon_levels_hz(ec, ratio * ec)
+        asym = (math.sqrt(8 * ratio) - 1) * 0.2e9
+        assert asym / f01 - 1 == pytest.approx(0.0, abs=4e-3)
+        assert (f12 - f01) / 0.2e9 == pytest.approx(alpha_over_ec, abs=1e-3)
+        assert transmon_levels_hz(ec, ratio * ec, n_cut=40) == pytest.approx((f01, f12), rel=1e-12)
+
+
+def _readout_model(**kw):
+    """Q (接地 transmon) – R (λ/4 腔, 7 GHz, 50 Ω) – F (馈线 port, 25 Ω = 直通 Z0/2)。
+    互容 Q–R 5、R–F 2、Q–F 0.1 fF; Q 对地 80, R 对地 900 (将被 C_r 换掉), F 对地 300 fF。"""
+    from quantum_dsl import solve_circuit_model
+    mutual = {("Q", "R"): 5.0, ("R", "F"): 2.0, ("Q", "F"): 0.1}
+    ground = {"Q": 80.0, "R": 900.0, "F": 300.0}
+    labels = ("F", "Q", "R")
+    mat = [[(ground[a] + sum(v for k, v in mutual.items() if a in k)) if a == b else
+            -mutual.get((a, b), mutual.get((b, a), 0.0)) for b in labels] for a in labels]
+    args = dict(junctions=[{"name": "Q", "islands": ["Q"], "L_J": 12e-9}],
+                resonators=[{"name": "R1", "net": "R", "f_r": 7.0e9, "Z0": 50.0, "mode": "quarter_wave"}],
+                ports=[{"name": "feed", "net": "F", "R": 25.0}])
+    args.update(kw)
+    return solve_circuit_model(labels, mat, **args)
+
+
+def test_readout_chain_closed_form():
+    """契约「读出链路」: 腔 = TL 等效 LC 节点 (drawn: full → C_r 换掉 FEM 对地 900 fF), port = AC 接地 + 留互容。
+    闭式 (2×2 逆电容): C' = [[85.1, −5], [−5, C_r + 7]] fF, C_r = π/(4ωZ0) = 357.14 fF;
+    f_r = f_bare·√(C_r/C_eff,r), κ = ω_r²·C_κ²·R/C_eff,r (Göppl Norton; 直通 R = Z0/2 时即 Q_c = π/(2ω²C_κ²Z0²)),
+    T1_port = C_eff,q/(ω_q²·C_qF²·R), g = ½β√(f01·f_r), χ = dispersive_shift_hz(精确 f01/f12), Purcell = κ(g/Δ)²。"""
+    from quantum_dsl import dispersive_shift_hz, resonator_lumped_lc
+    r = _readout_model()
+    (q,), (res,), (ro,) = r.qubits, r.resonators, r.readout
+    c_r, l_r = resonator_lumped_lc(7.0e9, 50.0, "quarter_wave")
+    cr = c_r * 1e15
+    det = 85.1 * (cr + 7.0) - 25.0
+    c_eff_q, c_eff_r = det / (cr + 7.0), det / 85.1                          # fF
+    assert cr == pytest.approx(357.1428571, rel=1e-6)
+    assert q.C_sigma_fF == pytest.approx(c_eff_q, rel=1e-12)
+    assert res.C_gnd_fem_over_tl == pytest.approx(900.0 / (2 * cr), rel=1e-12)
+    f_r = 7.0e9 * math.sqrt(cr / c_eff_r)
+    assert res.f_r_GHz == pytest.approx(f_r / 1e9, rel=1e-12) and res.f_r_GHz < res.f_bare_GHz
+    w_r = 2 * math.pi * f_r
+    kappa = w_r ** 2 * (2e-15) ** 2 * 25.0 / (c_eff_r * 1e-15)
+    assert res.kappa_MHz == pytest.approx(kappa / (2 * math.pi) / 1e6, rel=1e-12)
+    w_q = 2 * math.pi * q.f01_exact_GHz * 1e9
+    assert q.T1_port_us == pytest.approx(1e6 * c_eff_q * 1e-15 / (w_q ** 2 * (0.1e-15) ** 2 * 25.0), rel=1e-12)
+    beta = 5.0 / math.sqrt(85.1 * (cr + 7.0))
+    g = 0.5 * beta * math.sqrt(q.f01_GHz * 1e9 * f_r)
+    assert ro.beta == pytest.approx(beta, rel=1e-12) and ro.g_MHz == pytest.approx(g / 1e6, rel=1e-12)
+    f01x = q.f01_exact_GHz * 1e9
+    f12x = f01x + q.anharmonicity_exact_MHz * 1e6
+    assert ro.chi_MHz == pytest.approx(dispersive_shift_hz(g, f_r, f01x, f12x) / 1e6, rel=1e-12)
+    assert ro.T1_purcell_us == pytest.approx(1e6 / (kappa * (g / (f01x - f_r)) ** 2), rel=1e-12)
+    # drawn: claw → C_r 叠加在 FEM 对地之上 (只画了耦合爪, 线不在网格里)
+    claw = _readout_model(resonators=[{"name": "R1", "net": "R", "f_r": 7.0e9, "Z0": 50.0,
+                                       "mode": "quarter_wave", "drawn": "claw"}])
+    assert claw.resonators[0].f_r_GHz == pytest.approx(
+        7.0 * math.sqrt(cr / ((85.1 * (cr + 907.0) - 25.0) / 85.1)), rel=1e-12)
+
+
+def test_readout_chain_declarations_are_strict():
+    """契约「读出链路」: 无结导体必须显式声明处置; mode 无默认; 一个导体只能有一种处置; floating = Schur。"""
+    from quantum_dsl import QuantumDslError, solve_circuit_model
+    with pytest.raises(QuantumDslError, match=r"\['R'\] are not claimed.*resonators / ports / floating"):
+        _readout_model(resonators=[])
+    with pytest.raises(QuantumDslError, match="mode must be one of"):
+        _readout_model(resonators=[{"name": "R1", "net": "R", "f_r": 7e9, "Z0": 50.0}])
+    with pytest.raises(QuantumDslError, match="already claimed"):
+        _readout_model(ports=[{"name": "feed", "net": "F", "R": 25.0}, {"name": "x", "net": "R", "R": 50.0}])
+    with pytest.raises(QuantumDslError, match="unknown key"):
+        _readout_model(ports=[{"name": "feed", "net": "F", "R": 25.0, "Z": 50}])
+    with pytest.raises(QuantumDslError, match="share one namespace"):
+        _readout_model(ports=[{"name": "Q", "net": "F", "R": 25.0}])
+    with pytest.warns(UserWarning, match="drawn: claw"):          # FEM 对地 30 fF ≪ 2·C_r: 多半只画了爪
+        solve_circuit_model(("Q", "R"), [[85.0, -5.0], [-5.0, 35.0]],
+                            junctions=[{"name": "Q", "islands": ["Q"], "L_J": 12e-9}],
+                            resonators=[{"name": "R1", "net": "R", "f_r": 7e9, "Z0": 50.0, "mode": "quarter_wave"}])
+    # floating: 浮岛 X 夹在 A、B 之间 → Schur 后 A–B 出现中介互容 (闭式 2·2/(2+2+1) = 0.8 fF)
+    r = solve_circuit_model(("A", "B", "X"), [[22.0, 0.0, -2.0], [0.0, 22.0, -2.0], [-2.0, -2.0, 5.0]],
+                            junctions=[{"name": "A", "islands": ["A"], "L_J": 10e-9},
+                                       {"name": "B", "islands": ["B"], "L_J": 10e-9}], floating=["X"])
+    assert r.qubits[0].C_sigma_fF == pytest.approx((22 - 0.8) - 0.8 ** 2 / (22 - 0.8), rel=1e-12)

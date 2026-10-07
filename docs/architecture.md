@@ -43,7 +43,7 @@
 几何源也可以是**版图** `*.layout.yaml`（meta `layout:` 代替 `geo:`）：`compile_layout` 把模板实例（`.geo` + yaml）、
 手写 `.geo` 步骤与端口到端口的路由按顺序写进**同一个 gmsh 模型**，产出可调用的 `Layout`；`geo_model(layout)` 重放它，
 ①② 不变；编排器顺手生成 `circuit_model.qubits`（结）与 `subsystems`（谐振器长度）。
-`cpw` / `resonator_lumped_lc` / `dispersive_shift_hz` 是独立的解析计算器，不在这条链上（手动调用）。
+`resonator_lumped_lc` / `dispersive_shift_hz` 经 `circuit_model.resonators` 接进⑤（2026-10-04）；`cpw` 仍是独立解析计算器（版图定长路由用它算 λ_g 与 Z0）。
 
 ## 3. 绑定键：`role::layer::component::primitive`
 
@@ -79,11 +79,12 @@ C 矩阵行序 = `Mesh.labels` = `sorted(metal component)`，是全链唯一真�
 | `gds.py` | 143 | `build_gds`：面 → gmsh 粗三角化（圆弧 180 段/2π）→ gdstk 布尔并 → GDS（`unit=1e-6`，µm 逐字；映射按 `layers` 表或 `gds.by_role`）；`render_gds_png`：GDS → PNG 预览（PIL 惰性 import） | GDS build 编排 |
 | `mesh.py` | 301 | `build_mesh`：合成计算域、一次 `fragment` 把导体面 imprint 进 z=0 界面、边缘尺寸场、失效防线、写 msh 2.2；有层表时 drawing 层不进网格、role 须与层 kind 一致 | 网格 |
 | `palace.py` | 135 | `palace_config`（`Model.L0=1e-6`，`Order=2`，Terminal 按 labels）；`parse_capacitance`（CSV 法拉 → fF，mutual 由 Maxwell 代数导出） | Palace |
-| `circuit_model.py` | 423 | `solve_circuit_model` 逆电容 LOM（含浮动双岛差模约化、SQUID）；`resonator_lumped_lc`；`dispersive_shift_hz`；物理常数 | 电路模型 子系统 |
+| `circuit_model.py` | 602 | `solve_circuit_model` 逆电容 LOM（含浮动双岛差模约化、SQUID；无结导体 resonators / ports / floating 显式处置 → 负载后 f_r、g_qr、χ、κ、Purcell、T1_port）；`transmon_levels_hz` 电荷基精确能级（numpy 惰性）；`resonator_lumped_lc`；`dispersive_shift_hz`；物理常数 | 电路模型 子系统 读出链路 |
 | `assemble.py` | 129 | `assemble(cells, keep)`：共享节点累加 + Schur 消元 | 拼装 |
 | `cpw.py` | 215 | `lumped_cpw` / `guided_wavelength` / `complete_elliptic_k`（AGM），自洽公式集 | CPW |
 | `cells.py` | 99 | `rounded_polygon`（shapely buffer 往返）；`emit_geo`（发射 OCC `.geo` 文本） | 圆角 cell |
 | `build.py` | 264 | `build(meta, out_dir, solve)` 编排（几何源 = `.geo` 或 `compile_layout`）+ manifest + 分块派生 + 跑 Palace + 写 `results.yaml` | build 编排 分块 two_pads 锚 sung 外部锚 版图编排 |
+| `tune.py` | 200 | `tune(meta, out)` FEM 在环综合（ANMod 对角特例 + 对数割线；结旋钮在缓存 C 上二分）：每轮写配置副本 → `build(solve=True)` → 更新旋钮；终版 = 普通 layout + meta | tune |
 | `__init__.py` | 48 | 再导出；`import quantum_dsl` 不拉起 gmsh / gdstk / shapely | import 纯度 |
 
 ### 依赖图
@@ -100,9 +101,10 @@ C 矩阵行序 = `Mesh.labels` = `sorted(metal component)`，是全链唯一真�
              └── gds, mesh, palace, layout ────┴──► build   (唯一顶点)
    cpw  ◄── layout (定长路由用 guided_wavelength)
    route ◄── layout (planner: cpw 模板: 惰性 import, 纯 math)
+   build ◄── tune (唯一消费者是用户; tune 借 build 的 _results_doc / _validation 在缓存 C 上复算)
 ```
 
-**读法**：箭头指向被依赖方。无环；`build` 是唯一编排者；`cells` 没有内部消费者。
+**读法**：箭头指向被依赖方。无环；`build` 是单次编排者，`tune` 在它之上循环；`cells` 没有内部消费者。
 第三方库全部在函数体内惰性 import：`gmsh`（geo / gds / mesh 经 `_gmsh`）、`gdstk`（gds）、`shapely`（cells）；
 只有 `yaml` 是顶层 import。
 
@@ -118,9 +120,10 @@ C 矩阵行序 = `Mesh.labels` = `sorted(metal component)`，是全链唯一真�
 | `build_mesh(source, meta, out)` | → `Mesh(.path, .labels, .conductor_groups, .domain_groups, .boundary_groups, .num_cells, .num_volume_cells, .conductor_bbox_um)` | 空网格 raise |
 | `palace_config(mesh, meta, out)` | → `dict`（同时写 JSON） | |
 | `parse_capacitance(postpro_dir, labels)` | → `Cap(.labels, .maxwell_fF, .mutual_fF)` | NaN/Inf raise |
-| `solve_circuit_model(labels, maxwell_fF, junctions)` | → `CircuitModelResult(.qubits[QubitResult], .couplings[CouplingResult])` | junction = `{name, islands:[1 或 2 个], L_J│E_J│squid}` |
-| `build(meta, out, solve, blocks)` | → 产物路径 dict（§6） | meta 有 `targets:` 时整片 results 多 `validation` 段 |
+| `solve_circuit_model(labels, maxwell_fF, junctions, resonators=(), ports=(), floating=())` | → `CircuitModelResult(.qubits, .couplings, .resonators[ResonatorResult], .readout[ReadoutResult])` | junction = `{name, islands:[1 或 2 个], L_J│E_J│squid}`；resonator = `{name, net, f_r, Z0, mode, drawn}`；port = `{name, net, R}`（SI） |
+| `build(meta, out, solve, blocks)` | → 产物路径 dict（§6）+ `circuit_model`（合并后的 meta + 版图生成条目） | meta 有 `targets:` 时整片 results 多 `validation` 段 |
 | `converge(meta, out, scales=(1.0, 0.6))` | → `{runs, convergence, doc}` | mesh 尺寸同比缩放、各档整片求解，`convergence.yaml` = 最细两档相对变化 |
+| `tune(meta, out)` | → `{converged, iterations, meta, layout, results, tune, history}` | meta 须有 `layout:` + `targets:` + `tune:`；`out/iter_<k>/` 每轮完整配置与产物，`out/` 下终版配置 |
 | `assemble(cells, keep)` | → `AssembledMatrix(.labels, .maxwell_fF, .eliminated)` | keep 拼错 raise |
 | `lumped_cpw(freq, line_width, line_gap, substrate_thickness, film_thickness, *, eps_r, loss_tangent, london_penetration_depth)` | → `CpwLumped(Lk, Lext, C, G, Z0, eps_eff, q, lambda_g)` | ⚠ 入参 **SI 米 / Hz** |
 | `guided_wavelength(...)` | → `GuidedWavelength(lambda_g, eps_eff, q, Lk, Lext, C, G)` | 与 `lumped_cpw` 同一段计算 |

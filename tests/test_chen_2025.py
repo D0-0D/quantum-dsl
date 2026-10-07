@@ -80,7 +80,7 @@ def test_chen_2025_hand_written_bars_equal_template_route(tmp_path):
     import gdstk
 
     from quantum_dsl import build_gds, compile_layout, load_geo, load_meta
-    from quantum_dsl.build import _merge_qubits
+    from quantum_dsl.build import _merge
 
     def run(meta):
         m = load_meta(meta)
@@ -89,7 +89,7 @@ def test_chen_2025_hand_written_bars_equal_template_route(tmp_path):
         (cell,) = gdstk.read_gds(str(build_gds(lay, m, tmp_path / (meta.stem + ".gds")))).top_level()
         polys = sorted((p.layer, tuple(sorted((round(x, 3), round(y, 3)) for x, y in p.points)))
                        for p in cell.polygons)
-        qubits = sorted(_merge_qubits(list(m.circuit_model.get("qubits") or []), lay.qubits),
+        qubits = sorted(_merge(list(m.circuit_model.get("qubits") or []), lay.qubits, "qubit"),
                         key=lambda q: q["name"])
         return names, polys, qubits, lay
 

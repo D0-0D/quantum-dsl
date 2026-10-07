@@ -7,6 +7,8 @@
 ``12.2GHz``) → 解析成 **Hz (E_J/h)**, 换算焦耳 (×h) 是 build 接线时的事。
 ``targets:`` (issue #23) 在加载时展平成逐项核对条目 (键即 results.yaml 的字段名, 值是裸数),
 名字能否对上 qubit 由 build 在网格化之前查。
+``circuit_model`` 只收 qubits / resonators / ports / floating (无结导体的三种显式处置, docs/physics.md §8.1);
+``tune:`` (FEM 在环综合, ``quantum_dsl.tune``) 在加载时校验成方阵: 每个旋钮对准恰好一条 targets 核对项。
 """
 
 from __future__ import annotations
@@ -18,7 +20,7 @@ from pathlib import Path
 
 import yaml
 
-from .circuit_model import CouplingResult, QubitResult
+from .circuit_model import CouplingResult, QubitResult, ReadoutResult, ResonatorResult
 from .errors import QuantumDslError
 from .units import parse_quantity
 
@@ -26,12 +28,18 @@ __all__ = ["Meta", "load_meta"]
 
 _SCHEMA = "quantum-dsl/meta/1"
 _TOP_KEYS = frozenset({"schema", "geo", "layout", "layers", "materials", "airbox", "mesh",
-                       "solver", "gds", "circuit_model", "extract", "subsystems", "targets"})
+                       "solver", "gds", "circuit_model", "extract", "subsystems", "targets", "tune"})
+_CM_KEYS = frozenset({"qubits", "resonators", "ports", "floating"})
+_TUNE_KEYS = frozenset({"knobs", "max_iter", "damping"})
+_KNOB_KEYS = frozenset({"param", "target", "law", "bounds"})
+JUNCTION_KNOBS = ("E_J", "L_J")      # 结旋钮: 在缓存的 C 矩阵上闭式求根, 不跑 FEM
 _LAYER_KEYS = frozenset({"kind", "gds"})
 _LAYER_KINDS = frozenset({"conductor", "junction", "drawing"})
 # 可核对的量 = results.yaml hamiltonian 段里的数值字段 (单位在字段名后缀里)
 _QUBIT_FIELDS = frozenset(f.name for f in fields(QubitResult)) - {"name", "islands"}
 _COUPLING_FIELDS = frozenset(f.name for f in fields(CouplingResult)) - {"qubit_a", "qubit_b"}
+_RESONATOR_FIELDS = frozenset(f.name for f in fields(ResonatorResult)) - {"name", "net"}
+_READOUT_FIELDS = frozenset(f.name for f in fields(ReadoutResult)) - {"qubit", "resonator"}
 
 
 @dataclass(frozen=True)
@@ -50,20 +58,22 @@ class Meta:
     circuit_model: dict = field(default_factory=dict)
     extract: dict = field(default_factory=dict)
     subsystems: list = field(default_factory=list)
-    targets: dict = field(default_factory=dict)  # {source, checks: [{qubit|pair, field, expected, tol}]}
+    targets: dict = field(default_factory=dict)  # {source, checks: [{qubit|pair|resonator|readout, field, expected, tol}]}
+    tune: dict = field(default_factory=dict)     # {knobs: [{param, step, path, target, check, law, bounds}], max_iter, damping}
 
 
 def _targets(tbl, path) -> dict:
     """``targets: {source, qubits: {Q: {C_sigma_fF: 99.3, tol: 8%}}, couplings: [{pair: [a, b], beta: .., tol: ..}]}``
     → ``{source, checks: [...]}``, 每个 (对象, 字段) 一条。tol 只收 ``"8%"`` 写法 (裸数 8 是 8% 还是 800% 说不清)。"""
     where = f"load_meta: {path}: targets"
-    if not isinstance(tbl, dict) or set(tbl) - {"source", "qubits", "couplings"}:
-        raise QuantumDslError(f"{where} must be a mapping with keys source / qubits / couplings, got {tbl!r}")
+    if not isinstance(tbl, dict) or set(tbl) - {"source", "qubits", "couplings", "resonators", "readout"}:
+        raise QuantumDslError(f"{where} must be a mapping with keys source / qubits / couplings / "
+                              f"resonators / readout, got {tbl!r}")
 
     def entry(spec, allowed, head, what):   # head = 定位键 ({"qubit": ..} / {"pair": ..})
         if not isinstance(spec, dict):
             raise QuantumDslError(f"{where}: {what} must be a mapping, got {spec!r}")
-        unknown = sorted(set(spec) - allowed - {"tol"} - ({"pair"} & set(head)))
+        unknown = sorted(set(spec) - allowed - {"tol"} - ({"pair"} if "pair" in head or "readout" in head else set()))
         if unknown:
             raise QuantumDslError(f"{where}: {what}: unknown key(s) {unknown} (known: {sorted(allowed)} + tol)")
         tol = spec.get("tol")
@@ -86,23 +96,118 @@ def _targets(tbl, path) -> dict:
         return out
 
     checks = []
-    qubits = tbl.get("qubits") or {}
-    if not isinstance(qubits, dict):
-        raise QuantumDslError(f"{where}.qubits must map qubit name → quantities")
-    for name, spec in qubits.items():
-        checks += entry(spec, _QUBIT_FIELDS, {"qubit": str(name)}, f"qubits[{name!r}]")
-    couplings = tbl.get("couplings") or []
-    if not isinstance(couplings, list):
-        raise QuantumDslError(f"{where}.couplings must be a list of {{pair: [a, b], ...}}")
-    for i, spec in enumerate(couplings):
-        pair = spec.get("pair") if isinstance(spec, dict) else None
-        if not (isinstance(pair, list) and len(pair) == 2 and all(isinstance(n, str) for n in pair)
-                and pair[0] != pair[1]):
-            raise QuantumDslError(f"{where}: couplings[{i}] needs pair: [qubit_a, qubit_b], got {spec!r}")
-        checks += entry(spec, _COUPLING_FIELDS, {"pair": list(pair)}, f"couplings[{i}]")
+    for sec, fields_, loc in (("qubits", _QUBIT_FIELDS, "qubit"), ("resonators", _RESONATOR_FIELDS, "resonator")):
+        named = tbl.get(sec) or {}
+        if not isinstance(named, dict):
+            raise QuantumDslError(f"{where}.{sec} must map {loc} name → quantities")
+        for name, spec in named.items():
+            checks += entry(spec, fields_, {loc: str(name)}, f"{sec}[{name!r}]")
+    for sec, fields_, loc, what in (("couplings", _COUPLING_FIELDS, "pair", "qubit_a, qubit_b"),
+                                    ("readout", _READOUT_FIELDS, "readout", "qubit, resonator")):
+        pairs = tbl.get(sec) or []
+        if not isinstance(pairs, list):
+            raise QuantumDslError(f"{where}.{sec} must be a list of {{pair: [{what}], ...}}")
+        for i, spec in enumerate(pairs):
+            pair = spec.get("pair") if isinstance(spec, dict) else None
+            if not (isinstance(pair, list) and len(pair) == 2 and all(isinstance(n, str) for n in pair)
+                    and pair[0] != pair[1]):
+                raise QuantumDslError(f"{where}: {sec}[{i}] needs pair: [{what}], got {spec!r}")
+            checks += entry(spec, fields_, {loc: list(pair)}, f"{sec}[{i}]")
     if not checks:
-        raise QuantumDslError(f"{where}: declares no qubits / couplings to check")
+        raise QuantumDslError(f"{where}: declares no qubits / couplings / resonators / readout to check")
     return {"source": tbl.get("source"), "checks": checks}
+
+
+def target_ref(check: dict) -> str:
+    """核对项的引用名: ``Q1.f01_GHz`` / ``R1.kappa_MHz`` / ``Q1~R1.chi_MHz`` (tune 旋钮按它对准 targets)。"""
+    loc = check.get("qubit") or check.get("resonator") or "~".join(check.get("pair") or check["readout"])
+    return f"{loc}.{check['field']}"
+
+
+def _tune(tbl, targets, path) -> dict:
+    """``tune: {knobs: [{param: Q1.arm_L, target: Q1.anharmonicity_exact_MHz, law: -1, bounds: [150, 450]}],
+    max_iter: 8, damping: 1}`` → 校验后的旋钮表。方阵 (ANMod): 旋钮 param 唯一、target 唯一且必须是 targets 里的
+    一条核对项; 几何旋钮必须给比例律指数 ``law`` (target ∝ param^law, 只需趋势对), 结旋钮 (E_J / L_J) 不收 law。"""
+    where = f"load_meta: {path}: tune"
+    if not isinstance(tbl, dict) or set(tbl) - _TUNE_KEYS:
+        raise QuantumDslError(f"{where} must be a mapping with keys {sorted(_TUNE_KEYS)}, got {tbl!r}")
+    if not targets:
+        raise QuantumDslError(f"{where}: needs a targets: block — knobs aim at its checks")
+    refs: dict[str, int] = {}
+    for i, c in enumerate(targets["checks"]):
+        refs[target_ref(c)] = i
+        if "pair" in c or "readout" in c:                       # 对的两种写法都认
+            a, b = c.get("pair") or c["readout"]
+            refs[f"{b}~{a}.{c['field']}"] = i
+    knobs = tbl.get("knobs")
+    if not isinstance(knobs, list) or not knobs:
+        raise QuantumDslError(f"{where}.knobs must be a non-empty list")
+    out, seen_p, seen_t = [], set(), set()
+    for i, k in enumerate(knobs):
+        w = f"{where}.knobs[{i}]"
+        if not isinstance(k, dict) or set(k) - _KNOB_KEYS:
+            raise QuantumDslError(f"{w} must be a mapping with keys {sorted(_KNOB_KEYS)}, got {k!r}")
+        param, target = k.get("param"), k.get("target")
+        if not (isinstance(param, str) and "." in param and all(param.split("."))):
+            raise QuantumDslError(f"{w}: param must be '<step>.<template param>' / '<step>.E_J' / "
+                                  f"'<step>.length.f_r', got {param!r}")
+        if target not in refs:
+            raise QuantumDslError(f"{w}: target {target!r} is not a targets check (have: {sorted(refs)})")
+        if param in seen_p or refs[target] in seen_t:
+            raise QuantumDslError(f"{w}: param / target used twice — tune needs one knob per target "
+                                  f"(square system)")
+        seen_p.add(param)
+        seen_t.add(refs[target])
+        step, key = param.split(".", 1)
+        law = k.get("law")
+        if key in JUNCTION_KNOBS:
+            if law is not None:
+                raise QuantumDslError(f"{w}: junction knobs are root-solved on the cached C matrix; "
+                                      f"law is not used — drop it")
+        elif isinstance(law, bool) or not isinstance(law, (int, float)) or not math.isfinite(law) or law == 0:
+            raise QuantumDslError(f"{w}: geometric knob needs law: <non-zero exponent p> "
+                                  f"(target ∝ param^p, e.g. -1 for E_C ∝ 1/arm_L), got {law!r}")
+        bounds = k.get("bounds")
+        if bounds is not None and not (isinstance(bounds, list) and len(bounds) == 2
+                                       and all(isinstance(v, (int, float)) and not isinstance(v, bool)
+                                               for v in bounds) and 0 < bounds[0] < bounds[1]):
+            raise QuantumDslError(f"{w}: bounds must be [lo, hi] with 0 < lo < hi (SI for E_J/L_J/f_r, "
+                                  f"um for geometry), got {bounds!r}")
+        out.append({"param": param, "step": step, "path": key, "target": target, "check": refs[target],
+                    "law": None if law is None else float(law), "bounds": bounds})
+    max_iter, damping = tbl.get("max_iter", 8), tbl.get("damping", 1.0)
+    if isinstance(max_iter, bool) or not isinstance(max_iter, int) or max_iter < 1:
+        raise QuantumDslError(f"{where}.max_iter must be a positive int, got {max_iter!r}")
+    if isinstance(damping, bool) or not isinstance(damping, (int, float)) or not 0 < damping <= 1:
+        raise QuantumDslError(f"{where}.damping must be in (0, 1], got {damping!r}")
+    return {"knobs": out, "max_iter": max_iter, "damping": float(damping)}
+
+
+def _circuit_model(tbl, path) -> dict:
+    """circuit_model 键白名单 + 带量纲量解析成 SI (E_J 系 → Hz, L_J → H, f_r → Hz, Z0 / R → Ω)。
+    条目内的键与取值由 solve_circuit_model 查 (那里有完整报错)。"""
+    cm = copy.deepcopy(tbl or {})
+    if not isinstance(cm, dict):
+        raise QuantumDslError(f"load_meta: {path}: circuit_model must be a mapping")
+    unknown = sorted(set(cm) - _CM_KEYS)
+    if unknown:
+        raise QuantumDslError(f"load_meta: {path}: circuit_model: unknown key(s) {unknown} "
+                              f"(known: {sorted(_CM_KEYS)})")
+    for sec in ("qubits", "resonators", "ports"):
+        for q in cm.get(sec) or []:
+            if not isinstance(q, dict):
+                raise QuantumDslError(f"load_meta: {path}: circuit_model.{sec} entries must be "
+                                      f"mappings, got {q!r}")
+            for key in ("L_J", "E_J", "f_r", "Z0", "R"):
+                if key in q:
+                    q[key] = parse_quantity(q[key])
+            for key in ("E_J1", "E_J2"):
+                if key in q.get("squid", {}):
+                    q["squid"][key] = parse_quantity(q["squid"][key])
+    fl = cm.get("floating")
+    if fl is not None and not (isinstance(fl, list) and all(isinstance(v, str) for v in fl)):
+        raise QuantumDslError(f"load_meta: {path}: circuit_model.floating must be a list of net names")
+    return cm
 
 
 def _layers(tbl, path) -> dict:
@@ -163,18 +268,8 @@ def load_meta(path) -> Meta:
     if layout is not None and not layers:
         raise QuantumDslError(f"load_meta: {path}: 'layout' requires a 'layers' table")
 
-    circuit_model = copy.deepcopy(doc.get("circuit_model") or {})
-    for q in circuit_model.get("qubits", []):
-        if not isinstance(q, dict):
-            raise QuantumDslError(
-                f"load_meta: {path}: circuit_model.qubits entries must be "
-                f"mappings, got {q!r}")
-        for key in ("L_J", "E_J"):
-            if key in q:
-                q[key] = parse_quantity(q[key])
-        for key in ("E_J1", "E_J2"):
-            if key in q.get("squid", {}):
-                q["squid"][key] = parse_quantity(q["squid"][key])
+    circuit_model = _circuit_model(doc.get("circuit_model"), path)
+    targets = _targets(doc["targets"], path) if "targets" in doc else {}
 
     return Meta(
         path=path,
@@ -189,5 +284,6 @@ def load_meta(path) -> Meta:
         circuit_model=circuit_model,
         extract=doc.get("extract") or {},
         subsystems=doc.get("subsystems") or [],
-        targets=_targets(doc["targets"], path) if "targets" in doc else {},
+        targets=targets,
+        tune=_tune(doc["tune"], targets, path) if "tune" in doc else {},
     )

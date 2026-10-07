@@ -190,6 +190,43 @@ two_pads 的 live golden 是**可复现的实测锚点，不是绝对真值**：
 - **适用域**：微扰式要求 EJ/EC ≫ 1；two_pads 例子 EJ/EC ≈ 20.6，首阶展开带几个百分点误差——测试钉的是**自洽性**
   （rel 1e-9），不是物理精度到第 9 位。`f01 ≤ 0`（EJ/EC < 1/8）raise。
 
+### 8.1 精确能级与读出链路（2026-10-04）
+
+调研与核验账：`.claude/session/2610042252.md`（deep-research 工作流，22 个来源，25 条 claim 三票核验，5 条被否）。
+
+**精确 transmon 能级**（`transmon_levels_hz`）：电荷基 `H = 4E_C n² − (E_J/2)(|n⟩⟨n+1| + h.c.)`，n ∈ [−30, 30]，n_g = 0
+（Koch [L5] Eq. 2.1；transmon 区电荷色散可忽略）→ 字段 `f01_exact_GHz` / `anharmonicity_exact_MHz`。**渐近字段不改**
+（契约 golden，g 仍钉渐近 f01 支）。为什么要新字段：f01 渐近式只差 0.1–0.3 %（E_J/E_C = 50–100），但 **α = −E_C 只是领头阶**，
+精确 α/E_C = −1.149（50）/ −1.096（100）/ −1.46（20，n_g = 0）——拿 α 定 C_Σ 会偏 10–15 %。本仓数值复算与核验者独立复算一致。
+闭式锚：E_J = 0 → 能级 0, 4E_C, 4E_C。numpy 惰性 import。
+
+**无结导体的三种显式处置**（`circuit_model.resonators / ports / floating`；不声明照旧 raise，§10 #7）：
+
+| 处置 | 电路里做什么 | 输出 |
+|---|---|---|
+| `floating: [X]` | 电中性浮岛，Schur 消元（与 `assemble` 同一段代码） | 中介互容并进其余节点 |
+| `ports: [{name, net, R}]` | 外接负载 R 的导体：AC 接地（删行列），**互容 C_kp 留给衰减** | 各模的 Γ |
+| `resonators: [{name, net, f_r, Z0, mode, drawn}]` | 传输线腔 = 集总 LC 节点：`(C_r, L_r) = resonator_lumped_lc(f_bare, Z0, mode)`；`drawn: full`（默认，网格里是整条线）时 **C_r 换掉 FEM 对地电容**（行和），互容全留；`drawn: claw`（只画耦合爪）时 C_r 叠加 | f_r、κ、g_qr、χ、Purcell |
+
+- **负载后 f_r** = `1/(2π√(L_r·C_eff))`，`C_eff = 1/[C′⁻¹]_rr`——腔与 qubit 同进逆电容，耦合互容的负载自动计入。
+  Minev 2021（LOM [L1]）的教训正是腔必须作为节点而不是孤立闭式（强负载 C_L > 320 fF 时读出模可被拉低 ~20 %）。
+- **f_bare 的口径**：版图生成的条目取**画出那条线**的裸频率 = 目标 f_r × 总长 / 画长。两端等效长度 leq 是设计侧对端负载的猜测，
+  逆电容里的互容会把它负载回去——负载后 f_r 与目标之差就是在验 leq。不要把目标 f_r 当裸频率（那是负载算两遍）。
+- **自检字段 `C_gnd_fem_over_tl`** = FEM 对地电容 / 线的静电容 2·C_r（λ/2 与 λ/4 都是 c′l = 2C_r）。`drawn: full` 时应 ≈ 1；
+  落在 [0.5, 2] 外 warn（多半只画了爪）。`xmon_readout` 实测 1.53——发射焊盘的电容，被「换掉」丢了，这是 drawn: full 的已知账。
+  ⚠ λ/4 的接地短路端在静电里会把腔并进地：静电网格里的腔必须是**开路浮导体**（短路端不画，或只画爪）。
+- **g_qr** = ½·β·√(f01·f_r)，β 与 q–q 同口径（逆电容）。**χ** = `dispersive_shift_hz(g, f_r, f01_exact, f12_exact)`（Zhu 非 RWA 三能级，
+  单边 cavity pull）。约定陷阱：Solgun 2019 的 χ_ik = 2χ_Koch 且无 α 分母；二能级 g²/Δ 在 Δ ≫ E_C 时高估 ~|Δ−α|/α 倍。
+- **衰减（Norton 等效，Göppl 2008 [C1] Eq. 14–21）**：串联 C_κ + 负载 R → 并联电导 ω²C_κ²R（ωC_κR ≪ 1）⇒
+  `Γ = ω²·Σ_p C_kp²·R_p / C_eff`。腔 → `kappa_MHz`（κ/2π）；qubit → `T1_port_us`（直接经 port 辐射）。浮动 qubit 的 C_θp = Σ_i B_iθ·C_ip。
+  **R 显式声明**：端接 port 填 Z0；直通馈线从耦合点看两头并联 = Z0/2——此时 λ/4 给出 `Q_c = π/(2ω²C_κ²Z0²)`（与核验者自推式逐项相同，
+  但该前因子**没有核验过的文献出处**，只有 C_κ⁻² 标度有 Göppl 背书）。
+- **Purcell**（`T1_purcell_us`）= 单模 `Γ_P = κ·(g/Δ)²`（Sete 2015 Eq. 2）。⚠ 单模近似：多模求和会发散，真实 T1 常由远失谐模决定；
+  更准的 Re Y(ω)/C_Σ（Houck 2008）或 Im Z（Solgun 2019）要频域 driven 求解，本仓没有。
+- **精度天花板**：准集总 LOM 对 χ 的实测偏差 −10.5 %（Minev 2021，IBM 两颗芯片 10 个子系统，L_J 已按实测 f_q 校准；设计期会更差）；
+  FEM C_κ 对实测 ~4 %（Göppl）。第二轮被否决、**别当证据引**的：SQuADDS 闭式 g/χ/κ 公式组（0-3）、「只用电容矩阵闭式化简 Solgun Purcell」（0-3）、
+  「Yuan 2022 LOM α 误差 22 % 说明闭式 α 有系统偏差」（0-3）。
+
 ## 9. CPW 解析（`cpw.py`）
 
 **自洽公式集**，每一式有独立文献出处：

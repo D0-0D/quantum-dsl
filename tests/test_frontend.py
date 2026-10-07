@@ -113,6 +113,42 @@ def test_load_meta_targets_flattened_and_strict(tmp_path):
             load_meta(bad)
 
 
+
+def test_load_meta_readout_targets_and_tune_strict(tmp_path):
+    """契约「读出链路」/「tune」: circuit_model 只收 qubits / resonators / ports / floating 且量纲解析成 SI;
+    targets 多 resonators / readout 段; tune 是方阵 (旋钮 param 与 target 各唯一, target 必须是一条核对项),
+    几何旋钮必须给比例律 law, 结旋钮不收 law。"""
+    from quantum_dsl import QuantumDslError, load_meta
+    head = "schema: quantum-dsl/meta/1\ngeo: x.geo\n"
+    tgt = ("targets: {qubits: {Q1: {f01_exact_GHz: 5, anharmonicity_exact_MHz: -220, tol: 1%}},"
+           " resonators: {R1: {f_r_GHz: 7, tol: 0.5%}}, readout: [{pair: [Q1, R1], chi_MHz: -0.5, tol: 10%}]}\n")
+    ok = tmp_path / "ok.meta.yaml"
+    ok.write_text(head + "circuit_model: {resonators: [{name: R1, net: F0, f_r: 7GHz, Z0: 50Ohm, mode: quarter_wave}],"
+                  " ports: [{name: feed, net: FL, R: 25Ohm}], floating: [X]}\n" + tgt
+                  + "tune: {knobs: [{param: Q1.arm_L, target: Q1.anharmonicity_exact_MHz, law: -1},"
+                    " {param: Q1.E_J, target: Q1.f01_exact_GHz}, {param: R1.length.f_r, target: R1.f_r_GHz, law: 1}]}\n",
+                  encoding="utf-8")
+    m = load_meta(ok)
+    assert m.circuit_model["resonators"][0]["f_r"] == 7e9 and m.circuit_model["ports"][0]["R"] == 25.0
+    assert m.targets["checks"][-1] == {"readout": ["Q1", "R1"], "field": "chi_MHz", "expected": -0.5, "tol": 0.1}
+    k = m.tune["knobs"]
+    assert [(x["step"], x["path"], x["law"]) for x in k] == [("Q1", "arm_L", -1.0), ("Q1", "E_J", None),
+                                                             ("R1", "length.f_r", 1.0)]
+    assert m.tune["max_iter"] == 8 and m.tune["damping"] == 1.0
+    bad = tmp_path / "bad.meta.yaml"
+    for body, match in (
+            ("circuit_model: {resonator: []}\n", "unknown key"),
+            (tgt + "tune: {knobs: [{param: Q1.arm_L, target: Q1.f01_GHz, law: -1}]}\n", "not a targets check"),
+            (tgt + "tune: {knobs: [{param: Q1.arm_L, target: Q1.f01_exact_GHz}]}\n", "needs law"),
+            (tgt + "tune: {knobs: [{param: Q1.E_J, target: Q1.f01_exact_GHz, law: 0.5}]}\n", "law is not used"),
+            (tgt + "tune: {knobs: [{param: Q1.arm_L, target: Q1.f01_exact_GHz, law: -1},"
+                   " {param: Q1.arm_w, target: Q1.f01_exact_GHz, law: -1}]}\n", "square system"),
+            ("tune: {knobs: [{param: Q1.E_J, target: Q1.f01_exact_GHz}]}\n", "needs a targets"),
+            (tgt + "tune: {knobs: [{param: Q1.E_J, target: Q1.f01_exact_GHz}], damping: 2}\n", "damping")):
+        bad.write_text(head + body, encoding="utf-8")
+        with pytest.raises(QuantumDslError, match=match):
+            load_meta(bad)
+
 # ---------------------------------------------------------------- cells
 def test_rounded_polygon_area():
     """契约「圆角 cell」: 100×100 方 + r=10 圆角 → 面积 10000 − (4−π)·r² (采样内接, 容 1%)。"""

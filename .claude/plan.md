@@ -20,6 +20,26 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done。
 
 ## Backlog
 
+- [x] **读出链路 + `tune:`（2026-10-04, deep-research 调研后落地）**: 见 status; 物理口径 physics §8.1, 语法 grammar §3.5。
+- [ ] **读出 / 综合的后续（2026-10-04 列, 按调研优先级）**:
+      ① 带馈线的例子（`ports` 的 κ 与 `T1_port_us` 至今只有闭式测试锚）—— xmon_readout 加一条直通馈线 + λ/4 短路端不画;
+      ② `cpw_route` 的 `length:` 接 f_r 旋钮（现在只有 `cpw_meander` 例子跑过 `R1.length.f_r`）; 2–4 比特小芯片综合示例;
+      ③ 第 0 步闭式初值: f01 + α → (E_J, C_Σ*) 联合反推（嵌套求根, 无 scipy → 自写二分）, 给几何旋钮好的起点（ANMod 随机初值 2/10 不收敛）;
+      ④ 求解可信度（调研**未取证**, 先补查再做）: converge 三档 + Richardson 观测阶、airbox 尺寸扫、工艺参数 ±δ 有限差分灵敏度 → 线性协方差进 validation;
+         注意 gmsh 重网格噪声须 ≪ tol（ANMod 的 κ 噪声让旋钮抖 10%）;
+      ⑤ FEM 结果按内容哈希缓存（tune / 灵敏度复用）; 频域 driven（Palace）交叉验证 κ / Purcell（单模 κ(g/Δ)² 只是近似）;
+      ⑦ **lit-research 灵感（2026-10-05, 23 条三票确认只落在求解可信度 / 工艺离散 / 碰撞良率; 其余是未核验线索, 用前回原文）**:
+         便宜: Palace 每次静电解都算 ZZ 误差指示量（error-indicators.csv, 能量范数, 多 terminal 取 RMS）→ 免费读进 results 当报警, **不能**当 C_ij 收敛证据;
+         converge 加 GCI（两档用理论阶 p = 2 + Fs = 3 现在就能做, 三档出观测阶 + 渐近比; 比例取 1/0.8/0.64 别用 r = 2）; FEM 结果按内容哈希缓存（gplugins: GDS 字节 MD5 + 排序 kwargs → npz + sidecar yml）;
+         结参数加 `R_n`（Ambegaokar–Baratoff, 制备后按室温电阻重预测 f01）与可选 `E_J2/E_J1` 约瑟夫森高次谐波（KIT/IBM 实测 few %, 解释 |α| 高估; 电荷基里 cos2φ 一行）;
+         重网格噪声探针（同几何亚 µm 平移重解, 定 tune tol 与有限差分步长的底噪; 文献: 只重网格就让代价变 ~2×, 对策 FEMWARP 网格形变）。
+         中等: 分布式腔模型（λ/4 超越方程 tan θ = C₀Z₀ω, Google 1801.07904 App. D; 或 TL+耦合电容 S 参数拟合 L_eff/C_eff, arXiv 2607.19543 对 HFSS 频率 <0.5% / 线宽 <3%）替代 `drawn: full` 换对地;
+         线性正规模（多模 LOM）→ Purcell 滤波器节点 + 读出复用（Google: 每腔一滤波器, 间隔 ~160 MHz, J/2π 10 / κ_P/2π 40 MHz 抗 5 MHz 失谐）;
+         `process:` 块 σ 传播（f01 离散 Rn 主导: IBM σf 2.3% / σR 4.6%; 但 Chalmers σEC 0.8% 与 Rn 相当, 只算结低估 √2; α/g/χ 几何是主项）+ 碰撞良率 MC（规则表用户声明, 与门架构绑定; Morvan 2112.01634 九族线性约束, Zhang 2410.20283 MILP 开源）。
+         贵: 盲验证 = SQuADDS_DB `measured_device_database`（3 器件带公开设计代码, WM1 六对 qubit–腔实测 f01/α/g/χ/f_r）—— 要把 Qiskit Metal 设计移植成模板（无 GDS 导入）;
+         对照基线 SQDMetal 8 只 transmon RMSE f 6.0 / α 13.3 / g 24.5 / f_r 3.5%; Palace 本征模 / driven 第二、三 pass（2511.09041: 腔频 <0.3%, κ 3/4 在 16% 内; 收敛设置 r1.5o4）; AMR 透传（先验证零厚度 imprint 兼容）。
+      ⑥ 天花板: tune 只支持版图路线顶层步骤参数; 耦合比例律（χ ∝ (w_rq/w_q)² 那种 2D 子问题）未做, 现在靠对数割线吸收串扰; 终版配置丢 YAML 注释。
+
 - [ ] **连接型收窄为直线**（方向 1 的落地; ①③ 拍板后做 —— 注意方向 2 落地后 `LIB_CPW_ARC` / `length:` 已有消费者, ①③ 的「删」选项基本失效, 只剩 `cpw_meander` 退不退役）:
       ① 删 `lib/cpw_meander.{yaml,geo}`; `cpw_macros.geo` 只留 `LIB_CPW` / `LIB_CPW_ARC`（`disc_transmon.geo` 的爪用弧段）, 或连弧段一起删、爪改 OCC 原生画法 —— 拍板;
       ② 新连接型 `cpw_straight`（直段, 宽继承, 长度 = 两口距离）顶替; `xmon_readout` 例子改直段, 蛇形留给手写 `.geo` + `connect:`;

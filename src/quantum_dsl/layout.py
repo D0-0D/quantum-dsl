@@ -789,13 +789,14 @@ class Layout:
                 if k not in sub:
                     raise QuantumDslError(f"{where}: length.{mode} needs meta.materials.substrate.{k}")
             f = parse_quantity(spec["f_r"])
-            lam = guided_wavelength(f, w * 1e-6, params["gap"] * 1e-6,
-                                    float(sub["thickness_um"]) * 1e-6,
-                                    float(spec["film_nm"]) * 1e-9,
-                                    eps_r=float(sub["eps_r"])).lambda_g * 1e6
+            gw = guided_wavelength(f, w * 1e-6, params["gap"] * 1e-6,
+                                   float(sub["thickness_um"]) * 1e-6,
+                                   float(spec["film_nm"]) * 1e-9,
+                                   eps_r=float(sub["eps_r"]))
+            lam = gw.lambda_g * 1e6
             total = lam / (4 if mode == "quarter_wave" else 2)
             rec = {"mode": mode, "f_r_hz": f, "lambda_g_um": lam, "gap_um": params["gap"],
-                   "film_nm": float(spec["film_nm"])}
+                   "film_nm": float(spec["film_nm"]), "z0_ohm": math.sqrt((gw.Lk + gw.Lext) / gw.C)}
         else:
             raise QuantumDslError(f"{where}: length.mode {mode!r} unknown")
         drawn = total - leq

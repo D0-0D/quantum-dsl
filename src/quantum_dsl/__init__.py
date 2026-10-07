@@ -40,9 +40,10 @@ from .palace import Cap, palace_config, parse_capacitance
 from .cells import emit_geo, rounded_polygon
 from .layout import Layout, Port, compile_layout
 from .build import build, converge
+from .tune import tune
 
 __all__ += [
     "build_gds", "render_gds_png", "Mesh", "build_mesh", "Cap", "palace_config",
-    "parse_capacitance", "rounded_polygon", "emit_geo", "build", "converge",
+    "parse_capacitance", "rounded_polygon", "emit_geo", "build", "converge", "tune",
     "Layout", "Port", "compile_layout",
 ]
