@@ -4,7 +4,8 @@
 > using unified control*, Nature Physics **21**, 1489–1496 (2025), doi 10.1038/s41567-025-02990-x, arXiv:2502.03612。
 > 本文只做取证：从正文 Fig. 1a 照片量几何、从补充材料（SI）抄电路参数、判断阵列拓扑、列验证清单。**不改仓库代码。**
 > 量法与容差写法沿用 [`../report/Aug27/04-论文验证闭环-sung.md`](../report/Aug27/04-论文验证闭环-sung.md) §2–§3。
-> 2026-09-12。裁图 / 下载件在 scratchpad `paperB/`（见文末索引），未进仓。
+> 2026-09-12。论文 PDF 存 `docs/`（`*.pdf` 被 gitignore，不进仓）；裁图 / 掩膜当时在 scratchpad `paperB/`，已丢（见文末索引）。
+> **2026-10-14 订正**：表 #14 与 §6 读出那条——两个暗方块是 λ/4 短路端的开窗，**不是 In bump**（核对了正文与官方 SI 原文）。
 >
 > **落地（2026-09-13）**：`examples/lib/disc_transmon` / `bar_coupler` + `examples/chen_2025_3x3.layout.yaml`，只有比特 + 耦合器（无读出）。
 > 采用值：盘 390、缝 70 @ −45°、爪厚 40 / ±20° / 间隙 12 / 颈 20、条 30、五边形 378 底 × 300 总高 × 直壁 125（屋顶 175 ≈ 43°，§3.2 的三个量不能同时成立）、
@@ -36,15 +37,15 @@
 
 | 资料 | 状态 | 路径 / 出处 |
 |---|---|---|
-| 正文 PDF（9 页） | 有 | 仓 `quantum_dsl/Realization of …/s41567-025-02990-x.pdf` |
-| **补充材料 SI（27 页，§A–§R）** | **拿到** | scratchpad `paperB/nphys_SI.pdf`（Springer ESM `41567_2025_2990_MOESM1_ESM.pdf`）；文本 `nphys_SI.clean.txt` |
-| arXiv:2502.03612 v1（48 页 = 正文 + 同一份 SI） | 拿到 | `paperB/arxiv_2502.03612.pdf` |
-| Fig. 1 逐 panel 裁图（600 dpi） | 有 | `paperB/panel_a_photo.png`（照片）、`panel_a_circuit.png`、`panel_b…h.png`；局部放大 `zoom_*.png`；标注图 `fig1a_annotated.png` |
-| SI Fig. S4（集总电路）、Table SI、Fig. S6（晶格示意） | 有 | `paperB/si_figS4_page.png`、`si_figS6_page.png` |
+| 正文 PDF（9 页） | 有 | `docs/s41567-025-02990-x.pdf` |
+| **补充材料 SI（27 页，§A–§R）** | **拿到** | `docs/s41567-025-02990-x_SI.pdf`（Springer ESM `41567_2025_2990_MOESM1_ESM.pdf`） |
+| arXiv:2502.03612（48 页 = 正文 + 同一份 SI） | 拿到 | `docs/arxiv_2502.03612.pdf`；SI 部分与官方 SI 的 §D 电容、§E 原文、Table I 逐项一致（2026-10-14 核） |
+| Fig. 1 逐 panel 裁图（600 dpi） | 丢 | （2026-09-12 存 scratchpad `paperB/`，**已随 scratchpad 清掉**，要用需重裁） |
+| SI Fig. S4（集总电路）、Table SI、Fig. S6（晶格示意） | 在 SI 里 | 直接看 `docs/s41567-025-02990-x_SI.pdf` |
 | ref.20 Wang et al. npj QI 8, 3 (2022)（Ta 比特工艺） | 只看到摘要 | 无几何尺寸 |
 | ref.21 Sete et al. 2021 floating coupler | 未下载 | Rigetti 的设计，与本器件几何无关，只是"浮动耦合器"的出处 |
 | **BAQIS 同工艺 flip-chip：arXiv:2106.00341**（"flipmon"） | 摘录 | **真空间隙 5 ± 0.4 µm**，In bump 直径 20–50 µm，Ta 120 nm；附录 C 有一张 **3×3 flipmon + 12 耦合器**的版图（只设计未制备）。注意 flipmon 是一板在顶片、一板在载片，**不是**本器件的两半圆同片结构 |
-| BAQIS 63 比特 flipmon 阵列 arXiv:2402.04245 | 拿到 PDF | `paperB/arxiv_2402.04245_cosmic.pdf`；flipmon 器件，几何不同，未用 |
+| BAQIS 63 比特 flipmon 阵列 arXiv:2402.04245 | 丢 | （2026-09-12 存 scratchpad `paperB/`，**已随 scratchpad 清掉**，要用需重下）；flipmon 器件，几何不同，未用 |
 | 全芯片照片、GDS、SI 之外的尺寸 | **没有** | 正文 / SI / arXiv 源均无 µm 数字；"Data availability" 是 upon request |
 
 ---
@@ -102,7 +103,7 @@ E_C(c) = 171 MHz；在 ω_q = 4.1、ω_c = 5.2 GHz 处 g_qc = **71 MHz**、g_qq 
 Fig. 1a 顶部照片，600 dpi 渲染后 1185 × 630 px（照片有效区 1144 × 592 px）。按颜色分 6 类（裸蓝宝石深灰 / Ta 浅紫 /
 蓝 / 红 / 绿假彩 / 白），白色 0.5 mm 标尺 **200 px（各行 197–200）→ 2.50 µm/px（±0.5%）**，视场 2860 × 1480 µm。
 圆盘用边界点最小二乘拟合圆（残差 3–4 px，假彩边缘不齐）；缝宽取垂直于缝方向的剖面；爪、间隙用从圆心出发每 5° 一条射线的
-径向游程；条、五边形、焊盘用连通分量 bbox + 逐行 / 逐列延伸。标注图：`paperB/fig1a_annotated.png`。
+径向游程；条、五边形、焊盘用连通分量 bbox + 逐行 / 逐列延伸。标注图 `fig1a_annotated.png` 已丢。
 
 ### 3.2 参数表（µm；置信度 A = ±1–3%，B = ±5–10%，C = ±30–50% 或只能定量级）
 
@@ -121,7 +122,7 @@ Fig. 1a 顶部照片，600 dpi 渲染后 1185 × 630 px（照片有效区 1144 �
 | 11 | 五边形沿条位置 | 中心距**右侧**比特 **540**（距左侧 843）；在条 +y 侧，尖朝 +y | — | A | 左邻耦合器同样 540 距 Q0 → 全芯片一致 |
 | 12 | 纵向耦合器（Q 下方） | 五边形中心距**上方**比特 540，在竖条 **+x 侧**，尖朝 +x | — | A | = 横向耦合器逆时针转 90° 再关于条轴镜像 |
 | 13 | 读出焊盘 | 45° 正方形，边 **≈530**（bbox 752×750）；中心相对比特 **(−460, −460)**，即 SW 45°、651 | — | A | 右上角有小凸台接来自读出爪的细线 |
-| 14 | 焊盘内结构 | λ/4 CPW 蛇形 ≈7–8 腿、节距 ≈25–30、腿长 ≈175；两个 ≈50 µm 暗方块 | f_read 6.7–7.2 GHz | C | 暗方块推断为 In bump 焊点（焊盘接载片地）；蛇形总长看不出 |
+| 14 | 焊盘内结构 | λ/4 CPW 蛇形 ≈7–8 腿、节距 ≈25–30、腿长 ≈175；**短路端**：CPW 两条 gap 展宽成两个 ≈50 µm 级暗窗，中心导体从两窗之间穿过、在窗另一端并入焊盘金属 | f_read 6.736–7.148 GHz（SI Table I） | C | 暗窗与裸蓝宝石同色 = 刻空的开窗，**不是 In bump**（SI §E：bump 长在载片上）。开路端在读出爪一侧（电容耦合比特）。馈线在载片（SI §E 原文）；在短路端经开窗**电感耦合**是照片推断——正文 / SI 都没写耦合方式与位置，κ、χ 未给。焊盘经 bump 接载片地也是推断：纯电容 ε₀A/d ≈ 0.5 pF（d = 5），7 GHz 下 ≈45 Ω，算不上短路。蛇形总长看不出 |
 | 15 | 读出爪→焊盘细线 | 45°，可见 ≈175，宽 <8 | — | C | |
 | 16 | flip-chip 真空间隙 d | — | **5 ± 0.4**（arXiv:2106.00341 实测）；SI 只说 bump ~10 | 外部 | §5.2 用 SI 电容反推也 ≈5 |
 | 17 | 蓝宝石厚度、背面环境 | — | 未知（常见 430 / 500 µm） | 外部 | d ≪ 厚度，影响几 % |
@@ -211,7 +212,8 @@ Fig. 1a 顶部照片，600 dpi 渲染后 1185 × 630 px（照片有效区 1144 �
 - 比特 = **圆盘 D 390 切一条 70 µm 缝成两半**，缝向对晶格轴 −45°，SQUID 在圆心。四个爪位在 0/90/180/270°，读出爪位 225°。
 - 耦合器 = **条 30 × 890 + 两端弧形爪（厚 40，±20°，随盘径 195 + 间隙 12 共形）+ 五边形板（底 378 × 高 300，45° 屋顶）
   + 条–板间 SQUID（缝 70）**；五边形偏置在离一端比特 540 处、在条的一侧；横 / 纵两种朝向差一个镜像（表 #11–#12）。
-- 读出 = 45° 方形地焊盘 530 内嵌 λ/4 蛇形 + 细线到读出爪；焊盘中心在比特 SW 651 处；焊盘靠 In bump 接载片地。
+- 读出 = 45° 方形焊盘 530（λ/4 腔的局部地）内嵌 λ/4 蛇形 + 细线到读出爪（开路端）；焊盘中心在比特 SW 651 处；
+  短路端在焊盘内两个开窗处，推断与载片馈线电感耦合（表 #14）；焊盘经 In bump 接载片地是推断，原文未写。
 - 物理层：**顶片无地平面**；地 = 载片平面，隔 d ≈ 5 µm 真空；蓝宝石厚 ~430–500 µm 在金属另一侧。
   ⇒ `.meta.yaml` 的 `airbox.top_um` 就是 d，是这套 cell 的物理旋钮，不是网格参数。
 - 全部尺寸的可信度见表 3.2 的置信列；≤15 µm 的量在 cell 里应当是**显式参数、默认值标"照片估计"**。
@@ -222,12 +224,11 @@ Fig. 1a 顶部照片，600 dpi 渲染后 1185 × 630 px（照片有效区 1144 �
 
 | 要查什么 | 路径 |
 |---|---|
-| 正文 PDF | `~/quantum_dsl/Realization of High-Fidelity CZ and ZZ-Free iSWAP Gates with a Tunable Coupler/s41567-025-02990-x.pdf` |
-| SI PDF / 文本；arXiv 全文 PDF / 文本 | scratchpad `paperB/nphys_SI.pdf`、`nphys_SI.clean.txt`、`arxiv_2502.03612.pdf`、`arxiv_2502.03612.clean.txt` |
-| Fig. 1 各 panel（600 dpi）与局部放大 | `paperB/panel_a_photo.png`、`panel_a_circuit.png`、`panel_b.png`…`panel_h.png`、`zoom_q0/q1/coupler/readout/pent_topleft/bottom_pent/topmid/topright/leftedge/scalebar.png` |
-| 标注了量法的照片 | `paperB/fig1a_annotated.png` |
-| SI Fig. S4（集总电路 + 11 个 C）、Table SI + Fig. S6（晶格示意） | `paperB/si_figS4_page.png`、`paperB/si_figS6_page.png` |
-| 分类掩膜 / 连通分量（复算用） | `paperB/cls.npy`、`paperB/metal_lab.npy`、`paperB/scale.txt` |
-| BAQIS flip-chip 间隙 5 ± 0.4 µm 出处 | arXiv:2106.00341（ar5iv 摘录，未存 PDF）；`paperB/arxiv_2402.04245_cosmic.pdf`（63 比特 flipmon，仅参考） |
+| 正文 PDF | `docs/s41567-025-02990-x.pdf` |
+| 官方 SI PDF | `docs/s41567-025-02990-x_SI.pdf` |
+| arXiv 全文（正文 + SI） | `docs/arxiv_2502.03612.pdf` |
+| SI Fig. S4（集总电路 + 11 个 C）、Table I、Fig. S6（晶格示意） | 官方 SI §D / §G 内 |
+| BAQIS flip-chip 间隙 5 ± 0.4 µm 出处 | arXiv:2106.00341（ar5iv 摘录，未存 PDF） |
 
-scratchpad 根：`/tmp/claude-1000/-home-administrator-quantum-dsl/9a27ba1f-5818-4aca-a77e-b92545b638b5/scratchpad/paperB/`
+`*.pdf` 被 `.gitignore` 挡在仓外，换机器要重下。2026-09-12 的 Fig. 1 裁图、标注图、分类掩膜（`cls.npy` / `metal_lab.npy` / `scale.txt`）
+与 arXiv:2402.04245 PDF 当时在 scratchpad `paperB/`，已随 scratchpad 清掉；要复算须重裁。
