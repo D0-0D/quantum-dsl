@@ -1,5 +1,5 @@
 // disc_transmon — Chen et al. 2025 (Nat. Phys. 21, 1489) 圆盘浮动 transmon (局部坐标, 盘心在原点)。接口见 disc_transmon.yaml。
-// 几何全部从 Fig. 1a 照片量出 (docs/design/paper-chen2025-geometry.md §3.2, 2.50 µm/px): 盘径 390, 缝 70 沿 −45°, 结在盘心跨缝。
+// 几何全部从 Fig. 1a 照片量出 (docs/design/paper-chen2025-geometry.md §3.3, arXiv 原图 1.368 µm/px): 盘径 523.6, 缝 77.2 沿 −45°, 结在盘心跨缝。
 // 输入: dia 盘径, slot 缝宽, slot_deg 缝方向 (度), jj_w 结宽; claw_E/N/W/S (0/1) 四个耦合器爪 (外挂面: 电学归接上来的
 //       bar_coupler, 无邻居的方向关掉), gap 盘–爪间隙, claw_t 爪径向厚, claw_deg 爪半角跨 (度), stub 爪外沿到端口的颈长, bar_w 颈宽 (= 端口宽 = 条宽)。
 // 输出: half_a() / half_b() 两半盘 (a 在缝法向 +侧); faces_E()… 爪面 (弧 ∪ 颈, 一块面); port_x/y/a/w(0..3) = E/N/W/S 端口 (颈外端中点,

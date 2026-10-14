@@ -1,0 +1,163 @@
+{
+  "Problem": {
+    "Type": "Electrostatic",
+    "Verbose": 2,
+    "Output": "postpro"
+  },
+  "Model": {
+    "L0": 1e-06,
+    "Mesh": "cross.msh"
+  },
+  "Domains": {
+    "Materials": [
+      {
+        "Attributes": [
+          38
+        ],
+        "Permittivity": 10.0
+      },
+      {
+        "Attributes": [
+          37
+        ],
+        "Permittivity": 1.0
+      }
+    ]
+  },
+  "Boundaries": {
+    "Ground": {
+      "Attributes": [
+        39
+      ]
+    },
+    "Terminal": [
+      {
+        "Index": 1,
+        "Attributes": [
+          40
+        ]
+      },
+      {
+        "Index": 2,
+        "Attributes": [
+          41
+        ]
+      },
+      {
+        "Index": 3,
+        "Attributes": [
+          42
+        ]
+      },
+      {
+        "Index": 4,
+        "Attributes": [
+          43
+        ]
+      },
+      {
+        "Index": 5,
+        "Attributes": [
+          44
+        ]
+      },
+      {
+        "Index": 6,
+        "Attributes": [
+          45
+        ]
+      },
+      {
+        "Index": 7,
+        "Attributes": [
+          46
+        ]
+      },
+      {
+        "Index": 8,
+        "Attributes": [
+          47
+        ]
+      },
+      {
+        "Index": 9,
+        "Attributes": [
+          48
+        ]
+      },
+      {
+        "Index": 10,
+        "Attributes": [
+          49
+        ]
+      },
+      {
+        "Index": 11,
+        "Attributes": [
+          50
+        ]
+      },
+      {
+        "Index": 12,
+        "Attributes": [
+          51
+        ]
+      },
+      {
+        "Index": 13,
+        "Attributes": [
+          52
+        ]
+      },
+      {
+        "Index": 14,
+        "Attributes": [
+          53
+        ]
+      },
+      {
+        "Index": 15,
+        "Attributes": [
+          54
+        ]
+      },
+      {
+        "Index": 16,
+        "Attributes": [
+          55
+        ]
+      },
+      {
+        "Index": 17,
+        "Attributes": [
+          56
+        ]
+      },
+      {
+        "Index": 18,
+        "Attributes": [
+          57
+        ]
+      },
+      {
+        "Index": 19,
+        "Attributes": [
+          58
+        ]
+      }
+    ]
+  },
+  "Solver": {
+    "Order": 2,
+    "Device": "CPU",
+    "Electrostatic": {
+      "Save": 0
+    },
+    "Linear": {
+      "Type": "BoomerAMG",
+      "KSPType": "CG",
+      "Tol": 1e-08,
+      "MaxIts": 200
+    }
+  }
+}

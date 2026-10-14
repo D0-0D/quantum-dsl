@@ -1,5 +1,5 @@
 // chen_2025_3x3_bars.geo — chen_2025_3x3_hand.layout.yaml 的手写步骤: 12 条 Chen 2025 条形耦合器 (条 + 五边形板 + 条–板间的结),
-// 与 lib/bar_coupler.geo 逐点同一几何 (条宽 = 端口宽 30, 五边形 378 底 × 直壁 125 × 总高 300, 条–板缝 75, 板心距 to 口 273, 结宽 5),
+// 与 lib/bar_coupler.geo 逐点同一几何 (条宽 = 端口宽 38.5, 五边形 482.1 底 × 直壁 182.5 × 总高 423.1, 条–板缝 77, 板心距 to 口 372.5, 结宽 5),
 // 只是不经模板, 在全局坐标下直接从编排器注入的端口变量 <实例>_<口>_x/y/w 起画。
 // 每条: _x0,_y0 = from 口, _x1,_y1 = to 口, _w = 口宽, _flip = 五边形在 from→to 轴的哪一侧 (0 左 = 模板默认; 1 右 = 模板的 mirror: x),
 // _name = net 名 (宏在 chen_2025_3x3_bar_macros.geo)。Physical 名与模板路线一致: metal::ta::<name>::bar / metal::ta::<name>_pent::pent / jj::jj::<name>::jj;

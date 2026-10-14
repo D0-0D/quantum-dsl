@@ -1,0 +1,10 @@
+SUMMARY dir=cross_d10 np=28 rc=0 elapsed_s=1563 peak_palace_rss_GB=83.0 peak_sys_used_GB=95.3  Operator assembly level: 
+SUMMARY dir=cross_d12 np=28 rc=0 elapsed_s=1436 peak_palace_rss_GB=43.5 peak_sys_used_GB=87.9  Operator assembly level: 
+SUMMARY dir=cross_d8 np=28 rc=0 elapsed_s=1535 peak_palace_rss_GB=83.0 peak_sys_used_GB=95.3  Operator assembly level: P
+SUMMARY dir=/root/qdsl/v2f/siR_d10 np=48 rc=0 elapsed_s=127 peak_palace_rss_GB=17.4 peak_sys_used_GB=16.3  Operator asse
+SUMMARY dir=/root/qdsl/v2f/siR_d10_80_3 np=20 rc=0 elapsed_s=706 peak_palace_rss_GB=29.9 peak_sys_used_GB=87.9  Operator
+SUMMARY dir=si_d10 np=8 rc=0 elapsed_s=684 peak_palace_rss_GB=12.8 peak_sys_used_GB=93.1  Operator assembly level: Parti
+SUMMARY dir=si_d15 np=8 rc=0 elapsed_s=827 peak_palace_rss_GB=14.2 peak_sys_used_GB=95.3  Operator assembly level: Parti
+SUMMARY dir=si_d20 np=8 rc=0 elapsed_s=762 peak_palace_rss_GB=15.3 peak_sys_used_GB=86.9  Operator assembly level: Parti
+SUMMARY dir=si_d25 np=8 rc=0 elapsed_s=791 peak_palace_rss_GB=16.1 peak_sys_used_GB=87.9  Operator assembly level: Parti
+SUMMARY dir=si_d5 np=8 rc=0 elapsed_s=421 peak_palace_rss_GB=11.7 peak_sys_used_GB=16.9  Operator assembly level: Partia
