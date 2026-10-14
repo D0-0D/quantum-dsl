@@ -5,9 +5,7 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done。
 
 ## 方向（2026-09-17 与用户对齐）
 
-1. **连接型路由收窄为直线, 其余形状手写 `.geo`。** 现状: `lib/cpw_meander` 与 `cpw_macros.geo` 里的蛇形算法, 是 8/27 工作树 `cpw-meander`
-   的 `CPW_MEANDER` 加前缀搬进版图编排的; 「两口必须正对」也随之进了设计稿 §1.4、SPEC 与 grammar。用户 9/12 否的是「从坐标出发」,
-   没否正对; 今天明确: 期望的状态是工作树内容不进 main, 连接型只剩直线, 其它自己拿 `.geo` 画（现成写法 `examples/chen_2025_3x3_hand`）。
+1. ~~连接型路由收窄为直线~~ —— 被方向 2 取代（2026-10-14 清理）; 只剩 `cpw_meander` 退不退役, 见 Backlog。
 2. **自动布线（2026-09-17 提出, 2026-09-18 落地）**: 两口只需同宽; 给目标长度（减两端等效长度）、可用区域、最小曲率半径,
    算法在区域内自动画出 CPW, 连接**不一定正对**的两口。实现 = `src/quantum_dsl/route.py`（Dubins CSC 四型 + 中段直段换蛇形, 纯 math）
    + 模板 `lib/cpw_route`（`planner: cpw`, `.geo` 按注入的原语列表 Call `LIB_CPW` / `LIB_CPW_ARC`）+ 步骤键 `region:`; 设计稿 `docs/design/auto-route.md`;
@@ -16,8 +14,6 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done。
    两端目前同一个 lead; 要分端调就加 `lead_from` / `lead_to` 两个参数（params 只收标量）, 几行。
    **待拍板**: ① 自动腿数取「能装进 region 的最小 n」（稀疏大振幅）还是最大 n（紧凑）—— 一行改; ② pad↔pad（两岛端）没有 net 命名规则（`_net` raise）,
    馈线类 pad↔pad 要先定规则（demo 已改两只 xmon 的桨, 不再受此挡）; ③ 只做 CSC, 两口距 < 4R 时不保证最短（可行）。
-   对方向 1 的影响: `LIB_CPW_ARC` 与 `length:` / 路由 `subsystems` 记账都有了消费者（`cpw_route`）→ 方向 1 的 ①③ 不必再删; 剩下的问题只是 `cpw_meander` 要不要退役（它已是 `cpw_route` 的退化情形, 但退化测试拿它当锚）。
-
 ## Backlog
 
 - [x] **读出链路 + `tune:`（2026-10-04, deep-research 调研后落地）**: 见 status; 物理口径 physics §8.1, 语法 grammar §3.5。
@@ -40,12 +36,8 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done。
          对照基线 SQDMetal 8 只 transmon RMSE f 6.0 / α 13.3 / g 24.5 / f_r 3.5%; Palace 本征模 / driven 第二、三 pass（2511.09041: 腔频 <0.3%, κ 3/4 在 16% 内; 收敛设置 r1.5o4）; AMR 透传（先验证零厚度 imprint 兼容）。
       ⑥ 天花板: tune 只支持版图路线顶层步骤参数; 耦合比例律（χ ∝ (w_rq/w_q)² 那种 2D 子问题）未做, 现在靠对数割线吸收串扰; 终版配置丢 YAML 注释。
 
-- [ ] **连接型收窄为直线**（方向 1 的落地; ①③ 拍板后做 —— 注意方向 2 落地后 `LIB_CPW_ARC` / `length:` 已有消费者, ①③ 的「删」选项基本失效, 只剩 `cpw_meander` 退不退役）:
-      ① 删 `lib/cpw_meander.{yaml,geo}`; `cpw_macros.geo` 只留 `LIB_CPW` / `LIB_CPW_ARC`（`disc_transmon.geo` 的爪用弧段）, 或连弧段一起删、爪改 OCC 原生画法 —— 拍板;
-      ② 新连接型 `cpw_straight`（直段, 宽继承, 长度 = 两口距离）顶替; `xmon_readout` 例子改直段, 蛇形留给手写 `.geo` + `connect:`;
-      ③ `length:` 定长闭合与路由 `subsystems` 记账没有了消费者 → 删, 或只留 `mode: fixed` 校验 —— 拍板; 端口 `leq` 保留（设计稿: 等效长度由 qubit 模板给）;
-      ④ 正对检查保留（直段本来就要两口共线）, 文档改口: 不是「先用直段 / 弯把口摆正」（lib 里从没有过弯）, 而是「不正对就手写」;
-      ⑤ 同步 grammar §4.1 / §4.2.5 / §4.3 / §5 #13、examples README、SPEC 行、测试减两条。
+- [ ] **`cpw_meander` 退不退役**（拍板）: 它是 `cpw_route` 的退化情形（直段需求也由 `cpw_route` 无 `length:` 覆盖）。退役要迁 `xmon_readout`（= `xmon_readout_tune` 底版, `R1.length.f_r` 旋钮）
+      → `cpw_route`、`tests/test_layout.py` 三处、`tests/test_route.py` 的退化一致性锚与报错测试; `LIB_CPW_ARC` / `length:` 已有多个消费者, 不动。
 - [x] **自动布线 v2（区域驱动）—— 2026-09-18 14:40 已实现**: 用户反馈 v1 蛇形只是等腿对称蛇形的旋转 → 重写 `route.py`（672 行）: 曼哈顿框架骨架（端弧 + 直/Z/U/L/三折, 排序 (转弯数, 长度), 同组由填充定胜负）+ 逐弯余量蛇形（射线投射到 region 外框 / 缝 / 自身直段胶囊 2R; u_k = R + λ(room_k − R); 腿数最小可行; 无 region 等腿）+ 步骤键 `axis:`（默认 0, free = Dubins）+ `region:` 矩形并集（用户拍板: 不加 keepout, 缝就是障碍; 外框取样点精确 + 缝的闭式距离）。demo 三条路, 测试 7 条 (47 passed), 文档 / 报告同步。设计稿 §15 五个决定已定。
       天花板（设计稿 §13）: 多边形区域、三折以上模板、自由参数搜索、多段分摊蛇形、弧当障碍、多路互避、分端 lead —— 有需求再开。
 - [x] **自动布线 v2 追加（2026-09-18 15:30–16:30）**: 用户问「基线折几次 / 多段都要折 / 转角冲突」→ ① 多段分摊 `_fill_runs` / `_fill_subset`（按容量比例、容量小的先放、先放的块进障碍集、最大段吃精确余数; `n_legs` = 总腿数）; ② 余量精确化 `_Run._room`（角点 / 端点 → 加厚半圆的对偶射线 `_ray_arc`, 弧当障碍 + 两弧外切; 摆放网格 R/2 + 位置缓存）—— 顺手解决「2×2+2×4+2×2 中间长腿」的肩部出界; ③ 自身净距 `_self_clear`（沿路间隔 ≥ πR 的两段 ≥ 2R, 骨架预筛 + 成品检查 + 自检; `_dist_arc_arc` 闭式）; ④ `R: auto` / `auto_radius`（整数二分最大可行半径, 失败提示 R <= N）+ `subsystems.R_um`。demo 加 R4, 测试 7 → 11 条 (51 passed), 画廊 30 场景, 设计稿 §5.6/§5.7/§6/§8/§11/§13 同步。
@@ -56,7 +48,7 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done。
       2026-09-18 review 的四个小项**已修**（同日）: 弧出界检查改精确（端点 + 落在弧内的 0/90/180/270°, 原 5° 采样漏 ≤ 0.19 µm）; auto 腿数全失败时 hint 不再叫加腿; `width ≥ 2R` 在 `plan_cpw` 预检（原由 gmsh 宏报）; 显式 `n_legs` 无 `length:` raise。
 - [~] **Chen 2025 phase 2**: ① 整片 42 导体一次解 —— **已做**（2026-09-18 c24a1, 100/4, 8.1 M 未知量, 69 GB, 86 min; physics §13.1 ⑤）, 中心比特与十字到 0.1 MHz 相同, 以后比特级量用十字;
       ② d 单量拟合 —— 改用实测 α 定 d（十字 d = 4.0 µm 命中）, 其余（g_qc / g_qq / 11 个 SI 电容）作预测; 用 C04 定 d 的方案作废（SI 电容与我们互差 ×0.4–1.45, 不是干净的锚）;
-      ③ 网格两档 —— **已做**（十字 100/4 vs 80/3 E_C +0.3%; 3×3 100/4 vs 150/6 E_C −0.6%）; gap ±3 µm + 蓝宝石 ε 9.4/11.5 灵敏度未做（互容 ×0.4–0.5 的缺口在 gap）; ④ 读出爪（225°）/ 45° 方焊盘 / λ/4 谐振器 —— 谐振器形状按方向 1 手写或等方向 2, 等效长度来源仍开放;
+      ③ 网格两档 —— **已做**（十字 100/4 vs 80/3 E_C +0.3%; 3×3 100/4 vs 150/6 E_C −0.6%）; gap ±3 µm + 蓝宝石 ε 9.4/11.5 灵敏度未做（互容 ×0.4–0.5 的缺口在 gap）; ④ 读出爪（225°）/ 45° 方焊盘 / λ/4 谐振器 —— 谐振器形状用 `cpw_route` 或手写, 等效长度来源仍开放;
       ⑤ 5 µm 薄板厚度方向的 Box 尺寸场（session 2609121024 的 G7, 粗网格实测能跑, 报数前再评估）。
 - [ ] **`readout_pad.geo` demo 落仓**（2026-09-16 `.claude/session/2609161007.md`）: 9/14 演示过的 `{geo: readout_pad.geo, frame: Q00}` 文件没进仓, chen 版图头注引的就是它;
       `frame:` 至今无测试。做法: 文件进 `examples/`, chen 头注改「取消注释这一步即可」（不进正式步骤: 会多一个无结浮岛, 动 87 名 / 12 块 / 物理口径）, `tests/test_layout.py` 加一条 `frame:` 断言。
@@ -81,7 +73,7 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done。
 
 - **契约编号 Nxx 已清除（2026-09-17）**: v4.0 收口时是有意保留的（`447590d` 提交信息明写「表的测试列改指新测试函数」, 编号照留）, 之后版图编排、Chen 模板又各叠了一个编号;
   现在 SPEC 条目按名字引用, 测试 docstring 写「契约「名」」。别再往 SPEC 加编号。session log 是历史, 不改。
-- **「两口正对」的来历**: 8/27 工作树 `CPW_MEANDER_PORTS`（用户: cpw 起始角必须是 pad 的面）→ 设计稿 v3 §1.4 → `layout.py` `_connect_pose`。它是端点约束, 不是算法能力; 处置见「方向 1」。
+- **「两口正对」的来历**: 8/27 工作树 `CPW_MEANDER_PORTS`（用户: cpw 起始角必须是 pad 的面）→ 设计稿 v3 §1.4 → `layout.py` `_connect_pose`。它是端点约束, 不是算法能力; 不正对的两口现由 `cpw_route` 处理。
 - Palace order 2 多 rank「静默掉 rank」（v3 issue #22）: 64C 裸机 np=4/32 均 rc=0 且 C 一致到 1e-12 —— 是 v3 运行环境 / 构建问题, 不是 Palace bug, 不必为它保留分块降规模。
 - OCC 共面布尔 / ε-nudge / fragment scale-ladder（v3 issues #18 #24）: 零厚度片 imprint 路线下没有布尔减, 这一整类失效结构性消失。
 - 「Palace 拒绝内部面 Terminal」（v3 判断）: 误诊。根因是作者 Physical 组在 imprint 路径下存活并与实现组重叠 → 同一面两条边界元; 捕获后 `removePhysicalGroups()` 即愈。
