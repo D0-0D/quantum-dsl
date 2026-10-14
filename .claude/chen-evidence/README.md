@@ -27,3 +27,16 @@
 | `cross_d5_80_3_results.yaml` | 十字 d = 5 第二档网格 80/3 (5.02 M tets / 6.94 M 未知量, np=32 1405 s, 59 GB): 对 100/4 E_C +0.3%, 互容 −0.5～−1.1% → 单网格结论成立 |
 | `full3x3_d5_150_6_results.yaml` | 3×3 粗档 150/6 (2.00 M tets / 2.82 M 未知量, 32 min, 25.7 GB): 对 100/4 E_C −0.5～−0.6%, 互容 +1～2% —— 降内存的杠杆与代价 |
 | `cloud_runs_2609180210_summaries.txt` | 9 次远端运行的 np / 用时 / 采样峰值 / Palace 自报峰值一览（含 np=16、AMG 激进粗化两个只测峰值的变体） |
+
+## 2026-10-14 新几何 (arXiv 原图 1.368 µm/px 重测) 上云: `v2_2610/` + `photo_remeasure_2610/` (session 2610140321 / 2610141031, c24a1)
+
+`photo_remeasure_2610/`: 主会话量法 `rays.py` / `dims.py` (+ `output.txt`, 1.374 µm/px 的初版数字) 与 subagent 复核 `review/*.py` (终值 1.368 µm/px; 脚本里图路径指当时的 scratchpad,
+重取: `pdfimages -png -f 3 -l 3 docs/arxiv_2502.03612.pdf <dir>/ax`); λ/4 腔长 `cpwlen.py` (metal-env, 要 skimage); 上云三件套 `mk.py <si|siR|cross> <d> <dir> [max min]`
+(本机出网格 + config) → 远端 `run_palace2.sh <dir> <np> <case>.json` → 拉回 `postpro/` → `post.py <dir>` (results.yaml) → `cmp.py` (SI 11 电容对照 + α@f01 4.139) / `crossrep.py` (十字摘要)。
+
+| 文件 | 内容 |
+|---|---|
+| `si_d{5,10,15,20,25}_results.yaml` | SI 孤立 QCQ 块 (3×3 的 H01, 6 terminal), 100/4, 100–140 万 tets, np 8 7–14 min |
+| `siR_d10_results.yaml` / `siR_d10_80_3_results.yaml` | 同块 + Q11 读出爪 R11 (十字版图), 100/4 与 80/3 (263 万 tets) —— 读出爪效应与网格对照 |
+| `cross_d{8,10,12}_results.yaml` (+ d10 的 config / terminal-C) | 十字 19 导体 (含 R11), 100/4, 353–377 万 tets, np 28 ≈ 25 min, Palace 自报峰值 41.8 GB |
+| `cloud_runs_summaries.txt` | 各次用时 / 峰值 (cross_d8 与 d10 并发, 采样 RSS 是两者之和) |

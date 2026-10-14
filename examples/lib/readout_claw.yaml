@@ -1,0 +1,8 @@
+# readout_claw — Chen 2025 读出爪: 与比特盘同心的弧 (λ/4 读出腔的开路端) ∪ 沿径向伸向读出焊盘的细线一段。单岛, component = 实例名。
+# 放置: at = 比特盘心 (局部坐标原点 = 盘心); 电学上是读出腔的一端 → meta circuit_model.resonators 写 {net: <实例名>, drawn: claw}。
+# 数字出处 docs/design/paper-chen2025-geometry.md §3.3 (arXiv 原图 1.368 µm/px): 盘半径 261.8 + 间隙 3.8 (±1.2, 只有 2.8 px) = r_in, 厚 48.2, 半角跨 18°, 方向 225° (SW);
+# 细线宽 5.2, 爪外缘到读出焊盘凸台的裸线 129 (再往里是焊盘内 λ/4 CPW 的中心导体, 不画)。
+schema: quantum-dsl/template/1
+params: {r_in: 265.6, t: 48.2, deg: 18, dir: 225, lead_w: 5.2, lead_l: 129}
+layers: {metal: conductor}
+islands: {claw: {faces: claw(), layer: metal}}

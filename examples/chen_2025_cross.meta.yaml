@@ -1,5 +1,5 @@
-# chen_2025_cross.meta.yaml — chen_2025_cross.layout.yaml 的 sidecar; 物理口径与 chen_2025_3x3.meta.yaml 逐字相同 (flip-chip: 顶片无地, 载片地 = airbox.top_um = d = 5 µm,
-# 蓝宝石标量 ε 10 / 430 µm, 网格 100/4, order 2, 盒外表面接地)。唯一差别: **没有 extract.blocks** —— 十字就是要 18 导体一次解, 中心比特带全部 4 只爪。
+# chen_2025_cross.meta.yaml — chen_2025_cross.layout.yaml 的 sidecar; 物理口径与 chen_2025_3x3.meta.yaml 逐字相同 (flip-chip: 顶片无地, 载片地 = airbox.top_um = d = 10 µm (实测 α 标定),
+# 蓝宝石标量 ε 10 / 430 µm, 网格 100/4, order 2, 盒外表面接地)。唯一差别: **没有 extract.blocks** —— 十字就是要 19 导体一次解, 中心比特带全部 4 只爪 + 读出爪。
 # 报数前按 grammar 常见坑 #6 做两档网格 (100/4 与 80/3); d 只用一个电容标定, 其余作预测 (docs/design/paper-chen2025-geometry.md §5.2)。
 schema: quantum-dsl/meta/1
 
@@ -10,6 +10,11 @@ layers:
 
 materials:
   substrate: {eps_r: 10.0, thickness_um: 430}
-airbox: {top_um: 5, bottom_um: 500, side_um: 300}   # top_um = flip-chip 间隙 d
+airbox: {top_um: 10, bottom_um: 500, side_um: 300}  # top_um = flip-chip 间隙 d
 mesh: {max_size_um: 100, min_size_um: 4}
 solver: {type: electrostatic, order: 2, outer_boundary: ground}
+
+# 读出爪 R11 = λ/4 读出腔的开路端 (只画爪 + 一段细线 → drawn: claw, C_r 叠加)。f_r 取 SI Table I 读出频率 6.736–7.148 GHz 的中值; Z0 原文未给, 取 50 Ω。
+circuit_model:
+  resonators:
+    - {name: R11, net: R11, f_r: 6.9GHz, Z0: 50Ohm, mode: quarter_wave, drawn: claw}

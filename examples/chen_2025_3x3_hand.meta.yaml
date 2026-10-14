@@ -11,7 +11,7 @@ layers:
 
 materials:
   substrate: {eps_r: 10.0, thickness_um: 430}
-airbox: {top_um: 5, bottom_um: 500, side_um: 300}
+airbox: {top_um: 10, bottom_um: 500, side_um: 300}
 mesh: {max_size_um: 100, min_size_um: 4}
 solver: {type: electrostatic, order: 2, outer_boundary: ground}
 

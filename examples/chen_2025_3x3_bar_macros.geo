@@ -3,7 +3,7 @@
 // ⚠ 宏必须放在被 Include 的文件里, 不能写在手写步骤文件本身: 手写步骤文件是被 merge 的, 解析完即关闭, 里面定义的 Macro 随之失效,
 //   同一进程第二次跑版图 (build() 出 GDS / 网格 / 分块时必然发生) 会在 Call 处炸掉 gmsh; Include 的文件 gmsh 不关, 宏体一直可用。
 //   编排器对 merge 文件里的 Macro 直接 raise (layout.py _merge)。守卫 If (!Exists(...)) 让本文件可被反复 Include。
-_pw = 378;  _wall = 125;  _ph = 300;  _pg = 75;  _off = 273;  _jw = 5;
+_pw = 482.1;  _wall = 182.5;  _ph = 423.1;  _pg = 77;  _off = 372.5;  _jw = 5;
 
 If (!Exists(_CHEN_BARS_MACROS))           // 宏是进程级的, 反复 Include 不能重定义
   _CHEN_BARS_MACROS = 1;
