@@ -135,9 +135,15 @@ def test_load_meta_readout_targets_and_tune_strict(tmp_path):
     assert [(x["step"], x["path"], x["law"]) for x in k] == [("Q1", "arm_L", -1.0), ("Q1", "E_J", None),
                                                              ("R1", "length.f_r", 1.0)]
     assert m.tune["max_iter"] == 8 and m.tune["damping"] == 1.0
+    per = tmp_path / "per.meta.yaml"                       # tol 逐字段: 同一个腔 f_r 紧、κ 松
+    per.write_text(head + "targets: {resonators: {R1: {f_r_GHz: 7, kappa_MHz: 0.4,"
+                   " tol: {f_r_GHz: 0.2%, kappa_MHz: 5%}}}}\n", encoding="utf-8")
+    assert [(c["field"], c["tol"]) for c in load_meta(per).targets["checks"]] == [("f_r_GHz", 0.002),
+                                                                                  ("kappa_MHz", 0.05)]
     bad = tmp_path / "bad.meta.yaml"
     for body, match in (
             ("circuit_model: {resonator: []}\n", "unknown key"),
+            ("targets: {resonators: {R1: {f_r_GHz: 7, kappa_MHz: 0.4, tol: {f_r_GHz: 1%}}}}\n", "per-quantity tol"),
             (tgt + "tune: {knobs: [{param: Q1.arm_L, target: Q1.f01_GHz, law: -1}]}\n", "not a targets check"),
             (tgt + "tune: {knobs: [{param: Q1.arm_L, target: Q1.f01_exact_GHz}]}\n", "needs law"),
             (tgt + "tune: {knobs: [{param: Q1.E_J, target: Q1.f01_exact_GHz, law: 0.5}]}\n", "law is not used"),

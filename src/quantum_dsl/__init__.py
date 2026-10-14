@@ -23,13 +23,13 @@ __all__ = [
 # V4-3 物理内核 (纯 math, 不依赖 V4-2)
 from .circuit_model import (ELEM_CHARGE, FLUX_QUANTUM_REDUCED, H_PLANCK, HBAR,
                             dispersive_shift_hz, resonator_lumped_lc,
-                            solve_circuit_model)
+                            solve_circuit_model, transmon_from_spectrum)
 from .assemble import assemble
 from .cpw import guided_wavelength, lumped_cpw
 
 __all__ += [
     "ELEM_CHARGE", "FLUX_QUANTUM_REDUCED", "H_PLANCK", "HBAR",
-    "solve_circuit_model", "resonator_lumped_lc", "dispersive_shift_hz",
+    "solve_circuit_model", "resonator_lumped_lc", "dispersive_shift_hz", "transmon_from_spectrum",
     "assemble", "guided_wavelength", "lumped_cpw",
 ]
 

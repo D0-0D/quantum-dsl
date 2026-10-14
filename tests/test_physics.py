@@ -223,6 +223,20 @@ def test_transmon_exact_levels_limits():
         assert transmon_levels_hz(ec, ratio * ec, n_cut=40) == pytest.approx((f01, f12), rel=1e-12)
 
 
+def test_transmon_from_spectrum_inverts_exact_levels():
+    """契约「读出链路」: ``transmon_from_spectrum`` 是精确能级的逆 —— (E_C, E_J) → transmon_levels_hz → 反推回原值;
+    非 transmon 区 (α/f01 超出 E_J/E_C ∈ [2, 2000] 的范围) 与 α ≥ 0 raise。"""
+    from quantum_dsl import H_PLANCK, QuantumDslError, transmon_from_spectrum
+    from quantum_dsl.circuit_model import transmon_levels_hz
+    for ec_ghz, ej_ghz in ((0.2, 12.2), (0.3, 6.0), (0.15, 30.0)):
+        ec, ej = ec_ghz * 1e9 * H_PLANCK, ej_ghz * 1e9 * H_PLANCK
+        f01, f12 = transmon_levels_hz(ec, ej)
+        assert transmon_from_spectrum(f01, f12 - f01) == pytest.approx((ec, ej), rel=1e-9)
+    for f01, alpha in ((5e9, 0.1e9), (5e9, -4.8e9), (5e9, -1e6)):
+        with pytest.raises(QuantumDslError, match="transmon"):
+            transmon_from_spectrum(f01, alpha)
+
+
 def _readout_model(**kw):
     """Q (接地 transmon) – R (λ/4 腔, 7 GHz, 50 Ω) – F (馈线 port, 25 Ω = 直通 Z0/2)。
     互容 Q–R 5、R–F 2、Q–F 0.1 fF; Q 对地 80, R 对地 900 (将被 C_r 换掉), F 对地 300 fF。"""

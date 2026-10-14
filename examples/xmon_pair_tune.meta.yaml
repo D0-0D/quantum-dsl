@@ -1,0 +1,49 @@
+# xmon_pair_tune.meta.yaml — 两比特小芯片的 FEM 在环综合: xmon_pair 版图, 11 个目标 + 11 个旋钮 (方阵), 两条读出腔复用一条馈线。
+# 跑法: quantum_dsl.tune("examples/xmon_pair_tune.meta.yaml", "build/xp_tune")。
+# 规格: 两比特 f01 4.8 / 5.0 GHz、α −250 MHz、直接耦合 g 8 MHz; 读出腔 7.2 / 7.45 GHz (复用间隔 250 MHz)、χ −0.2 MHz、κ/2π 0.4 MHz (= 2|χ|)。
+#   每比特: arm_L → α (law −1)、ro_gap → χ (law −1)、E_J → f01 (结, 缓存 C 上二分); 每腔: length.f_r → f_r (law 1)、tap_h → κ (law 2);
+#   Q1.at.1 → g_qq: Q2 在原点, 它就是两比特中心距, 臂尖隔地的耦合随距离陡降 (law −3, 只需趋势对); bounds 下限保证臂尖不相碰。
+# κ / χ 的 tol: 这档粗网格的重网格噪声让 κ 抖 ±5.5%、χ ±3.3% (xmon_feedline 探针, docs/physics.md §8.1), tol ≈ 2σ: κ 10%、χ 5%。
+schema: quantum-dsl/meta/1
+
+layout: xmon_pair.layout.yaml
+layers:
+  m1: {kind: conductor, gds: [1, 0]}
+  jj: {kind: junction,  gds: [20, 0]}
+
+materials:
+  substrate: {eps_r: 11.45, thickness_um: 500}
+airbox: {top_um: 600, bottom_um: 800, side_um: 200}
+mesh: {max_size_um: 200, min_size_um: 20}
+solver: {type: electrostatic, order: 2, outer_boundary: open}
+
+circuit_model:
+  ports: [{name: feed, net: FL, R: 25.5Ohm}]
+
+targets:
+  source: 演示规格 (κ = 2|χ|, 复用间隔 250 MHz, 非论文值)
+  qubits:
+    Q1: {anharmonicity_exact_MHz: -250, f01_exact_GHz: 4.8, tol: 1%}
+    Q2: {anharmonicity_exact_MHz: -250, f01_exact_GHz: 5.0, tol: 1%}
+  couplings: [{pair: [Q1, Q2], g_MHz: 8, tol: 5%}]
+  resonators:
+    R1: {f_r_GHz: 7.2, kappa_MHz: 0.4, tol: {f_r_GHz: 0.2%, kappa_MHz: 10%}}
+    R2: {f_r_GHz: 7.45, kappa_MHz: 0.4, tol: {f_r_GHz: 0.2%, kappa_MHz: 10%}}
+  readout:
+    - {pair: [Q1, R1], chi_MHz: -0.2, tol: 5%}
+    - {pair: [Q2, R2], chi_MHz: -0.2, tol: 5%}
+
+tune:
+  knobs:
+    - {param: Q1.arm_L, target: Q1.anharmonicity_exact_MHz, law: -1, bounds: [150, 500]}
+    - {param: Q2.arm_L, target: Q2.anharmonicity_exact_MHz, law: -1, bounds: [150, 500]}
+    - {param: Q1.ro_gap, target: Q1~R1.chi_MHz, law: -1, bounds: [4, 60]}
+    - {param: Q2.ro_gap, target: Q2~R2.chi_MHz, law: -1, bounds: [4, 60]}
+    - {param: R1.length.f_r, target: R1.f_r_GHz, law: 1}
+    - {param: R2.length.f_r, target: R2.f_r_GHz, law: 1}
+    - {param: T1.tap_h, target: R1.kappa_MHz, law: 2, bounds: [20, 600]}
+    - {param: T2.tap_h, target: R2.kappa_MHz, law: 2, bounds: [20, 600]}
+    - {param: Q1.at.1, target: Q1~Q2.g_MHz, law: -3, bounds: [360, 900]}
+    - {param: Q1.E_J, target: Q1.f01_exact_GHz}
+    - {param: Q2.E_J, target: Q2.f01_exact_GHz}
+  max_iter: 8

@@ -1,0 +1,15 @@
+# xmon_feedline.layout.yaml — 读出链路带衰减通道: xmon → λ/2 自动布线读出腔 → 馈线耦合焊盘 (feed_tap) ┆ 直通馈线 (pad 长条), 平面工艺地。
+#   Q1.RO (桨外沿, 宽 10) ──cpw_route (λ/2 @ 7 GHz, 区域内自动蛇形)──► T1.T (耦合焊盘) ┆ FL (10 × 2000 µm, 两头开路)
+# 两端都是外挂面 → 读出腔 net = 步骤名 R1。馈线 FL 是独立导体, meta 里声明成 port (R = Z0/2) → κ、T1_port、Purcell。
+# feed_tap 的原点 = 馈线西沿 (x = 1451 − 5): 焊盘与馈线之间不留地。
+# 为什么 λ/2: 电路模型把腔当一个等势节点, 电容 C_κ 只在电压腹点有意义; λ/4 的远端是短路端 (电感耦合), 静电看不见。
+# region 左沿 80 µm: tune 改 arm_L / ro_gap 时 Q1.RO 口会左右移, 引出段必须仍在 region 内 (规划器只在骨架直段上放蛇形, 不会伸进比特)。
+schema: quantum-dsl/layout/1
+templates: [lib]
+steps:
+  - {template: xmon, name: Q1, at: [0, 0], layers: {metal: m1, jj: jj}, E_J: 12.2GHz}
+  - {template: pad, name: FL, at: [1451, 0], params: {w: 10, h: 2000, gap: 6}, layers: {metal: m1}}
+  - {template: feed_tap, name: T1, at: [1446, 0], layers: {metal: m1}}
+  - {template: cpw_route, name: R1, from: Q1.RO, to: T1.T, params: {R: 40, gap: 6, lead: 60},
+     length: {mode: half_wave, f_r: 7GHz, film_nm: 200}, region: [80, -1000, 1411, 1000]}
+ground: {sheet: {layer: m1, margin_um: 200}}

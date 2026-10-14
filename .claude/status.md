@@ -26,11 +26,16 @@
   版图波长定长路由自动生成 resonator（f_r = 画长裸频率）→ `xmon_readout` 现在 `solve=True` 能解（之前 F0 未认领 raise）; 真 Palace 13.6 s: g_qr 63 MHz, χ −0.116 MHz, f_r 6.959 GHz。
 - **`tune:` FEM 在环综合**（2026-10-04, `src/quantum_dsl/tune.py`）: meta 声明旋钮 → targets 核对项（方阵）, 几何旋钮比例律 + 对数割线每轮一次 FEM, 结旋钮在缓存 C 上二分;
   终版 = 普通 layout + meta（配置即综合输出）。`examples/xmon_readout_tune.meta.yaml` 四旋钮（arm_L / ro_gap / length.f_r / E_J）真 Palace **4 次 FEM / 51 s 全部命中**。
+- **馈线 κ + 两比特复用读出综合**（2026-10-14, 分支 `readout-followup`, session 2610141107）: 模板 `feed_tap`（耦合焊盘, 原点 = 馈线西沿）+ `pad` 长条馈线（meta `ports`, R = Z0/2）+ `cpw_route` **λ/2**
+  （等势节点只在电压腹点对; λ/4 远端短路是电感耦合, 静电看不见）。`xmon_feedline` κ/2π 5.6 MHz / Purcell 107 µs; `xmon_feedline_tune` 五旋钮（含 `R1.length.f_r` on cpw_route、`T1.tap_h → κ`）6 次 FEM 收敛;
+  `xmon_pair` 两比特臂尖直接耦合 + 两腔共馈线, 11 旋钮（g_qq 旋钮 = `Q1.at.1`, 旋钮路径可下钻列表）**7 次 FEM / 422 s 收敛**。
+  同批: `transmon_from_spectrum`（f01, α → E_C, E_J; tune 第 0 步记 `closed_form`）、targets `tol:` 可逐字段、对数割线观测指数只在 law 的 ¼–4 倍内才用。
+  **重网格噪声底实测**（200/20 演示网格平移重解）: κ σ ≈ 5 %、χ ≈ 3 %、C_Σ 0.3 % → tune 的 tol 须 ≥ 2σ（κ 5 % 时不收敛）; 细一档 κ −28 %（physics §8.1）。
 - **已知偏差**: QCQ 块解删掉块内比特伸向块外耦合器的爪 → 只影响多爪比特, 且只有 −2.5% E_C（十字实测, §13.1）; 互容仍是 SI 的 0.4–0.5 倍, 与 d / 环境无关, 是几何（缝 / 间隙）的账。
 
 ## 怎么跑
 
-- 全套: `~/miniconda3/envs/qdsl313/bin/python -m pytest tests/ -q` → **61 passed / 3 skipped**（~3 min; live 两条要 Palace）。
+- 全套: `~/miniconda3/envs/qdsl313/bin/python -m pytest tests/ -q` → **64 passed / 3 skipped**（~4 min; live 两条要 Palace）。
 - Chen: `compile_layout` 0.7 s、`build_gds` 1 s、单块网格 22 s。只要块就 `build(m, out, solve=True, blocks=["H01"])`（本机 8 rank ~10 min, 75 万 tets order 2）;
   不带 `blocks=` 会先给全片出 ~9M tets 网格。PNG 在 gitignore 的 `build/` 下, 本地跑一次即有。
 - 上云跑法（2026-09-18 实测, c24a1 64c/128G 有 spack Palace 0.16、无 gmsh）: 本机 `build(..., solve=False)` 出 msh + json → `rr -p` 推 → 远端 `palace -np N cfg`（`OMPI_ALLOW_RUN_AS_ROOT=1`, mpirun 在 spack openmpi bin）→ `rr -f` 拉 `postpro/` → `parse_capacitance` + `solve_circuit_model`。

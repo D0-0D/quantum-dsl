@@ -13,6 +13,9 @@
 | `two_pads.layout.yaml` + `two_pads_layout.meta.yaml` | 同一 two_pads，用**版图**写：两个 `pad` 模板实例 | 版图路线的最小例子：与手写 `.geo` 逐字等价（GDS / 网格标签相同，测试断言） | 同 two_pads |
 | `xmon_readout.{layout.yaml,meta.yaml}` + `xmon_readout_launch.geo` | `xmon` 模板（岛 + moat + 结 + 读出桨）→ λ/4 定长蛇形 `cpw_meander` → 手写发射焊盘，`ground: sheet` | 框架演示：模板 / 手写 `.geo` / 路由在同一模型混用；手写步骤声明端口给路由接；结自动进 circuit_model；长度闭环 | 粗网格秒级（演示件） |
 | `xmon_readout_tune.meta.yaml` | 同一 `xmon_readout` 版图 + `targets:`（α_exact −250 MHz / f01_exact 4.8 GHz / 腔 f_r 7.2 GHz / χ −0.2 MHz）+ `tune:` 四个旋钮（`Q1.arm_L` / `Q1.ro_gap` / `R1.length.f_r` 几何，`Q1.E_J` 结） | FEM 在环综合：`tune(meta, out)` 迭代到全部命中，产出普通 layout + meta；读出腔 R1 由 λ/4 定长路由自动进电路模型（g / χ / 负载后 f_r） | 本机 8 rank：4 次 FEM / 51 s 收敛（2026-10-04 实测） |
+| `xmon_feedline.{layout.yaml,meta.yaml}` | `xmon` → λ/2 `cpw_route`（区域内自动蛇形）→ `feed_tap` 耦合焊盘 ┆ 直通馈线（`pad` 长条 10 × 2000），`ground: sheet` | 读出链路**带衰减通道**：馈线在 meta 里声明成 `ports`（R = Z0/2）→ `kappa_MHz` / `T1_port_us` / `T1_purcell_us`；腔两端都是外挂面 → net = 步骤名 R1。为什么 λ/2：电容耦合只在电压腹点成立（physics §8.1） | 本机 8 rank 75 s：κ/2π 5.6 MHz、Purcell T1 107 µs（2026-10-14） |
+| `xmon_feedline_tune.meta.yaml` | 同一版图 + 五个目标（α −250 / f01 4.8 / f_r 7.2 / χ −0.2 / κ 0.4 MHz = 2\|χ\|）+ 五个旋钮（`Q1.arm_L` / `Q1.ro_gap` / `R1.length.f_r` / `T1.tap_h` 几何，`Q1.E_J` 结） | `cpw_route` 的 `length.f_r` 旋钮（每轮按新长度重规划蛇形）、κ 旋钮、逐字段 tol（f_r 0.2 % / κ 10 %）；tol 为什么不能低于重网格噪声底（κ σ ≈ 5 %） | 本机 8 rank：**6 次 FEM / 148 s 收敛**（2026-10-14；κ tol 5 % 时 8 轮来回跳不收敛） |
+| `xmon_pair.{layout.yaml,meta.yaml}` + `xmon_pair_tune.meta.yaml` | 两比特小芯片：两只 `xmon` 臂尖隔地直接耦合（Q2 `mirror: x` 把结翻到南臂）+ 各一条 λ/2 读出腔（7.2 / 7.45 GHz）挂**同一条**馈线（两个 `feed_tap`）；tune 11 个旋钮，g_qq 旋钮 = `Q1.at.1`（放置坐标的列表下标） | 复用读出 + 多比特综合；跨对的 g / χ（Q1~R2 等）照常出在 results 里 | 初值整片 8 rank 60 s；综合 **7 次 FEM / 422 s 收敛**（2026-10-14）：中心距 420 → 502.5 µm 得 g 8.04 MHz，两腔 7.202 / 7.452 GHz、κ 0.40 / 0.39 MHz、Purcell T1 ≈ 490 µs |
 | `cpw_route_demo.{layout.yaml,meta.yaml}` | 四对 `xmon` 的读出桨，同一对几何（Q_odd.RO 朝 +x → Q_even 转 90° 桨朝 +y，错位 900 × 900）右移四次只换环境：**R1** 默认横平竖直（骨架 L，蛇形在横臂上，腿上短下长）；**R2** `region` 是两个矩形的并集（右上角挖掉）→ L 淘汰、3 转弯绕路，腿按缝的形状不等长；**R3** `axis: free` 斜轴（Dubins RSR）；**R4** `params: {R: auto}` → 最大可行弯半径 70。都是 fixed 3000 µm、腿数自动、两端 `lead` 60 µm；两端外挂面 → 总线 net = 步骤名；`ground: sheet` | `planner: cpw` v2（`docs/design/auto-route.md`）；`region:`（矩形并集）/ `axis:` 步骤键；`R: auto`；`subsystems` 多出 `route_primitives` / `R_um`；region 太小 / 长度装不下都 raise（给出能装下的最大 R） | 粗网格十几秒（演示件） |
 | `chen_2025_3x3.{layout.yaml,meta.yaml}` | Chen et al. 2025 (Nat. Phys. 21, 1489) 圆盘比特方格阵列的 3×3 切片：9 个 `disc_transmon` + 12 个 `bar_coupler`，几何全部是 Fig. 1a 照片量出值（`../docs/design/paper-chen2025-geometry.md`），无读出结构 | flip-chip 口径：顶片无地 `ground: none`，载片地 = `airbox.top_um: 5`（唯一物理旋钮）；21 个浮动结条目自动生成；`extract.blocks` = 12 个 SI §D 口径的孤立 QCQ 块（6 terminal） | 单块 100/4 order-2 ≈75 万 tets，本机 8 rank ~10 min：`build(m, out, solve=True, blocks=["H01"])`；整片 42 导体 ~9M tets 上云 |
 | `chen_2025_3x3_hand.{layout.yaml,meta.yaml}` + `chen_2025_3x3_bars.geo` + `chen_2025_3x3_bar_macros.geo` | 同一 Chen 3×3，**几何逐点相同**的另一种写法：9 个 `disc_transmon` 照抄，12 个 `bar_coupler` 换成一步手写 `.geo`（从端口变量 `Q00_E_x…` 起画）+ `connect:` 认领爪；12 条耦合器的结写在 meta `circuit_model.qubits` | 「模板 vs 手写」对照件：手写步骤 `connect:`（grammar §4.1）；宏必须放 `Include` 文件；Physical 名 / GDS 多边形 / 结条目与模板路线相同（`test_chen_2025.py` 断言） | 同 chen |
@@ -21,7 +24,7 @@
 | `sung_2021_xmon.{geo,meta.yaml}` | 同一论文器件的**真拓扑**（接地 Xmon ×2 + 梳齿 coupler），~20 个照片量出参数，无调参 | 对论文的**无调参预测**（分清「标定命中」与「预测精度」，`docs/report/Aug27/04` §8）；`XMON` 宏；接地单岛写法 `island:` | 80/2 order-2 ~13M tets，需 384 G 远端机 |
 | `sung_2021_xmon_traced.{geo,meta.yaml}` | 同一照片的逐点描摹（`tools/micrograph_to_geo.py` 生成，426 顶点） | 参数化版的保真参照；`POLY` 宏 | 15.4M tets，峰值 168 G |
 | `qlib.geo` | 手写路线的 OCC 宏库：`PAD` / `POLY` / `XMON` / `CPW` / `JUNCTION` / `GROUND_CUTOUT`，面 tag 回 `sret` | 被 sung 例子 `Include`；纯几何宏，Physical 名由调用点打；⚠ `Call X;` 独占一行 | — |
-| `lib/` | **模板库**：6 个模板（各 = `.yaml` 接口 + `.geo` 局部坐标几何）+ 宏库 `cpw_macros.geo` | 见下一节 | — |
+| `lib/` | **模板库**：7 个模板（各 = `.yaml` 接口 + `.geo` 局部坐标几何）+ 宏库 `cpw_macros.geo` | 见下一节 | — |
 
 ## `lib/` 模板库
 
@@ -31,10 +34,11 @@
 
 | 模板 | 类型 | 岛（component 名） | 外挂面 / 端口 | 结 | 主要参数 | 用在 |
 |---|---|---|---|---|---|---|
-| `pad` | 放置 | 1（= 实例名） | 端口 E/N/W/S = 四边中点，宽 = 边长 | — | `w` `h`；`gap` > 0 出蚀刻 pocket | `two_pads.layout.yaml` |
+| `pad` | 放置 | 1（= 实例名） | 端口 E/N/W/S = 四边中点，宽 = 边长 | — | `w` `h`；`gap` > 0 出蚀刻 pocket | `two_pads.layout.yaml`；`xmon_feedline` 的馈线（10 × 2000 长条） |
 | `xmon` | 放置 | 1（= 实例名） | 可选读出桨 RO（外挂面 + 同名端口，`ro` 开关） | 北臂端 → 地 → `island:` 条目 | `arm_w` `arm_L` `gap` `jj_w` `ro_*` | `xmon_readout.layout.yaml` |
 | `cpw_meander` | **连接** | 1 = 路由体（并入端点 net） | 两端由 `from` / `to` 给定，宽度继承 | — | `R` `n_legs` `gap`；步骤 `length:` 定长 | `xmon_readout.layout.yaml` |
 | `cpw_route` | **连接 + 自动布线**（`planner: cpw`） | 1 = 路由体（并入端点 net） | 两端由 `from` / `to` 给定，**不必正对**，宽度继承；步骤可给 `region:`（矩形或矩形并集）与 `axis:`（框架角，默认 0 横平竖直；`free` = Dubins） | — | `R` 弯半径（`auto` = 最大可行）、`n_legs`（总腿数，0 = 按余量自动取最小可行）、`gap`、`lead` 端口引出直段（弧从其后开始，0 = 关）；步骤 `length:` 定长（骨架直段上放蛇形，每个弯按精确余量独立外推，腿可不等长，单段装不下分摊到多段）；几何 = 引出 + 端弧 + 直段 / 圆角 + 蛇形，`docs/design/auto-route.md` | `cpw_route_demo.layout.yaml` |
+| `feed_tap` | 放置 | 0（只有外挂面） | 耦合焊盘 T（外挂面 + 同名端口，归连进来的读出腔）；原点 = 馈线西沿，pocket 开到馈线、中间不留地 | — | `tap_w` `tap_h`（κ 旋钮）`tap_gap` `gap` `cpw_w` | `xmon_feedline` / `xmon_pair` |
 | `disc_transmon` | 放置 | 2：`<实例>_a` / `<实例>_b` 两半盘 | 4 只可选爪 E/N/W/S（外挂面 + 同名端口，`claw_*` 开关），电学归接上来的耦合器 | 跨缝 a → b → `islands:` 浮动条目 | `dia` `slot` `slot_deg` `gap` `claw_t` `claw_deg` `stub` `bar_w` `jj_w` | `chen_2025_3x3.layout.yaml` |
 | `bar_coupler` | **连接**，2 岛 | `body: bar`（= 步骤名，含两端爪）+ `<步骤名>_pent` | 两端接 `disc_transmon` 的爪端口 | 条 → 板 → `islands: [H, H_pent]` | `pent_w` `pent_wall` `pent_h` `pent_gap` `pent_off` `jj_w`；`mirror: x` 翻五边形侧 | `chen_2025_3x3.layout.yaml` |
 | `cpw_macros.geo` | 宏库 | — | — | — | `LIB_CPW` / `LIB_CPW_ARC` / `LIB_CPW_MEANDER`，入参出参 `_lib_*` | 被 `cpw_meander.geo` / `disc_transmon.geo` `Include` |

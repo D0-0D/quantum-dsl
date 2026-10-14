@@ -53,6 +53,7 @@ __all__ = [
     "ELEM_CHARGE", "H_PLANCK", "HBAR", "FLUX_QUANTUM_REDUCED",
     "QubitResult", "CouplingResult", "ResonatorResult", "ReadoutResult", "CircuitModelResult",
     "solve_circuit_model", "resonator_lumped_lc", "dispersive_shift_hz", "transmon_levels_hz",
+    "transmon_from_spectrum",
 ]
 
 # --- 常数: SI-2019 精确 (e/h 是定义值); ħ/φ0 派生, 不硬编码舍入字面量 -----
@@ -154,6 +155,34 @@ def transmon_levels_hz(e_c_joule: float, e_j_joule: float,
     e = np.linalg.eigvalsh(np.diag(4.0 * e_c_joule / H_PLANCK * n * n)
                            + np.diag(off, 1) + np.diag(off, -1))
     return float(e[1] - e[0]), float(e[2] - e[1])
+
+
+def transmon_from_spectrum(f01_hz: float, alpha_hz: float,
+                           ratio_bounds: tuple[float, float] = (2.0, 2000.0)) -> tuple[float, float]:
+    """``transmon_levels_hz`` 的逆: 精确 (f01, α) Hz → (E_C, E_J) 焦耳 (综合的第 0 步: 目标 C_Σ* = e²/2E_C 与结的 E_J*)。
+
+    能级对 E_C 一次齐次 ⇒ α/f01 只是 r = E_J/E_C 的函数 (r ↑ 单调趋向 0⁻) → 对 r 一维对数二分,
+    再按 f01 定 E_C。目标比值落在 ``ratio_bounds`` 的 r 区间外 (非 transmon 区 / α ≥ 0) → raise。"""
+    if not (math.isfinite(f01_hz) and f01_hz > 0 and math.isfinite(alpha_hz) and alpha_hz < 0):
+        raise QuantumDslError(f"transmon_from_spectrum needs f01 > 0 and alpha < 0 (Hz), "
+                              f"got {f01_hz!r} / {alpha_hz!r}")
+
+    def shape(r):                                    # E_C = h·1 Hz 时的 (f01, α/f01)
+        f01, f12 = transmon_levels_hz(H_PLANCK, r * H_PLANCK)
+        return f01, (f12 - f01) / f01
+
+    want = alpha_hz / f01_hz
+    lo, hi = ratio_bounds
+    if not shape(lo)[1] <= want <= shape(hi)[1]:
+        raise QuantumDslError(
+            f"transmon_from_spectrum: alpha/f01 = {want:.4g} is outside the transmon range "
+            f"[{shape(lo)[1]:.4g}, {shape(hi)[1]:.4g}] (E_J/E_C in {list(ratio_bounds)})")
+    while hi / lo - 1 > 1e-13:
+        mid = math.sqrt(lo * hi)
+        lo, hi = (mid, hi) if shape(mid)[1] < want else (lo, mid)
+    r = math.sqrt(lo * hi)
+    e_c = H_PLANCK * f01_hz / shape(r)[0]
+    return e_c, r * e_c
 
 
 def resonator_lumped_lc(f_res_hz: float, z0_ohm: float,

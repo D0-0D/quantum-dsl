@@ -5,12 +5,12 @@ Legend: `[ ]` not started · `[~]` in progress。
 
 ## Backlog
 
-- [ ] **读出 / 综合的后续（2026-10-04 列, 按调研优先级）**:
-      ① 带馈线的例子（`ports` 的 κ 与 `T1_port_us` 至今只有闭式测试锚）—— xmon_readout 加一条直通馈线 + λ/4 短路端不画;
-      ② `cpw_route` 的 `length:` 接 f_r 旋钮（现在只有 `cpw_meander` 例子跑过 `R1.length.f_r`）; 2–4 比特小芯片综合示例;
-      ③ 第 0 步闭式初值: f01 + α → (E_J, C_Σ*) 联合反推（嵌套求根, 无 scipy → 自写二分）, 给几何旋钮好的起点（ANMod 随机初值 2/10 不收敛）;
+- [ ] **读出 / 综合的后续（2026-10-04 列, 按调研优先级; ①②③ 2026-10-14 做完移出 → physics §8.1 / examples `xmon_feedline*` `xmon_pair*` / session 2610141107）**:
       ④ 求解可信度（调研**未取证**, 先补查再做）: converge 三档 + Richardson 观测阶、airbox 尺寸扫、工艺参数 ±δ 有限差分灵敏度 → 线性协方差进 validation;
-         注意 gmsh 重网格噪声须 ≪ tol（ANMod 的 κ 噪声让旋钮抖 10%）;
+         **重网格噪声已实测一次**（2026-10-14, 200/20 演示网格平移重解: κ σ ≈ 5 %、χ ≈ 3 %、C_Σ 0.3 %; κ tol 5 % 时 tune 不收敛 → 现在靠 tol ≥ 2σ + 割线守卫）——
+         下一步把探针做成 API（同几何亚 µm 平移 N 次 → 每个核对项的 σ, tune 起步时拿它查 tol 够不够, 不够就 raise / warn）;
+      ⑧ λ/4 读出腔接馈线: 现实里多是短路端附近的平行耦合段（电感为主）, 等势节点 + 静电互容看不见 → `feed_tap` 只适合 λ/2 或 λ/4 的开路端;
+         要支持得有耦合线段模型（电压 / 电流分布加权）或 driven 求解（同⑤）;
       ⑤ FEM 结果按内容哈希缓存（tune / 灵敏度复用）; 频域 driven（Palace）交叉验证 κ / Purcell（单模 κ(g/Δ)² 只是近似）;
       ⑦ **lit-research 灵感（2026-10-05, 23 条三票确认只落在求解可信度 / 工艺离散 / 碰撞良率; 其余是未核验线索, 用前回原文）**:
          便宜: Palace 每次静电解都算 ZZ 误差指示量（error-indicators.csv, 能量范数, 多 terminal 取 RMS）→ 免费读进 results 当报警, **不能**当 C_ij 收敛证据;
@@ -22,7 +22,7 @@ Legend: `[ ]` not started · `[~]` in progress。
          `process:` 块 σ 传播（f01 离散 Rn 主导: IBM σf 2.3% / σR 4.6%; 但 Chalmers σEC 0.8% 与 Rn 相当, 只算结低估 √2; α/g/χ 几何是主项）+ 碰撞良率 MC（规则表用户声明, 与门架构绑定; Morvan 2112.01634 九族线性约束, Zhang 2410.20283 MILP 开源）。
          贵: 盲验证 = SQuADDS_DB `measured_device_database`（3 器件带公开设计代码, WM1 六对 qubit–腔实测 f01/α/g/χ/f_r）—— 要把 Qiskit Metal 设计移植成模板（无 GDS 导入）;
          对照基线 SQDMetal 8 只 transmon RMSE f 6.0 / α 13.3 / g 24.5 / f_r 3.5%; Palace 本征模 / driven 第二、三 pass（2511.09041: 腔频 <0.3%, κ 3/4 在 16% 内; 收敛设置 r1.5o4）; AMR 透传（先验证零厚度 imprint 兼容）。
-      ⑥ 天花板: tune 只支持版图路线顶层步骤参数; 耦合比例律（χ ∝ (w_rq/w_q)² 那种 2D 子问题）未做, 现在靠对数割线吸收串扰; 终版配置丢 YAML 注释。
+      ⑥ 天花板: tune 只支持版图路线顶层步骤参数与步骤键路径（`length.f_r`、列表下标 `at.1`; 比例律要求值 > 0, 位置旋钮得让参照物在原点）; 耦合比例律（χ ∝ (w_rq/w_q)² 那种 2D 子问题）未做, 现在靠对数割线吸收串扰; 终版配置丢 YAML 注释。
 
 - [ ] **`cpw_meander` 退不退役**（拍板）: 它是 `cpw_route` 的退化情形（直段需求也由 `cpw_route` 无 `length:` 覆盖）。退役要迁 `xmon_readout`（= `xmon_readout_tune` 底版, `R1.length.f_r` 旋钮）
       → `cpw_route`、`tests/test_layout.py` 三处、`tests/test_route.py` 的退化一致性锚与报错测试; `LIB_CPW_ARC` / `length:` 已有多个消费者, 不动。

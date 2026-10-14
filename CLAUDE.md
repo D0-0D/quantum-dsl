@@ -2,7 +2,7 @@
 
 Guidance for AI agents working in this repository.
 
-> **v4.0 已发布（2026-08-26）；版图编排 2026-09-12 落地；Chen 2025 圆盘比特 3×3 2026-09-13 落地；自动布线 `cpw_route` 与 Chen 十字整片解（d = 4 µm 命中实测 α）2026-09-18 落地；读出链路进电路模型 + `tune:` FEM 在环综合 2026-10-04 落地。** 契约 = [`SPEC.md`](SPEC.md)（条目 ↔ `tests/`）。开工前读
+> **v4.0 已发布（2026-08-26）；版图编排 2026-09-12 落地；Chen 2025 圆盘比特 3×3 2026-09-13 落地；自动布线 `cpw_route` 与 Chen 十字整片解（d = 4 µm 命中实测 α）2026-09-18 落地；读出链路进电路模型 + `tune:` FEM 在环综合 2026-10-04 落地；馈线 κ 与两比特复用读出综合 2026-10-14 落地。** 契约 = [`SPEC.md`](SPEC.md)（条目 ↔ `tests/`）。开工前读
 > `.claude/status.md` → `.claude/plan.md`（backlog）—— 不要臆测项目状态。碰 mesh / Palace / 物理公式 / 容差
 > 之前**必读** [`docs/physics.md`](docs/physics.md)；改代码前读 [`docs/architecture.md`](docs/architecture.md)。
 
@@ -23,7 +23,7 @@ native Gmsh `.geo`（OCC, **µm**）**或** 版图 `*.layout.yaml`（模板 = �
 conda env **`qdsl313`**（Python 3.13 + gmsh + gdstk + shapely + pytest; `PALACE_BIN` 与 `HWLOC_COMPONENTS=-gl` 已持久化）:
 
 ```bash
-~/miniconda3/envs/qdsl313/bin/python -m pytest tests/ -q                       # 61 passed, 3 skipped, ~3 min
+~/miniconda3/envs/qdsl313/bin/python -m pytest tests/ -q                       # 64 passed, 3 skipped, ~4 min
 QDSL_RUN_PALACE=1 ~/miniconda3/envs/qdsl313/bin/python -m pytest tests/test_live.py -k two_pads -q   # ~3 min (锚 + 两档收敛)
 # sung 外部锚: QDSL_RUN_PALACE_SUNG=1 + PALACE_BIN=tools/palace_remote.sh + 384G 远端机 (峰值内存 154 G)
 ```

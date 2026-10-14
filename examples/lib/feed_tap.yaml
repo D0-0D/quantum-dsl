@@ -1,0 +1,12 @@
+# feed_tap — 读出腔挂到直通馈线的耦合焊盘 (外挂面 T, 电学归连进来的读出腔)。馈线不归它画: 用 pad 模板画一根长条
+# ({template: pad, params: {w: 10, h: 3000, gap: 6}}), 多个 feed_tap 挂同一根 → 复用读出。
+# 局部坐标: 原点 = 馈线西沿上正对焊盘中心的点; 焊盘在原点以西 tap_gap 处 (tap_w × tap_h), 端口 T 在焊盘西沿中点、外法向 −x (路由从西边进)。
+# 蚀刻 pocket 从焊盘外 gap 一直开到原点 (馈线边), 焊盘与馈线之间不留地。C_κ 主要随 tap_h 涨 (κ ∝ C_κ² → tune law ≈ 2)。
+# 馈线 = 外接负载的导体: meta 里 circuit_model.ports: [{name, net: <馈线实例名>, R}], 直通馈线从耦合点看两头并联 → R = Z0/2。
+# ⚠ 电容耦合只在腔的电压腹点成立 → 接 λ/2 (两端开路); λ/4 的远端是短路端, 那里的耦合是电感性的, 静电看不见。
+schema: quantum-dsl/template/1
+params: {tap_w: 40, tap_h: 200, tap_gap: 6, gap: 6, cpw_w: 10}
+layers: {metal: conductor}
+external: {T: {faces: tap(), layer: metal}}       # 由本模板画, net 由连到 T 口的路由决定
+etch: [{faces: pocket(), layer: metal}]
+ports: {T: {x: tap_x, y: 0, a: tap_a, w: cpw_w}}   # 焊盘西沿中点, 外法向 −x, 宽 = CPW 中心导体宽

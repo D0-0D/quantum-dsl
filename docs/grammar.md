@@ -185,11 +185,11 @@ circuit_model:
 | `extract.blocks[]`                            | `{name: A, components: [A, ...]}`            | 可选                                  | 分块提取（§3.3）：每块只含这些 component 的 Physical 组                                                                                                                                                                          |
 | `subsystems`                                  | list                                           | 可选                                  | 记账用：**原样透传**进 `results.yaml` 的 `subsystems` 段。版图路线的定长路由会往这里**追加**条目（§4.6），其中波长模式的条目同时生成 `circuit_model.resonators`（进电路模型的是后者） |
 | `targets.source` | str | 可选 | 期望值出处，原样进 `validation.source` |
-| `targets.qubits.<name>` | `{C_sigma_fF: 99.3, tol: 8%}` | 与 couplings 至少一个 | 键 = `results.yaml` qubit 的数值字段（`C_sigma_fF` `E_C_GHz` `E_J_GHz` `f01_GHz` `anharmonicity_MHz` `EJ_over_EC`），值裸数（单位在键名里），非零；`tol` 必填且只收百分比字串 |
+| `targets.qubits.<name>` | `{C_sigma_fF: 99.3, tol: 8%}` | 与 couplings 至少一个 | 键 = `results.yaml` qubit 的数值字段（`C_sigma_fF` `E_C_GHz` `E_J_GHz` `f01_GHz` `anharmonicity_MHz` `EJ_over_EC`），值裸数（单位在键名里），非零；`tol` 必填且只收百分比字串，或写成 `{字段: 百分比}` 逐字段（须恰好覆盖本条目的字段，如 `{f_r_GHz: 0.2%, kappa_MHz: 5%}`） |
 | `targets.couplings[]` | `{pair: [QB1, CPLR], beta: 0.0364, tol: 20%}` | 同上 | 字段 `beta` / `g_MHz`；pair 两个不同 qubit 名 |
 | `targets.resonators.<name>` | `{f_r_GHz: 7.2, tol: 0.2%}` | 同上 | 字段 = results 的 resonator 数值字段（`f_r_GHz` `f_bare_GHz` `kappa_MHz` `C_r_fF` `L_r_nH` `Z0_ohm` `C_gnd_fem_over_tl`） |
 | `targets.readout[]` | `{pair: [Q1, R1], chi_MHz: -0.2, tol: 3%}` | 同上 | pair = [qubit, 腔]；字段 `beta` `g_MHz` `chi_MHz`（单边 cavity pull）`T1_purcell_us` |
-| `tune.knobs[]` | `{param: Q1.arm_L, target: Q1.anharmonicity_exact_MHz, law: -1, bounds: [150, 500]}` | `tune` 时必填 | FEM 在环综合（§3.5）。`param` = `<版图步骤>.<模板参数>` / `<步骤>.E_J│L_J`（步骤上没有就找 meta 同名 qubit）/ `<步骤>.length.f_r`；`target` = 一条 targets 核对项的引用名（`Q1.f01_exact_GHz` / `R1.f_r_GHz` / `Q1~R1.chi_MHz`）；**方阵**：param 与 target 各唯一。几何旋钮必须给 `law`（target ∝ param^law，只需趋势对），结旋钮不收；`bounds` 可选（几何 µm，E_J / f_r 用 SI） |
+| `tune.knobs[]` | `{param: Q1.arm_L, target: Q1.anharmonicity_exact_MHz, law: -1, bounds: [150, 500]}` | `tune` 时必填 | FEM 在环综合（§3.5）。`param` = `<版图步骤>.<模板参数>` / `<步骤>.E_J│L_J`（步骤上没有就找 meta 同名 qubit）/ `<步骤>.length.f_r` / 列表下标如 `<步骤>.at.1`（放置 y；比例律要求值 > 0，所以让参照物在原点）；`target` = 一条 targets 核对项的引用名（`Q1.f01_exact_GHz` / `R1.f_r_GHz` / `Q1~R1.chi_MHz`）；**方阵**：param 与 target 各唯一。几何旋钮必须给 `law`（target ∝ param^law，只需趋势对），结旋钮不收；`bounds` 可选（几何 µm，E_J / f_r 用 SI） |
 | `tune.max_iter` / `tune.damping` | int / (0, 1] | 默认 8 / 1 | FEM 轮数上限；步长阻尼（ANMod 的 adjustment rate） |
 
 `targets:`（issue #23）：`build(solve=True)` 在整片 `results.yaml` 追加 `validation` 段（每项 expected / actual / deviation = 实测/期望 − 1 / pass），未命中发 `UserWarning` 不 raise；qubit 名拼错在网格化之前 raise；`blocks=` 求解不核对。例子：`examples/sung_2021_device.meta.yaml` 文末。
@@ -244,9 +244,14 @@ tune:
 ```
 
 - `quantum_dsl.tune(meta, out)`：每轮把旋钮写进配置副本、整片 `build(solve=True)`；结旋钮在这次的 C 矩阵上对数二分（不跑 FEM），
-  几何旋钮按 `x ← x·(y*/y)^(damping/p)` 一步，第二轮起 p 换成观测指数（与 `law` 同号才用）。旋钮核对项全部 pass 即停，`max_iter` 用完 warn。
+  几何旋钮按 `x ← x·(y*/y)^(damping/p)` 一步，第二轮起 p 换成观测指数（与 `law` 同号且在其 ¼–4 倍内才用：步子小时重网格噪声会给出离谱的指数）。旋钮核对项全部 pass 即停，`max_iter` 用完 warn。
 - 产物：`out/iter_<k>/`（每轮完整配置 + build 产物与 manifest）；`out/<layout>` + `out/<meta>` = **终版配置**（普通文件，可直接 `build`；
   相对路径已改写到 out；YAML 注释不保留）；`out/results.yaml`（终版在最后一轮 C 上的结果 + validation）；`out/tune.yaml`（逐轮旋钮值与偏差）。
+- **第 0 步**：某 qubit 同时有 `f01_exact_GHz` 与 `anharmonicity_exact_MHz` 目标时，先用 `transmon_from_spectrum` 闭式反推 (C_Σ*, E_J*)：
+  结旋钮从 E_J* 起步，两者记进 `tune.yaml` 的 `closed_form`（画几何之前就知道 C_Σ 要多大）。
+- 带衰减通道的例子：`examples/xmon_feedline_tune.meta.yaml`（`cpw_route` λ/2 读出腔 + `feed_tap` 焊盘 + `pad` 馈线，五个旋钮含 `T1.tap_h → R1.kappa_MHz`）；
+  两比特 + 复用读出：`examples/xmon_pair_tune.meta.yaml`（11 个旋钮，g_qq 旋钮 `Q1.at.1`）。
+- **tol 要高过重网格噪声底**：几何旋钮每轮都重网格，同几何亚 µm 平移重解的散布就是 tol 的下限（粗演示网格 200/20：κ σ ≈ 5 %、χ ≈ 3 %，physics §8.1）。
 - 只支持版图路线（旋钮是版图步骤键）；顶层步骤的模板参数（嵌套模板内部的参数不行）。
 
 ## 4. 版图与模板（`*.layout.yaml`，schema `quantum-dsl/layout/1`）
@@ -261,7 +266,7 @@ tune:
 
 例子：`examples/two_pads.layout.yaml`（与手写 `two_pads.geo` 逐字等价）、`examples/xmon_readout.layout.yaml`
 （模板 + 手写 + 定长路由 + 平面地）、`examples/chen_2025_3x3.layout.yaml`（9 比特 + 12 耦合器阵列，flip-chip 无片上地）。
-模板库 `examples/lib/`：`pad` · `xmon` · `cpw_meander`（连接型）· `cpw_route`（连接型 + 自动布线 `planner: cpw`，两口不必正对，横平竖直 / 拼接区域 / 自由角）· `disc_transmon`（多岛 + 可选外挂面）· `bar_coupler`（连接型多岛）。
+模板库 `examples/lib/`：`pad` · `xmon` · `cpw_meander`（连接型）· `cpw_route`（连接型 + 自动布线 `planner: cpw`，两口不必正对，横平竖直 / 拼接区域 / 自由角）· `feed_tap`（读出腔接直通馈线的耦合焊盘，只有外挂面）· `disc_transmon`（多岛 + 可选外挂面）· `bar_coupler`（连接型多岛）。
 
 ### 4.1 版图文件
 

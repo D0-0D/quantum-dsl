@@ -7,8 +7,11 @@
 * 方阵: 每个旋钮对准恰好一条核对项 (加载时查)。每轮**一次** FEM (整片 ``build(solve=True)``)。
 * **结旋钮** (``<步骤>.E_J`` / ``.L_J``) 不动几何 → 在本轮缓存的 C 矩阵上对电路模型做对数二分求根
   (默认范围 ×1/10 … ×10 或 ``bounds``), 不花 FEM。
+* **第 0 步**: qubit 同时有 ``f01_exact_GHz`` 与 ``anharmonicity_exact_MHz`` 目标时, 先用 ``transmon_from_spectrum``
+  闭式反推 (C_Σ*, E_J*) —— 结旋钮从 E_J* 起步, 两者记进 ``tune.yaml`` 的 ``closed_form`` (画几何前就知道要多大的 C_Σ)。
 * **几何旋钮** (模板参数 / ``<步骤>.length.f_r``) 按声明的比例律 ``target ∝ param^law`` 一步:
-  ``x ← x·(y*/y)^(damping/p)``; 有上一轮时 p 换成观测指数 ``ln(y/y₀)/ln(x/x₀)`` (与声明同号才用) —— 律只需趋势对。
+  ``x ← x·(y*/y)^(damping/p)``; 有上一轮时 p 换成观测指数 ``ln(y/y₀)/ln(x/x₀)`` (与声明同号且在其 ¼–4 倍内才用;
+  步子小时重网格噪声会给出离谱的指数) —— 律只需趋势对。
 * 停: 全部旋钮的核对项 pass (tol 就是判据), 或 ``max_iter`` 用完 (warn)。
 
 产物: ``out/iter_<k>/`` = 每轮的完整配置 + build 产物 (各带 manifest); ``out/<layout>`` + ``out/<meta>`` = 终版配置
@@ -28,6 +31,7 @@ from pathlib import Path
 import yaml
 
 from .build import _actual, _results_doc, _tables, _validation, build
+from .circuit_model import ELEM_CHARGE, FLUX_QUANTUM_REDUCED, H_PLANCK, transmon_from_spectrum
 from .errors import QuantumDslError
 from .meta import JUNCTION_KNOBS, Meta, load_meta
 from .units import parse_quantity
@@ -39,7 +43,7 @@ _UNIT = re.compile(r"[A-Za-zµΩ]+$")
 
 def _slot(step: dict, path: str, defaults: dict, where: str):
     """旋钮在配置 dict 里的落点 → (容器, 键)。单段非结键 = 模板参数 (缺省取模板默认, 写进 step.params);
-    多段 = 沿步骤 dict 下钻 (``length.f_r``)。"""
+    多段 = 沿步骤 dict 下钻 (``length.f_r``), 末段可以是列表下标 (``at.1`` = 放置的 y; 比例律要求它 > 0)。"""
     parts = path.split(".")
     if len(parts) == 1 and parts[0] not in JUNCTION_KNOBS:
         if parts[0] not in defaults:
@@ -50,9 +54,10 @@ def _slot(step: dict, path: str, defaults: dict, where: str):
     d = step
     for part in parts[:-1]:
         d = d.get(part) if isinstance(d, dict) else None
-    if not isinstance(d, dict) or parts[-1] not in d:
+    key = int(parts[-1]) if isinstance(d, list) and parts[-1].isdigit() else parts[-1]
+    if not (isinstance(d, dict) and key in d or isinstance(d, list) and isinstance(key, int) and key < len(d)):
         raise QuantumDslError(f"{where}: step has no {path!r}")
-    return d, parts[-1]
+    return d, key
 
 
 def _get(slot) -> float:
@@ -66,8 +71,8 @@ def _put(slot, value: float) -> None:
     if isinstance(old, str):                       # 带单位的量: 保留原单位写回
         unit = _UNIT.search(old.strip()).group(0)
         box[key] = f"{value / parse_quantity('1' + unit):.9g}{unit}"
-    else:
-        box[key] = round(value, 4)                 # µm 几何, 0.1 nm 分辨
+    else:                                          # µm 几何或 SI 裸数 (L_J ~1e-8 H): 有效数字, 不是小数位
+        box[key] = float(f"{value:.9g}")
 
 
 def _write(raw_meta, raw_lay, src_dir: Path, names, d: Path, note: str) -> Path:
@@ -137,6 +142,17 @@ def tune(meta, out_dir) -> dict:
     checks = m.targets["checks"]
     max_iter, damping = m.tune["max_iter"], m.tune["damping"]
 
+    closed = {}               # 第 0 步: 同时有精确 f01 与 α 目标的 qubit → 闭式 (C_Σ*, E_J*), 结旋钮从 E_J* 起步
+    for q in dict.fromkeys(c["qubit"] for c in checks if "qubit" in c):
+        want = {c["field"]: c["expected"] for c in checks if c.get("qubit") == q}
+        if {"f01_exact_GHz", "anharmonicity_exact_MHz"} <= set(want):
+            e_c, e_j = transmon_from_spectrum(want["f01_exact_GHz"] * 1e9, want["anharmonicity_exact_MHz"] * 1e6)
+            closed[q] = {"C_sigma_fF": ELEM_CHARGE ** 2 / (2 * e_c) * 1e15, "E_C_GHz": e_c / H_PLANCK / 1e9,
+                         "E_J_GHz": e_j / H_PLANCK / 1e9}
+            for k in knobs:
+                if k["step"] == q and k["path"] in JUNCTION_KNOBS:
+                    _put(k["slot"], e_j / H_PLANCK if k["path"] == "E_J" else FLUX_QUANTUM_REDUCED ** 2 / e_j)
+
     history, prev, converged = [], {}, False
     for it in range(max_iter):
         d = out / f"iter_{it}"
@@ -176,8 +192,10 @@ def tune(meta, out_dir) -> dict:
                                       f"{ys:.4g} — a power law cannot cross zero")
             p = k["law"]
             x0, y0 = prev.get(k["param"], (x, y))
-            if x != x0 and y != y0 and math.log(y / y0) / math.log(x / x0) * p > 0:
-                p = math.log(y / y0) / math.log(x / x0)
+            if x != x0 and y != y0:
+                obs = math.log(y / y0) / math.log(x / x0)
+                if 0.25 <= obs / p <= 4:      # 同号且在声明律的 ¼–4 倍内才信: 微步上重网格噪声主导的指数不用
+                    p = obs
             prev[k["param"]] = (x, y)
             xn = x * (ys / y) ** (damping / p)
             lo, hi = k["bounds"] or (0.0, math.inf)
@@ -193,7 +211,7 @@ def tune(meta, out_dir) -> dict:
     res_path = out / "results.yaml"
     res_path.write_text(yaml.safe_dump(doc, sort_keys=False, allow_unicode=True), encoding="utf-8")
     log = {"source": str(m.path), "converged": converged, "iterations": len(history),
-           "results_from": history[-1]["dir"], "history": history}
+           "results_from": history[-1]["dir"], "closed_form": closed, "history": history}
     tune_path = out / "tune.yaml"
     tune_path.write_text(yaml.safe_dump(log, sort_keys=False, allow_unicode=True), encoding="utf-8")
     return {"converged": converged, "iterations": len(history), "meta": final_meta,

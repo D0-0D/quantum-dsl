@@ -1,0 +1,20 @@
+# xmon_pair.layout.yaml — 两比特小芯片: 两只 xmon 臂尖隔地直接电容耦合 + 各一条 λ/2 读出腔 (cpw_route) 挂同一条直通馈线 (复用读出), 平面工艺地。
+#   Q2 在原点, mirror: x 把结翻到南臂端 (北臂尖空出来给耦合); Q1 在 (0, sep) 正放, 结在北臂端 → 两臂尖相对, 间距 = sep − (arm_L1 + arm_L2)/2。
+#   Q1.RO ──R1 (λ/2 @ 7.0 GHz, region 上半)──► T1.T ┆
+#                                                    ┆ FL = 一根 10 × 4400 µm 的 pad (馈线, meta 里是 port)
+#   Q2.RO ──R2 (λ/2 @ 7.3 GHz, region 下半)──► T2.T ┆
+# 两个 feed_tap 的原点 = 馈线西沿 (x = 1446)。读出腔两端都是外挂面 → net = 步骤名 R1 / R2。
+# 综合 (xmon_pair_tune.meta.yaml) 的 g_qq 旋钮是 Q1.at.1 (= 两比特中心距; Q2 在原点所以它 > 0, 比例律可用)。
+schema: quantum-dsl/layout/1
+templates: [lib]
+steps:
+  - {template: xmon, name: Q2, at: [0, 0], mirror: x, layers: {metal: m1, jj: jj}, E_J: 13GHz}
+  - {template: xmon, name: Q1, at: [0, 420], layers: {metal: m1, jj: jj}, E_J: 12GHz}
+  - {template: pad, name: FL, at: [1451, 200], params: {w: 10, h: 4400, gap: 6}, layers: {metal: m1}}
+  - {template: feed_tap, name: T1, at: [1446, 900], layers: {metal: m1}}
+  - {template: feed_tap, name: T2, at: [1446, -500], layers: {metal: m1}}
+  - {template: cpw_route, name: R1, from: Q1.RO, to: T1.T, params: {R: 40, gap: 6, lead: 60},
+     length: {mode: half_wave, f_r: 7GHz, film_nm: 200}, region: [80, 260, 1411, 2400]}
+  - {template: cpw_route, name: R2, from: Q2.RO, to: T2.T, params: {R: 40, gap: 6, lead: 60},
+     length: {mode: half_wave, f_r: 7.3GHz, film_nm: 200}, region: [80, -2000, 1411, 160]}
+ground: {sheet: {layer: m1, margin_um: 200}}

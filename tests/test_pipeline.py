@@ -272,6 +272,28 @@ def test_readout_resonator_generated_from_layout_and_checked(tmp_path, monkeypat
         build(typo, tmp_path / "typo", solve=True)
 
 
+def test_feedline_port_gives_kappa_and_port_t1(tmp_path, monkeypatch):
+    """契约「读出链路」: xmon_feedline —— cpw_route λ/2 读出腔两端都是外挂面 (桨 / feed_tap 焊盘) → net = 步骤名 R1;
+    feed_tap 的馈线 FL 是独立导体, meta 声明成 port (R = Z0/2) → results 的 κ、T1_port、Purcell 有限, 且与同一矩阵上
+    solve_circuit_model 的值逐位相同 (闭式锚在 test_physics)。桩矩阵 = 2026-10-14 真 Palace 粗网格值 (κ/2π ≈ 5.6 MHz)。"""
+    from quantum_dsl import build, compile_layout, load_meta, solve_circuit_model
+    from quantum_dsl.build import _resonators_from
+    mat = [[475.43, -0.006, -23.22], [-0.006, 96.80, -4.27], [-23.22, -4.27, 2082.19]]   # 行序 FL, Q1, R1
+    _fake_palace(monkeypatch, lambda run: mat)
+    m = load_meta(EXAMPLES / "xmon_feedline.meta.yaml")
+    (res,) = _resonators_from(compile_layout(m).subsystems)
+    assert (res["name"], res["net"], res["mode"]) == ("R1", "R1", "half_wave") and res["f_r"] == pytest.approx(7e9)
+    ref = solve_circuit_model(("FL", "Q1", "R1"), mat,
+                              [{"name": "Q1", "islands": ["Q1"], "E_J": 12.2e9 * 6.62607015e-34}],
+                              resonators=[res], ports=[{"name": "feed", "net": "FL", "R": 25.5}])
+    doc = yaml.safe_load(Path(build(m, tmp_path / "out", solve=True)["results"]).read_text(encoding="utf-8"))
+    (q,), (rr,), (ro,) = (doc["hamiltonian"][k] for k in ("qubits", "resonators", "readout"))
+    assert rr["kappa_MHz"] == pytest.approx(ref.resonators[0].kappa_MHz, rel=1e-12)
+    assert rr["kappa_MHz"] == pytest.approx(5.6, rel=0.02)
+    assert math.inf > q["T1_port_us"] == pytest.approx(ref.qubits[0].T1_port_us, rel=1e-12)
+    assert math.inf > ro["T1_purcell_us"] == pytest.approx(ref.readout[0].T1_purcell_us, rel=1e-12)
+
+
 def test_tune_closes_the_loop_and_emits_a_plain_config(tmp_path, monkeypatch):
     """契约「tune」: 几何旋钮 A.w (pad 模板参数, 缺省 = 模板默认 80) 按比例律 C_Σ ∝ w (law 1) + 对数割线迭代,
     结旋钮 A.L_J (meta qubit) 在缓存的 C 上二分求根命中 f01_exact; 终版 = 普通 layout + meta (可再编译), 带 results / tune.yaml。
@@ -299,3 +321,23 @@ def test_tune_closes_the_loop_and_emits_a_plain_config(tmp_path, monkeypatch):
     qa = doc["hamiltonian"]["qubits"][0]
     assert qa["f01_exact_GHz"] == pytest.approx(6.0, rel=1e-6) and doc["validation"]["passed"]
     assert yaml.safe_load(r["tune"].read_text(encoding="utf-8"))["converged"] is True
+
+
+def test_tune_ignores_noise_dominated_secant(tmp_path, monkeypatch):
+    """契约「tune」: 观测指数只在与 law 同号且在其 ¼–4 倍内才用。桩同上一条 (C_Σ,A = 0.3·w + 2 − 0.16), 但第 1 轮注入
+    「重网格噪声」: C_Σ 只到 26.2 (真值 29.70) → 观测指数 0.09 ≪ law 1 → 第 2 步必须退回 law (w 92.88 → 106.35),
+    不能按 0.09 外推 (那一步会顶到 bounds 200)。xmon_feedline_tune 的 κ 实测过这种抖动 (2026-10-14)。"""
+    from quantum_dsl import tune
+
+    def maxwell(run):
+        lay = yaml.safe_load((tmp_path / "out" / run / "two_pads.layout.yaml").read_text(encoding="utf-8"))
+        w = next(s for s in lay["steps"] if s["name"] == "A").get("params", {}).get("w", 80)
+        return [[26.36 if run == "iter_1" else 0.3 * w + 2, -2.0], [-2.0, 25.0]]
+    _fake_palace(monkeypatch, maxwell)
+    meta = _meta_copy(tmp_path, "two_pads_layout.meta.yaml",
+                      targets={"qubits": {"A": {"C_sigma_fF": 30.0, "tol": "0.5%"}}},
+                      tune={"knobs": [{"param": "A.w", "target": "A.C_sigma_fF", "law": 1, "bounds": [40, 200]}],
+                            "max_iter": 3})
+    with pytest.warns(UserWarning, match="not converged"):
+        r = tune(meta, tmp_path / "out")
+    assert [h["knobs"]["A.w"] for h in r["history"]] == pytest.approx([80, 92.88, 106.35], abs=0.01)

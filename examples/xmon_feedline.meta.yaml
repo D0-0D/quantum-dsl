@@ -1,0 +1,19 @@
+# xmon_feedline.meta.yaml — xmon_feedline.layout.yaml 的 sidecar。层表: m1 导体 (GDS 1/0), jj 结 (GDS 20/0)。
+# 读出腔 R1 由版图 λ/2 定长路由自动生成 (net R1); 馈线 FL 是外接负载的导体 → ports, R = Z0/2 (直通馈线从耦合点看两头 50 Ω 并联;
+# Z0 = 51.0 Ω 是同截面 10/6 µm 的自洽集, 与 R1 的 Z0 同)。results 多出 R1 的 kappa_MHz、Q1 的 T1_port_us、Q1~R1 的 T1_purcell_us。
+# 网格刻意粗 (演示件); 报数前做 converge()。
+schema: quantum-dsl/meta/1
+
+layout: xmon_feedline.layout.yaml
+layers:
+  m1: {kind: conductor, gds: [1, 0]}
+  jj: {kind: junction,  gds: [20, 0]}
+
+materials:
+  substrate: {eps_r: 11.45, thickness_um: 500}
+airbox: {top_um: 600, bottom_um: 800, side_um: 200}
+mesh: {max_size_um: 200, min_size_um: 20}
+solver: {type: electrostatic, order: 2, outer_boundary: open}
+
+circuit_model:
+  ports: [{name: feed, net: FL, R: 25.5Ohm}]

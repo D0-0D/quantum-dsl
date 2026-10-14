@@ -76,18 +76,23 @@ def _targets(tbl, path) -> dict:
         unknown = sorted(set(spec) - allowed - {"tol"} - ({"pair"} if "pair" in head or "readout" in head else set()))
         if unknown:
             raise QuantumDslError(f"{where}: {what}: unknown key(s) {unknown} (known: {sorted(allowed)} + tol)")
-        tol = spec.get("tol")
-        try:
-            t = float(tol[:-1]) / 100 if isinstance(tol, str) and tol.endswith("%") else math.nan
-        except ValueError:
-            t = math.nan
-        if not 0 < t < math.inf:
-            raise QuantumDslError(f"{where}: {what}: tol must be a positive percentage like '8%', got {tol!r}")
         quantities = sorted(set(spec) & allowed)
         if not quantities:
             raise QuantumDslError(f"{where}: {what}: no quantity to check (known: {sorted(allowed)})")
+        tols = spec.get("tol")                           # "8%" 全条目共用, 或 {字段: "8%"} 逐字段 (须恰好覆盖)
+        if isinstance(tols, dict) and set(tols) != set(quantities):
+            raise QuantumDslError(f"{where}: {what}: per-quantity tol must cover exactly {quantities}, "
+                                  f"got {sorted(tols)}")
         out = []
         for q in quantities:
+            tol = tols.get(q) if isinstance(tols, dict) else tols
+            try:
+                t = float(tol[:-1]) / 100 if isinstance(tol, str) and tol.endswith("%") else math.nan
+            except ValueError:
+                t = math.nan
+            if not 0 < t < math.inf:
+                raise QuantumDslError(f"{where}: {what}: tol must be a positive percentage like '8%' "
+                                      f"(or a mapping quantity → '8%'), got {tol!r}")
             v = spec[q]
             if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) or v == 0:
                 raise QuantumDslError(f"{where}: {what}.{q} must be a finite non-zero number "

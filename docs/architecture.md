@@ -79,12 +79,12 @@ C 矩阵行序 = `Mesh.labels` = `sorted(metal component)`，是全链唯一真�
 | `gds.py` | 143 | `build_gds`：面 → gmsh 粗三角化（圆弧 180 段/2π）→ gdstk 布尔并 → GDS（`unit=1e-6`，µm 逐字；映射按 `layers` 表或 `gds.by_role`）；`render_gds_png`：GDS → PNG 预览（PIL 惰性 import） | GDS build 编排 |
 | `mesh.py` | 301 | `build_mesh`：合成计算域、一次 `fragment` 把导体面 imprint 进 z=0 界面、边缘尺寸场、失效防线、写 msh 2.2；有层表时 drawing 层不进网格、role 须与层 kind 一致 | 网格 |
 | `palace.py` | 135 | `palace_config`（`Model.L0=1e-6`，`Order=2`，Terminal 按 labels）；`parse_capacitance`（CSV 法拉 → fF，mutual 由 Maxwell 代数导出） | Palace |
-| `circuit_model.py` | 602 | `solve_circuit_model` 逆电容 LOM（含浮动双岛差模约化、SQUID；无结导体 resonators / ports / floating 显式处置 → 负载后 f_r、g_qr、χ、κ、Purcell、T1_port）；`transmon_levels_hz` 电荷基精确能级（numpy 惰性）；`resonator_lumped_lc`；`dispersive_shift_hz`；物理常数 | 电路模型 子系统 读出链路 |
+| `circuit_model.py` | 631 | `solve_circuit_model` 逆电容 LOM（含浮动双岛差模约化、SQUID；无结导体 resonators / ports / floating 显式处置 → 负载后 f_r、g_qr、χ、κ、Purcell、T1_port）；`transmon_levels_hz` 电荷基精确能级（numpy 惰性）与其逆 `transmon_from_spectrum`（f01, α → E_C, E_J）；`resonator_lumped_lc`；`dispersive_shift_hz`；物理常数 | 电路模型 子系统 读出链路 |
 | `assemble.py` | 129 | `assemble(cells, keep)`：共享节点累加 + Schur 消元 | 拼装 |
 | `cpw.py` | 215 | `lumped_cpw` / `guided_wavelength` / `complete_elliptic_k`（AGM），自洽公式集 | CPW |
 | `cells.py` | 99 | `rounded_polygon`（shapely buffer 往返）；`emit_geo`（发射 OCC `.geo` 文本） | 圆角 cell |
 | `build.py` | 264 | `build(meta, out_dir, solve)` 编排（几何源 = `.geo` 或 `compile_layout`）+ manifest + 分块派生 + 跑 Palace + 写 `results.yaml` | build 编排 分块 two_pads 锚 sung 外部锚 版图编排 |
-| `tune.py` | 200 | `tune(meta, out)` FEM 在环综合（ANMod 对角特例 + 对数割线；结旋钮在缓存 C 上二分）：每轮写配置副本 → `build(solve=True)` → 更新旋钮；终版 = 普通 layout + meta | tune |
+| `tune.py` | 218 | `tune(meta, out)` FEM 在环综合（ANMod 对角特例 + 对数割线，观测指数在 law 的 ¼–4 倍内才用；结旋钮在缓存 C 上二分；第 0 步闭式 C_Σ* / E_J*）：每轮写配置副本 → `build(solve=True)` → 更新旋钮；终版 = 普通 layout + meta | tune |
 | `__init__.py` | 48 | 再导出；`import quantum_dsl` 不拉起 gmsh / gdstk / shapely | import 纯度 |
 
 ### 依赖图

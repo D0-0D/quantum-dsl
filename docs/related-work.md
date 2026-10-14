@@ -33,6 +33,6 @@
 4. 第二个旋钮（读出耦合）用牛顿法；谐振腔 f_r → 长度 → `cpw_route`；再到 2–4 比特小芯片示例。
 5. 验证：找真实 GDS + 实测参数的器件，报 RMS 误差。
 
-进度（2026-10-04）：1 已做（`circuit_model.resonators / ports / floating`，另加电荷基精确能级）；2 已做（targets 多 `resonators` / `readout` 段；f01 → E_J 由 `tune` 的结旋钮在缓存 C 上求根）；3 已做且直接是多旋钮（`tune:`，ANMod 式比例律 + 对数割线，`examples/xmon_readout_tune` 真 Palace 4 次 FEM 收敛）。4 剩馈线 κ 例子与 `cpw_route` 接 f_r；5 未动。
+进度（2026-10-04）：1 已做（`circuit_model.resonators / ports / floating`，另加电荷基精确能级）；2 已做（targets 多 `resonators` / `readout` 段；f01 → E_J 由 `tune` 的结旋钮在缓存 C 上求根）；3 已做且直接是多旋钮（`tune:`，ANMod 式比例律 + 对数割线，`examples/xmon_readout_tune` 真 Palace 4 次 FEM 收敛）。4 已做（2026-10-14：馈线 κ 例子 `xmon_feedline`、`cpw_route` 的 f_r 旋钮、两比特 + 复用读出 `xmon_pair` 11 旋钮 7 次 FEM 收敛；第二旋钮没用牛顿法——对数割线 + 噪声守卫够了）；5 未动。
 
 暂不做整片放置、频率分配、串扰优化，以及本征模 / EPR。差异化目标：全开源栈上的自动 FEM 在环，加上对独立实测器件的定量误差（调研里没有工具同时做到）；另一个空白是带不确定度的规格，把 d 这类未知工艺量传到目标容差上。
