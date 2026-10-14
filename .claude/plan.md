@@ -1,11 +1,10 @@
 # quantum_dsl — Plan
 
-Backlog 只放**尚未做**的事; 已落地的看 [`status.md`](status.md), 踩过的坑看文末「已了结」。按需立项, 不是排期。
-Legend: `[ ]` not started · `[~]` in progress · `[x]` done。
+Backlog 只放**尚未做**的事; 做完就移出（事实进 [`status.md`](status.md) / 设计稿 / physics, 经过在 session log）, 踩过的坑看文末「已了结」。按需立项, 不是排期。
+Legend: `[ ]` not started · `[~]` in progress。
 
 ## Backlog
 
-- [x] **读出链路 + `tune:`（2026-10-04, deep-research 调研后落地）**: 见 status; 物理口径 physics §8.1, 语法 grammar §3.5。
 - [ ] **读出 / 综合的后续（2026-10-04 列, 按调研优先级）**:
       ① 带馈线的例子（`ports` 的 κ 与 `T1_port_us` 至今只有闭式测试锚）—— xmon_readout 加一条直通馈线 + λ/4 短路端不画;
       ② `cpw_route` 的 `length:` 接 f_r 旋钮（现在只有 `cpw_meander` 例子跑过 `R1.length.f_r`）; 2–4 比特小芯片综合示例;
@@ -37,11 +36,6 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done。
       ⑤ 5 µm 薄板厚度方向的 Box 尺寸场（session 2609121024 的 G7, 粗网格实测能跑, 报数前再评估）。
 - [ ] **`readout_pad.geo` demo 落仓**（2026-09-16 `.claude/session/2609161007.md`）: 9/14 演示过的 `{geo: readout_pad.geo, frame: Q00}` 文件没进仓, chen 版图头注引的就是它;
       `frame:` 至今无测试。做法: 文件进 `examples/`, chen 头注改「取消注释这一步即可」（不进正式步骤: 会多一个无结浮岛, 动 87 名 / 12 块 / 物理口径）, `tests/test_layout.py` 加一条 `frame:` 断言。
-- [x] **`targets:` 块**（issue #23, 2026-09-24 落地; 分块结果不核对 / 无 capacitance 元素目标 = 有需求再加）: meta 里声明期望的 C / E_C / g, `build(solve=True)` 在 results.yaml 里报偏差。sung 的「对论文 ±8%」现在写死在测试里, 应该是用户可声明的数据。
-- [x] **网格收敛扫描**（issue #26, 2026-09-24 落地 `converge()`; 只做 h 加密, 不扫 order / 渐变区）: 每个报出的 C 值给两档网格的相对变化。实测依据: sung 契约配方（80/2）与粗档（160/10）跨 ~5.5%, 未收敛; two_pads 40/4 → 20/2 移 ~0.8%。
-      可作为 `build(..., converge=True)` 或独立工具。
-- [x] ~~**第二求解器后端**（issue #25）~~ 2026-09-24 关闭: 差异已在 §12 结案, StatElecSolve 只有 P1 做不了报数后端: ElmerFEM 交叉验证在 sung 翻案里已证明价值。2026-08-27 已验证可行路径: `ElmerGrid 14 2` 直接吃我们的 gmsh msh + `StatElecSolve`
-      （P1, Calculate Capacitance Matrix, Coordinate Scaling 1e-6）, 与 Palace order-1 同网格整 3×3 相对差 1.9e-7（sif 在 `.claude/xmon-evidence/`）。剩下的只是产品化（SPICE→Maxwell 换算）。
 - [ ] **Palace AMR 试点**: `Model.Refinement`（0.12 起支持 Electrostatic）是边缘 seed 网格之上的二次自适应, 不能取代 Distance/Threshold 尺寸场; 大网格（sung 级）再试,
       1–2 轮、设 MaxSize, 避开 `SaveAdaptMesh+SaveAdaptIterations` 组合（0.16.1 覆盖 bug）。
 - [ ] **域尺寸扫**: sung 例子 airbox 取自 v3 实测档, two_pads 的 side=80 是刻意小型化; 给真实器件报数前应做 1×/1.5×/2× 扫（C 变化 <0.2–0.5% 验收）。

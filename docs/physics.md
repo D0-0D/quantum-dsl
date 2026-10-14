@@ -305,6 +305,8 @@ two_pads 是自参照回归锚（钉配方可复现）；sung 例子才锚**外�
 更低（离散从上方收敛）。锚（论文值）不动，容差 ±8% = 版图缺失 4～6% + 网格 / 求解波动 ~2%。**诊断参照**：若失败，
 先在同网格跑 order 1 比对 Elmer 档，再怀疑物理。⚠ v3 自己的 "Palace 分块 o2 对 Elmer −3%" 同样是抵消产物
 （分块抬 C_Σ +12～15%，order 1 → 2 压 −20～22%）。
+**Elmer 复现路径**（issue #25 关闭时留档：StatElecSolve 只有 P1，不做报数后端，只做交叉验证）：`ElmerGrid 14 2` 直接吃我们的 gmsh msh +
+`StatElecSolve`（Calculate Capacitance Matrix，Coordinate Scaling 1e-6），与 Palace order 1 同网格整 3×3 相对差 1.9e-7；sif 在 `.claude/xmon-evidence/`。
 
 **结构性排除项**（不是精度问题，不断言）：C_12 / β_12——直接 q–q 互容 0.125 fF 在本简化版图不存在（三个矩形 pad
 差分远场相消，Elmer 也只解出 0.003 fF），`circuit_model` 报的 q–q 耦合走 coupler 中介路径（β_12 = 0.0016），数值接近
