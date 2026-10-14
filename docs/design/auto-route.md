@@ -1,7 +1,7 @@
 # 自动布线 v2：区域驱动的 CPW 规划（`cpw_route` / `planner: cpw`）
 
-> **状态：v2 已实现（2026-09-18；同日下午追加多段分摊、精确余量、自身净距、`R: auto`）。** 实现 = `src/quantum_dsl/route.py`（993 行，纯 math）+ `examples/lib/cpw_route.{yaml,geo}`（模板，不变）
-> + `layout.py` 的 `planner:` 分支（步骤键 `region:` / `axis:`）。契约条目「自动布线」↔ `tests/test_route.py` 11 条；例子 `examples/cpw_route_demo.*`（四条路）；
+> **状态：v2 已实现（2026-09-18；同日下午追加多段分摊、精确余量、自身净距、`R: auto`；2026-10-01 轨道图最少转弯兜底 §4.1a）。** 实现 = `src/quantum_dsl/route.py`（1084 行，纯 math）+ `examples/lib/cpw_route.{yaml,geo}`（模板，不变）
+> + `layout.py` 的 `planner:` 分支（步骤键 `region:` / `axis:`）。契约条目「自动布线」↔ `tests/test_route.py` 12 条；例子 `examples/cpw_route_demo.*`（四条路）；
 > 语法 [`../grammar.md`](../grammar.md) §4。v1（Dubins CSC + 等腿对称蛇形，231 行，同日上午）的算法被本稿 §4–§6 替换，输入输出、原语约定、模板、与手写 `.geo` 的分工不变。
 
 ## 0. 为什么重做（2026-09-18 反馈）
@@ -245,7 +245,7 @@ for k in 2 .. 段数:                                                      # 块
 - 填充：每条直段的余量只算一遍（位置数 ≈ 2S/R × 2 侧，每个 ≈ (取样点 + 角点) × (4 边 + 缝 + 障碍) 次射线）；(n, ℓ_in, σ₁) 组合只是缓存查表。
   分摊时每一步给剩余各段重建 `_Run`（障碍变了）。
 - demo 四条路单次 `plan_cpw` 4–160 ms；走廊两块 30 ms；回形三块 120 ms；`R: auto` 0.1–0.5 s（≈ 10 次规划）；失败路径 100–200 ms（含 R 提示的搜索）。
-  `tests/test_route.py` 11 条 ≈ 100 s，其中 demo（四对 xmon 建网格 + R 自动）占大半。
+  `tests/test_route.py` 12 条 ≈ 100 s，其中 demo（四对 xmon 建网格 + R 自动）占大半。
 
 ## 8. 错误（全部 `QuantumDslError`，带步骤名与改法）
 
@@ -345,7 +345,7 @@ u_k 全等 = v1 闭式的 amp，块居中 → 与 `cpw_meander` / `LIB_CPW_MEAND
 
 ## 16. 调试画廊（临时工具）
 
-`tools/route_gallery.py`（不进契约 / 文档地图）：30 个场景直接喂 `plan_cpw`（含走廊两块 / 回形三块 / 窄–宽–窄台阶 / 偏置台阶 / 口太近 / 12 腿分摊 / `R: auto` 两例），每个一张 PNG——蓝框 = region 矩形，红底 = 拼接留下的缝，箭头 = 端口位姿，右上角罗盘 = `axis`，细灰 = 最短骨架，红 + 灰 = 定长后的 CPW 中心线与两边，左上角参数（`R: auto` 时显示解出的 R）/ 腿数 / 转弯数 / 耗时，失败场景把报错画在底部；`--overlay` 给 build 出的 demo GDS 图叠每条 `cpw_route` 的 region 框与 axis 标注。输出到 `build/demo/route_gallery/`（gitignore）。
+`tools/route_gallery.py`（不进契约 / 文档地图）：31 个场景直接喂 `plan_cpw`（含走廊两块 / 回形三块 / 窄–宽–窄台阶 / 偏置台阶 / 口太近 / 12 腿分摊 / `R: auto` 两例），每个一张 PNG——蓝框 = region 矩形，红底 = 拼接留下的缝，箭头 = 端口位姿，右上角罗盘 = `axis`，细灰 = 最短骨架，红 + 灰 = 定长后的 CPW 中心线与两边，左上角参数（`R: auto` 时显示解出的 R）/ 腿数 / 转弯数 / 耗时，失败场景把报错画在底部；`--overlay` 给 build 出的 demo GDS 图叠每条 `cpw_route` 的 region 框与 axis 标注。输出到 `build/demo/route_gallery/`（gitignore）。
 
 ## 17. 与手写 `.geo` 的分工
 
