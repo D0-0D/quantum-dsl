@@ -15,7 +15,8 @@
 * 停: 全部旋钮的核对项 pass (tol 就是判据), 或 ``max_iter`` 用完 (warn)。
 
 产物: ``out/iter_<k>/`` = 每轮的完整配置 + build 产物 (各带 manifest); ``out/<layout>`` + ``out/<meta>`` = 终版配置
-(相对路径改写到 out); ``out/results.yaml`` = 终版 (几何 = 最后一轮, 结参数 = 求根后) 在最后一轮 C 上的结果 + validation;
+(相对路径改写到 out); ``out/results.yaml`` = 终版 (几何 = 最后一轮, 结参数 = 求根后) 在最后一轮 C 上的结果 + validation
+(meta 有 ``gates:`` 时 + 终版哈密顿量上的门仿真 ``gates`` 段; 各轮不跑门);
 ``out/tune.yaml`` = 逐轮旋钮值与核对项。
 """
 
@@ -154,11 +155,12 @@ def tune(meta, out_dir) -> dict:
                     _put(k["slot"], e_j / H_PLANCK if k["path"] == "E_J" else FLUX_QUANTUM_REDUCED ** 2 / e_j)
 
     history, prev, converged = [], {}, False
+    iter_meta = {k: v for k, v in raw_meta.items() if k != "gates"}   # 门仿真只在终版上跑一次
     for it in range(max_iter):
         d = out / f"iter_{it}"
         with warnings.catch_warnings():         # 这轮的 validation 用的是求根前的结参数, 下面重算
             warnings.filterwarnings("ignore", message="targets:")
-            r = build(_write(raw_meta, raw_lay, src_dir, names, d, f"quantum_dsl.tune iteration {it}"),
+            r = build(_write(iter_meta, raw_lay, src_dir, names, d, f"quantum_dsl.tune iteration {it}"),
                       d, solve=True)
         cap, cm = r["capacitance"], copy.deepcopy(r["circuit_model"])
         subsystems = yaml.safe_load(Path(r["results"]).read_text(encoding="utf-8")).get("subsystems") or []
@@ -208,6 +210,9 @@ def tune(meta, out_dir) -> dict:
     final_meta = _write(raw_meta, raw_lay, src_dir, names, out,
                         f"quantum_dsl.tune: synthesized from {m.path.name} "
                         f"({'converged' if converged else 'NOT converged'}, {len(history)} FEM run(s))")
+    if m.gates:                                   # 综合出的哈密顿量 → 门误差 (闭环的最后一段)
+        from .gates import simulate_gates
+        doc["gates"] = simulate_gates(doc["hamiltonian"], m.gates)
     res_path = out / "results.yaml"
     res_path.write_text(yaml.safe_dump(doc, sort_keys=False, allow_unicode=True), encoding="utf-8")
     log = {"source": str(m.path), "converged": converged, "iterations": len(history),

@@ -5,6 +5,12 @@ Legend: `[ ]` not started · `[~]` in progress。
 
 ## Backlog
 
+- [ ] **门仿真后续（2026-10-28 列; 现状 = physics §15, session 2610281309）**:
+      ① 规格口径（**拍板**）: CR 误差看不见静态 ZZ → `zz_static_MHz` 进 targets（results 已有数, 只差 hamiltonian 段字段 + `_tables` 定位）, 或门误差本身当 tune 核对项（每轮多 ~1 min 门仿真）;
+      ② CR 真实化: echo（两段 CR + 控制比特上**本模块的 DRAG π 脉冲**）/ 目标抵消音, 误差改成「只给虚 Z」口径（现在假定任意单比特修正理想）;
+      ③ 退相干: SuperGrad `mesolve` + results 已有的 T1_port / T1_purcell（只差接线; 50 步/ns × 25 维密度矩阵 625 维要先测速）;
+      ④ 旁观比特 / 读出腔进 SCGraph（腔用 SuperGrad `Resonator`; 多比特环路要 C'⁻¹ 符号, 不能用 |β|）; 经读出腔驱动时 λ_j 按论文 App. A;
+      ⑤ 多参数梯度: 16 维 × 1.4 万步反向 ~150 s/次（SuperGrad LCAM 要 KronObj, 本模块是稠密阵）—— 真要上 GRAPE 式整形, 先做自己的伴随或分段 checkpoint。
 - [ ] **读出 / 综合的后续（2026-10-04 列, 按调研优先级; ①②③ 2026-10-14 做完移出 → physics §8.1 / examples `xmon_feedline*` `xmon_pair*` / session 2610141107）**:
       ④ 求解可信度（调研**未取证**, 先补查再做）: converge 三档 + Richardson 观测阶、airbox 尺寸扫、工艺参数 ±δ 有限差分灵敏度 → 线性协方差进 validation;
          **重网格噪声已实测一次**（2026-10-14, 200/20 演示网格平移重解: κ σ ≈ 5 %、χ ≈ 3 %、C_Σ 0.3 %; κ tol 5 % 时 tune 不收敛 → 现在靠 tol ≥ 2σ + 割线守卫）——

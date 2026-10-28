@@ -9,6 +9,7 @@
 名字能否对上 qubit 由 build 在网格化之前查。
 ``circuit_model`` 只收 qubits / resonators / ports / floating (无结导体的三种显式处置, docs/physics.md §8.1);
 ``tune:`` (FEM 在环综合, ``quantum_dsl.tune``) 在加载时校验成方阵: 每个旋钮对准恰好一条 targets 核对项。
+``gates:`` (门仿真, ``quantum_dsl.gates``) 按 kind 查键白名单, 时长只收秒量纲 (``20ns``)。
 """
 
 from __future__ import annotations
@@ -28,7 +29,10 @@ __all__ = ["Meta", "load_meta"]
 
 _SCHEMA = "quantum-dsl/meta/1"
 _TOP_KEYS = frozenset({"schema", "geo", "layout", "layers", "materials", "airbox", "mesh",
-                       "solver", "gds", "circuit_model", "extract", "subsystems", "targets", "tune"})
+                       "solver", "gds", "circuit_model", "extract", "subsystems", "targets", "tune", "gates"})
+# 门仿真 (quantum_dsl.gates): 每种门的键白名单 (公共键 + 定位键)
+_GATE_KEYS = {"x_drag": frozenset({"name", "kind", "t_gate", "levels", "max_error", "qubit"}),
+              "cr": frozenset({"name", "kind", "t_gate", "levels", "max_error", "control", "target", "ramp"})}
 _CM_KEYS = frozenset({"qubits", "resonators", "ports", "floating"})
 _TUNE_KEYS = frozenset({"knobs", "max_iter", "damping"})
 _KNOB_KEYS = frozenset({"param", "target", "law", "bounds"})
@@ -60,6 +64,7 @@ class Meta:
     subsystems: list = field(default_factory=list)
     targets: dict = field(default_factory=dict)  # {source, checks: [{qubit|pair|resonator|readout, field, expected, tol}]}
     tune: dict = field(default_factory=dict)     # {knobs: [{param, step, path, target, check, law, bounds}], max_iter, damping}
+    gates: list = field(default_factory=list)    # [{name, kind, t_gate_ns, levels, qubit │ control + target [, ramp_ns][, max_error]}]
 
 
 def _targets(tbl, path) -> dict:
@@ -188,6 +193,56 @@ def _tune(tbl, targets, path) -> dict:
     return {"knobs": out, "max_iter": max_iter, "damping": float(damping)}
 
 
+def _gates(tbl, path) -> list:
+    """``gates: [{name: X_Q1, kind: x_drag, qubit: Q1, t_gate: 20ns}, {name: CX, kind: cr, control: Q1, target: Q2,
+    t_gate: 240ns, ramp: 20ns, max_error: 1e-3}]`` → 校验后的条目 (时长解析成 ns, ``levels`` 默认 5, cr 的 ``ramp`` 默认 20ns)。
+    qubit 名能否对上由 build 在网格化之前查。"""
+    where = f"load_meta: {path}: gates"
+    if not isinstance(tbl, list) or not tbl:
+        raise QuantumDslError(f"{where} must be a non-empty list of gate mappings")
+    out, seen = [], set()
+    for i, g in enumerate(tbl):
+        w = f"{where}[{i}]"
+        if not isinstance(g, dict) or g.get("kind") not in _GATE_KEYS:
+            raise QuantumDslError(f"{w}: needs kind: one of {sorted(_GATE_KEYS)}, got {g!r}")
+        unknown = sorted(set(g) - _GATE_KEYS[g["kind"]])
+        if unknown:
+            raise QuantumDslError(f"{w}: unknown key(s) {unknown} for kind {g['kind']} "
+                                  f"(known: {sorted(_GATE_KEYS[g['kind']])})")
+        name = g.get("name")
+        if not isinstance(name, str) or not name or name in seen:
+            raise QuantumDslError(f"{w}: name must be a unique non-empty string, got {name!r}")
+        seen.add(name)
+        locs = ("qubit",) if g["kind"] == "x_drag" else ("control", "target")
+        if not all(isinstance(g.get(k), str) and g[k] for k in locs) or len({g[k] for k in locs}) != len(locs):
+            raise QuantumDslError(f"{w}: needs {' + '.join(locs)} as (distinct) qubit names")
+        def ns(key, default=None):
+            v = g.get(key, default)
+            if not (isinstance(v, str) and v.strip().endswith("s") and parse_quantity(v) > 0):
+                raise QuantumDslError(f"{w}: {key} must be a positive duration like '20ns', got {v!r}")
+            return parse_quantity(v) * 1e9
+
+        e = {"name": name, "kind": g["kind"], **{k: g[k] for k in locs}, "t_gate_ns": ns("t_gate"),
+             "levels": g.get("levels", 5)}
+        if isinstance(e["levels"], bool) or not isinstance(e["levels"], int) or e["levels"] < 3:
+            raise QuantumDslError(f"{w}: levels must be an int >= 3 (|2> carries the leakage), got {e['levels']!r}")
+        if g["kind"] == "cr":
+            e["ramp_ns"] = ns("ramp", "20ns")
+            if not 2 * e["ramp_ns"] < e["t_gate_ns"]:
+                raise QuantumDslError(f"{w}: ramp must be > 0 and < t_gate / 2, got {g.get('ramp')!r}")
+        if "max_error" in g:
+            v = g["max_error"]
+            try:
+                v = float(v) if isinstance(v, str) else v     # PyYAML (YAML 1.1) 把 1e-3 读成字符串
+            except ValueError:
+                pass
+            if isinstance(v, bool) or not isinstance(v, (int, float)) or not 0 < v < 1:
+                raise QuantumDslError(f"{w}: max_error must be a number in (0, 1), got {v!r}")
+            e["max_error"] = float(v)
+        out.append(e)
+    return out
+
+
 def _circuit_model(tbl, path) -> dict:
     """circuit_model 键白名单 + 带量纲量解析成 SI (E_J 系 → Hz, L_J → H, f_r → Hz, Z0 / R → Ω)。
     条目内的键与取值由 solve_circuit_model 查 (那里有完整报错)。"""
@@ -291,4 +346,5 @@ def load_meta(path) -> Meta:
         subsystems=doc.get("subsystems") or [],
         targets=targets,
         tune=_tune(doc["tune"], targets, path) if "tune" in doc else {},
+        gates=_gates(doc["gates"], path) if "gates" in doc else [],
     )

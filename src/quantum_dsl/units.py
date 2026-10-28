@@ -5,7 +5,7 @@
 
 * ``parse_length``   → µm。裸数 (int/float) 就是 µm; 字符串必须带长度单位。
 * ``parse_quantity`` → SI。**必须带单位** —— 裸数没有量纲, 一律拒绝
-  (例: ``"10nH"`` → 1e-8 H, ``"2GHz"`` → 2e9 Hz)。
+  (例: ``"10nH"`` → 1e-8 H, ``"2GHz"`` → 2e9 Hz, ``"20ns"`` → 2e-8 s)。
 """
 
 from __future__ import annotations
@@ -23,8 +23,8 @@ _QUANTITY_RE = re.compile(rf"({_NUM})\s*([A-Za-zµΩ]+)")
 
 _UM_PER_UNIT = {"m": 1e6, "cm": 1e4, "mm": 1e3, "um": 1.0, "µm": 1.0, "nm": 1e-3}
 
-# 量纲单位 (最长后缀优先匹配: "GHz" 得先撞上 "Hz" 而不是 "H")。
-_SI_UNITS = ("Hz", "Ohm", "H", "F")
+# 量纲单位 (最长后缀优先匹配: "GHz" 得先撞上 "Hz" 而不是 "H")。s = 秒 (门时长 "20ns")。
+_SI_UNITS = ("Hz", "Ohm", "H", "F", "s")
 _SI_PREFIX = {"": 1.0, "f": 1e-15, "p": 1e-12, "n": 1e-9, "u": 1e-6, "µ": 1e-6,
               "m": 1e-3, "k": 1e3, "M": 1e6, "G": 1e9, "T": 1e12}
 
@@ -49,7 +49,7 @@ def parse_length(value) -> float:
 
 
 def parse_quantity(value) -> float:
-    """带单位的物理量 → **SI** (H/F/Hz/Ohm + SI 词头)。裸数没有量纲 → 拒绝。"""
+    """带单位的物理量 → **SI** (H/F/Hz/Ohm/s + SI 词头)。裸数没有量纲 → 拒绝。"""
     if not isinstance(value, str):
         raise QuantumDslError(
             f"parse_quantity: needs a unit-suffixed string like '10nH', "

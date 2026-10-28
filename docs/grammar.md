@@ -123,8 +123,8 @@ Physical Surface("metal::1::QB1_t::pad") = { sret };
 
 ## 3. `*.meta.yaml` 字段参考
 
-顶层只允许这 13 个键，出现别的键（typo）直接 raise：
-`schema` `geo` `layout` `layers` `materials` `airbox` `mesh` `solver` `gds` `circuit_model` `extract` `subsystems` `targets` `tune`。
+顶层只允许这 15 个键，出现别的键（typo）直接 raise：
+`schema` `geo` `layout` `layers` `materials` `airbox` `mesh` `solver` `gds` `circuit_model` `extract` `subsystems` `targets` `tune` `gates`。
 
 ### 3.1 骨架（`examples/two_pads.meta.yaml`）
 
@@ -253,6 +253,28 @@ tune:
   两比特 + 复用读出：`examples/xmon_pair_tune.meta.yaml`（11 个旋钮，g_qq 旋钮 `Q1.at.1`）。
 - **tol 要高过重网格噪声底**：几何旋钮每轮都重网格，同几何亚 µm 平移重解的散布就是 tol 的下限（粗演示网格 200/20：κ σ ≈ 5 %、χ ≈ 3 %，physics §8.1）。
 - 只支持版图路线（旋钮是版图步骤键）；顶层步骤的模板参数（嵌套模板内部的参数不行）。
+
+### 3.6 门仿真 `gates:`（`examples/xmon_pair.meta.yaml`，要 `pip install -e '.[gates]'`）
+
+```yaml
+gates:
+  - {name: X_Q1, kind: x_drag, qubit: Q1, t_gate: 20ns, max_error: 1.0e-4}
+  - {name: CX_Q1Q2, kind: cr, control: Q1, target: Q2, t_gate: 240ns, ramp: 20ns, max_error: 1.0e-3}
+```
+
+| 键 | 取值 | 说明 |
+|---|---|---|
+| `name` | str | 必填，各门唯一；results `gates` 段按它列 |
+| `kind` | `x_drag` │ `cr` | 键白名单按 kind 查（`x_drag` 没有 `ramp`） |
+| `qubit` / `control` + `target` | qubit 名 | `x_drag` 用 `qubit`，`cr` 用两个不同的名字；名字在网格化之前对 circuit_model 查 |
+| `t_gate` | 时长串 `20ns` / `0.24us` | 必填，只收秒量纲（`20GHz`、裸数 raise）；`x_drag` 的 σ = t_gate / 4（论文口径） |
+| `ramp` | 时长串，默认 `20ns` | `cr` 平顶两端的 cos 斜坡；须 < t_gate / 2 |
+| `levels` | int ≥ 3，默认 5 | 每个 transmon 保留的本征态数（|2⟩ 承载泄漏） |
+| `max_error` | (0, 1) 的数 | 可选门误差预算 → 结果多 `pass`，未达标只 warn（不 raise）。写 `1.0e-4` 或 `1e-4` 都行（后者 PyYAML 读成字串，加载时转数） |
+
+- `build(solve=True)` 在整片 `results.yaml` 追加 `gates` 段（`validation` 之后）；`blocks=` 求解不跑（warn）；`tune` 各轮不跑，终版 results 上跑一次。
+- 已有 results 不必重跑 FEM：`quantum_dsl.simulate_gates(yaml.safe_load(open(".../results.yaml"))["hamiltonian"], load_meta(m).gates)`。
+- 只演化门涉及的比特（旁观比特 / 读出腔不进），无退相干；口径、精度账与数字见 physics §15。
 
 ## 4. 版图与模板（`*.layout.yaml`，schema `quantum-dsl/layout/1`）
 

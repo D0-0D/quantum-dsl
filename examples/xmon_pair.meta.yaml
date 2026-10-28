@@ -16,3 +16,10 @@ solver: {type: electrostatic, order: 2, outer_boundary: open}
 
 circuit_model:
   ports: [{name: feed, net: FL, R: 25.5Ohm}]
+
+# 门仿真 (quantum_dsl.gates, SuperGrad, docs/physics.md §15): 整片哈密顿量 → 标定后的门误差, 管线最后一段。
+# X = Gambetta 2011 DRAG (t_g = 4σ); CX = Q1 控制、Q2 目标的 CR, 误差 = 1 − max_局域 F(ZX90) (单比特门理想)。
+gates:
+  - {name: X_Q1, kind: x_drag, qubit: Q1, t_gate: 20ns, max_error: 1.0e-4}
+  - {name: X_Q2, kind: x_drag, qubit: Q2, t_gate: 20ns, max_error: 1.0e-4}
+  - {name: CX_Q1Q2, kind: cr, control: Q1, target: Q2, t_gate: 240ns, ramp: 20ns, max_error: 1.0e-3}

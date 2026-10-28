@@ -20,10 +20,10 @@ from conftest import BLOCKS_META, EXAMPLES, FIXTURES, SRC, TWO_PADS_META
 # ---------------------------------------------------------------- 纯度
 def test_import_is_light_and_metal_free():
     """契约「import 纯度」: ``import quantum_dsl`` 不得拉起 qiskit_metal / gmsh / gdstk /
-    matplotlib。在子进程里查 —— 本进程的其他测试早已 import 过 gmsh, 与
+    matplotlib / jax / supergrad。在子进程里查 —— 本进程的其他测试早已 import 过 gmsh, 与
     测试顺序无关。"""
     code = ("import sys, quantum_dsl; "
-            "bad = {'qiskit_metal', 'gmsh', 'gdstk', 'matplotlib'} & set(sys.modules); "
+            "bad = {'qiskit_metal', 'gmsh', 'gdstk', 'matplotlib', 'jax', 'supergrad'} & set(sys.modules); "
             "sys.exit('import quantum_dsl pulled %r' % sorted(bad) if bad else 0)")
     r = subprocess.run([sys.executable, "-c", code],
                        env={**os.environ, "PYTHONPATH": str(SRC)},
@@ -204,6 +204,35 @@ def test_targets_validation_in_results(tmp_path, monkeypatch):
     with pytest.raises(QuantumDslError, match=r"unknown qubit\(s\) \['C'\]"):
         build(typo, tmp_path / "typo", solve=True)
     assert not list((tmp_path / "typo").glob("*.msh"))       # 网格化之前就拦下
+
+
+def test_gates_stage_in_build_and_tune(tmp_path, monkeypatch):
+    """契约「门仿真」: meta ``gates:`` → ``build(solve=True)`` 的整片 results 多 ``gates`` 段 (SuperGrad 门级演化,
+    管线最后一段); max_error 未达标只 warn, pass = False; 门里的 qubit 名拼错在网格化之前 raise;
+    ``tune`` 各轮不跑门, 只在终版 results 上跑一次。(要 SuperGrad, 没装 skip)"""
+    pytest.importorskip("supergrad")
+    from quantum_dsl import QuantumDslError, build, tune
+    _fake_palace(monkeypatch, lambda run: [[25.0, -2.0], [-2.0, 25.0]])
+    gate = {"name": "XA", "kind": "x_drag", "qubit": "A", "t_gate": "10ns", "max_error": 1e-12}
+    with pytest.warns(UserWarning, match=r"gates: 1/1 above max_error — XA"):
+        r = build(_two_pads_meta(tmp_path, gates=[gate]), tmp_path / "out", solve=True)
+    g = yaml.safe_load(Path(r["results"]).read_text(encoding="utf-8"))["gates"]
+    assert [(x["name"], x["qubit"], x["t_gate_ns"], x["pass"]) for x in g] == [("XA", "A", 10.0, False)]
+    assert 0 < g[0]["error"] < g[0]["gaussian_error"]
+
+    typo = _two_pads_meta(tmp_path, gates=[{**gate, "qubit": "C"}])
+    with pytest.raises(QuantumDslError, match=r"unknown qubit\(s\) \['C'\]"):
+        build(typo, tmp_path / "typo", solve=True)
+    assert not list((tmp_path / "typo").glob("*.msh"))
+
+    meta = _meta_copy(tmp_path, "two_pads_layout.meta.yaml",
+                      targets={"qubits": {"A": {"f01_exact_GHz": 6.0, "tol": "0.5%"}}},
+                      tune={"knobs": [{"param": "A.L_J", "target": "A.f01_exact_GHz"}]},
+                      gates=[{**gate, "max_error": 0.1}])
+    t = tune(meta, tmp_path / "tuned")
+    assert "gates" not in yaml.safe_load(Path(t["history"][0]["dir"], "results.yaml").read_text(encoding="utf-8"))
+    final = yaml.safe_load(t["results"].read_text(encoding="utf-8"))
+    assert final["gates"][0]["pass"] is True and final["gates"][0]["f01_GHz"] == pytest.approx(6.0, rel=1e-6)
 
 
 def test_converge_scales_mesh_and_diffs_finest_two(tmp_path, monkeypatch):

@@ -21,6 +21,8 @@ dependencies = [
 # `import quantum_dsl` 不得拉起它们 (契约「import 纯度」)。
 gmsh = ["gmsh>=4.13"]
 gds = ["gdstk>=0.9.53", "pillow>=9"]
+# 门仿真 (simulate_gates / meta gates:): SuperGrad 拉 jax / dm-haiku / scipy; threadpoolctl 把小矩阵 BLAS 压成单线程
+gates = ["supergrad>=0.2.6", "threadpoolctl>=3"]
 test = ["pytest>=8"]
 
 [tool.setuptools.packages.find]

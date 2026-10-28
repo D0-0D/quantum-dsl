@@ -18,7 +18,8 @@
 circuit_model (meta 的 E_J 系频率 Hz = E_J/h, 此处 ×h 转焦耳; 无结导体按 resonators / ports / floating
 声明处置, 版图里 ``length: {mode: quarter_wave|half_wave}`` 的路由自动生成 resonator 条目) →
 ``results.yaml`` (hamiltonian [+ resonators / readout] + capacitance); meta 有 ``targets:`` 时另有
-``validation`` 段 (只核对整片)。
+``validation`` 段 (只核对整片); 有 ``gates:`` 时整片 hamiltonian 再交给 SuperGrad 做门级演化 → ``gates`` 段
+(``quantum_dsl.gates``, 管线最后一段)。
 
 ``converge(meta, out_dir, scales)``: 网格收敛扫描 —— mesh 尺寸同比缩放, 每档整片求解一次,
 ``convergence.yaml`` 记最细两档每个 C 元素 / hamiltonian 字段的相对变化 (docs/physics.md §6:
@@ -223,13 +224,14 @@ def _results_doc(cap, subsystems, cm) -> dict:
     return doc
 
 
-def _check_target_names(targets, cm) -> None:
-    """targets 点的 qubit / 腔名在网格化之前就查 (sung 级求解是小时级, 拼错名不能等解完才 raise)。"""
+def _check_target_names(targets, cm, gates=()) -> None:
+    """targets / gates 点的 qubit / 腔名在网格化之前就查 (sung 级求解是小时级, 拼错名不能等解完才 raise)。"""
     known = {"qubit": {q.get("name") for q in cm.get("qubits") or []},
              "resonator": {r.get("name") for r in cm.get("resonators") or []}}
-    for c in targets.get("checks", ()):
+    for c in [*targets.get("checks", ()), *gates]:
         need = ([("qubit", c["qubit"])] if "qubit" in c else
                 [("qubit", n) for n in c["pair"]] if "pair" in c else
+                [("qubit", c["control"]), ("qubit", c["target"])] if "control" in c else
                 [("resonator", c["resonator"])] if "resonator" in c else
                 [("qubit", c["readout"][0]), ("resonator", c["readout"][1])])
         for what, n in need:
@@ -311,7 +313,7 @@ def build(meta, out_dir, solve: bool = False, blocks=None) -> dict:
         result["layout"] = lay
     else:
         src, stem, inputs = m.geo_path, m.geo_path.stem, [m.path, m.geo_path]
-    _check_target_names(m.targets, circuit_model)
+    _check_target_names(m.targets, circuit_model, m.gates)
 
     blocks_spec = (m.extract or {}).get("blocks") or []
     if blocks is not None:
@@ -390,13 +392,16 @@ def build(meta, out_dir, solve: bool = False, blocks=None) -> dict:
             doc = _results_doc(cap, subsystems, circuit_model)
             if m.targets:
                 doc["validation"] = _validation(doc, m.targets)
+            if m.gates:
+                from .gates import simulate_gates
+                doc["gates"] = simulate_gates(doc["hamiltonian"], m.gates)
             results_path = out / "results.yaml"
             results_path.write_text(yaml.safe_dump(doc, sort_keys=False, allow_unicode=True),
                                     encoding="utf-8")
             result["results"] = results_path
-        elif m.targets:
-            warnings.warn("build: meta targets are checked against whole-chip results only — "
-                          "block results carry no validation section", stacklevel=2)
+        elif m.targets or m.gates:
+            warnings.warn("build: meta targets / gates are evaluated on whole-chip results only — "
+                          "block results carry no validation / gates section", stacklevel=2)
         for entry in result.get("blocks", []) if blocks is not None else []:
             _run_palace(entry["config"])
             bcap = parse_capacitance(out / f"postpro_block_{entry['name']}",

@@ -30,6 +30,7 @@ def test_parse_quantity_to_si_requires_unit():
     assert parse_quantity("10nH") == pytest.approx(1e-8)
     assert parse_quantity("3fF") == pytest.approx(3e-15)
     assert parse_quantity("2GHz") == pytest.approx(2e9)
+    assert parse_quantity("20ns") == pytest.approx(2e-8)
     with pytest.raises(QuantumDslError):
         parse_quantity("10")
 
@@ -115,9 +116,9 @@ def test_load_meta_targets_flattened_and_strict(tmp_path):
 
 
 def test_load_meta_readout_targets_and_tune_strict(tmp_path):
-    """契约「读出链路」/「tune」: circuit_model 只收 qubits / resonators / ports / floating 且量纲解析成 SI;
+    """契约「读出链路」/「tune」/「门仿真」: circuit_model 只收 qubits / resonators / ports / floating 且量纲解析成 SI;
     targets 多 resonators / readout 段; tune 是方阵 (旋钮 param 与 target 各唯一, target 必须是一条核对项),
-    几何旋钮必须给比例律 law, 结旋钮不收 law。"""
+    几何旋钮必须给比例律 law, 结旋钮不收 law; gates 按 kind 查键, 时长只收秒量纲 (20GHz / 裸数 raise)。"""
     from quantum_dsl import QuantumDslError, load_meta
     head = "schema: quantum-dsl/meta/1\ngeo: x.geo\n"
     tgt = ("targets: {qubits: {Q1: {f01_exact_GHz: 5, anharmonicity_exact_MHz: -220, tol: 1%}},"
@@ -130,6 +131,14 @@ def test_load_meta_readout_targets_and_tune_strict(tmp_path):
                   encoding="utf-8")
     m = load_meta(ok)
     assert m.circuit_model["resonators"][0]["f_r"] == 7e9 and m.circuit_model["ports"][0]["R"] == 25.0
+    gates = tmp_path / "gates.meta.yaml"                   # 契约「门仿真」: 时长 → ns, levels / ramp 有默认
+    gates.write_text(head + "gates: [{name: X1, kind: x_drag, qubit: Q1, t_gate: 20ns},"
+                     " {name: CX, kind: cr, control: Q1, target: Q2, t_gate: 0.24us, levels: 4, max_error: 1e-3}]\n",
+                     encoding="utf-8")
+    assert load_meta(gates).gates == [
+        {"name": "X1", "kind": "x_drag", "qubit": "Q1", "t_gate_ns": pytest.approx(20.0), "levels": 5},
+        {"name": "CX", "kind": "cr", "control": "Q1", "target": "Q2", "t_gate_ns": pytest.approx(240.0),
+         "levels": 4, "ramp_ns": pytest.approx(20.0), "max_error": 1e-3}]
     assert m.targets["checks"][-1] == {"readout": ["Q1", "R1"], "field": "chi_MHz", "expected": -0.5, "tol": 0.1}
     k = m.tune["knobs"]
     assert [(x["step"], x["path"], x["law"]) for x in k] == [("Q1", "arm_L", -1.0), ("Q1", "E_J", None),
@@ -143,6 +152,16 @@ def test_load_meta_readout_targets_and_tune_strict(tmp_path):
     bad = tmp_path / "bad.meta.yaml"
     for body, match in (
             ("circuit_model: {resonator: []}\n", "unknown key"),
+            ("gates: [{name: X, kind: x_drag, qubit: Q1, t_gate: 20GHz}]\n", "positive duration"),
+            ("gates: [{name: X, kind: x_drag, qubit: Q1, t_gate: 20}]\n", "positive duration"),
+            ("gates: [{name: X, kind: x_drag, qubit: Q1, t_gate: 20ns, ramp: 5ns}]\n", "unknown key"),
+            ("gates: [{name: X, kind: x_gate, qubit: Q1, t_gate: 20ns}]\n", "needs kind"),
+            ("gates: [{name: X, kind: cr, control: Q1, target: Q1, t_gate: 200ns}]\n", "distinct"),
+            ("gates: [{name: X, kind: cr, control: Q1, target: Q2, t_gate: 30ns}]\n", "ramp must be"),
+            ("gates: [{name: X, kind: x_drag, qubit: Q1, t_gate: 20ns, levels: 2}]\n", "levels"),
+            ("gates: [{name: X, kind: x_drag, qubit: Q1, t_gate: 20ns, max_error: 2}]\n", "max_error"),
+            ("gates: [{name: X, kind: x_drag, qubit: Q1, t_gate: 20ns},"
+             " {name: X, kind: x_drag, qubit: Q2, t_gate: 20ns}]\n", "unique"),
             ("targets: {resonators: {R1: {f_r_GHz: 7, kappa_MHz: 0.4, tol: {f_r_GHz: 1%}}}}\n", "per-quantity tol"),
             (tgt + "tune: {knobs: [{param: Q1.arm_L, target: Q1.f01_GHz, law: -1}]}\n", "not a targets check"),
             (tgt + "tune: {knobs: [{param: Q1.arm_L, target: Q1.f01_exact_GHz}]}\n", "needs law"),

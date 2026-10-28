@@ -37,9 +37,13 @@
                                                     │
                                              results.yaml  {capacitance, hamiltonian: {qubits[E_C,f01,α], couplings[β,g]}}
                                              manifest.yaml {inputs/outputs sha256}
+                                                    │
+                       meta gates: ──► simulate_gates (SuperGrad, jax) ──► results.yaml gates[]   ⑥ 门仿真
+                                       transmon(E_C,E_J) + J·n·n (J = 8β√E_C E_C) → DRAG X / CR 标定 → error / leakage
 ```
 
-**读法**：左边两份文件是全部输入；①–③ 不需要 Palace，几秒完成；④⑤ 只在 `solve=True` 时发生。
+**读法**：左边两份文件是全部输入；①–③ 不需要 Palace，几秒完成；④⑤ 只在 `solve=True` 时发生；⑥ 只在 meta 有 `gates:` 时跟在⑤后面
+（也可对任何已有 results 单独调 `simulate_gates`，不重跑 FEM）。
 几何源也可以是**版图** `*.layout.yaml`（meta `layout:` 代替 `geo:`）：`compile_layout` 把模板实例（`.geo` + yaml）、
 手写 `.geo` 步骤与端口到端口的路由按顺序写进**同一个 gmsh 模型**，产出可调用的 `Layout`；`geo_model(layout)` 重放它，
 ①② 不变；编排器顺手生成 `circuit_model.qubits`（结）与 `subsystems`（谐振器长度）。
@@ -84,6 +88,7 @@ C 矩阵行序 = `Mesh.labels` = `sorted(metal component)`，是全链唯一真�
 | `cpw.py` | 215 | `lumped_cpw` / `guided_wavelength` / `complete_elliptic_k`（AGM），自洽公式集 | CPW |
 | `cells.py` | 99 | `rounded_polygon`（shapely buffer 往返）；`emit_geo`（发射 OCC `.geo` 文本） | 圆角 cell |
 | `build.py` | 264 | `build(meta, out_dir, solve)` 编排（几何源 = `.geo` 或 `compile_layout`）+ manifest + 分块派生 + 跑 Palace + 写 `results.yaml` | build 编排 分块 two_pads 锚 sung 外部锚 版图编排 |
+| `gates.py` | 247 | **门仿真**（2026-10-28）：`simulate_gates(hamiltonian, gates)` → 每门一条结果；`_dressed` = SuperGrad `SCGraph` → `Transmon`（电荷基）+ `capacitive_coupling`（J = 8β√E_C E_C）→ 缀饰能级 Λ 与 n 算符；`_propagate` = 对 diag(Λ) 的精确相互作用绘景 + SuperGrad `ode_expm`（每步快相位 sinc 精确求积）；`_x_drag` = Gambetta 2011 高斯 + DRAG，SuperGrad `scipy_minimize`（jax 梯度 L-BFGS）标定 + 高斯基线；`_cr` = 平顶 CR，幅度有界一维搜索 + SuperGrad `compute_fidelity_with_1q_rotation_axis`；整段包在 `threadpool_limits(1, "blas")` 里（OpenBLAS 线程争抢让 ≥ 24 维 expm 慢 200×）；supergrad / jax / scipy 全部惰性 | 门仿真 |
 | `tune.py` | 218 | `tune(meta, out)` FEM 在环综合（ANMod 对角特例 + 对数割线，观测指数在 law 的 ¼–4 倍内才用；结旋钮在缓存 C 上二分；第 0 步闭式 C_Σ* / E_J*）：每轮写配置副本 → `build(solve=True)` → 更新旋钮；终版 = 普通 layout + meta | tune |
 | `__init__.py` | 48 | 再导出；`import quantum_dsl` 不拉起 gmsh / gdstk / shapely | import 纯度 |
 
@@ -102,10 +107,11 @@ C 矩阵行序 = `Mesh.labels` = `sorted(metal component)`，是全链唯一真�
    cpw  ◄── layout (定长路由用 guided_wavelength)
    route ◄── layout (planner: cpw 模板: 惰性 import, 纯 math)
    build ◄── tune (唯一消费者是用户; tune 借 build 的 _results_doc / _validation 在缓存 C 上复算)
+   gates ◄── build, tune (meta gates: 时惰性 import; gates 只依赖 errors, 输入是 results 的 hamiltonian 段 dict)
 ```
 
 **读法**：箭头指向被依赖方。无环；`build` 是单次编排者，`tune` 在它之上循环；`cells` 没有内部消费者。
-第三方库全部在函数体内惰性 import：`gmsh`（geo / gds / mesh 经 `_gmsh`）、`gdstk`（gds）、`shapely`（cells）；
+第三方库全部在函数体内惰性 import：`gmsh`（geo / gds / mesh 经 `_gmsh`）、`gdstk`（gds）、`shapely`（cells）、`supergrad` / `jax` / `scipy` / `threadpoolctl`（gates）；
 只有 `yaml` 是顶层 import。
 
 ## 5. 公共 API
@@ -123,6 +129,7 @@ C 矩阵行序 = `Mesh.labels` = `sorted(metal component)`，是全链唯一真�
 | `solve_circuit_model(labels, maxwell_fF, junctions, resonators=(), ports=(), floating=())` | → `CircuitModelResult(.qubits, .couplings, .resonators[ResonatorResult], .readout[ReadoutResult])` | junction = `{name, islands:[1 或 2 个], L_J│E_J│squid}`；resonator = `{name, net, f_r, Z0, mode, drawn}`；port = `{name, net, R}`（SI） |
 | `build(meta, out, solve, blocks)` | → 产物路径 dict（§6）+ `circuit_model`（合并后的 meta + 版图生成条目） | meta 有 `targets:` 时整片 results 多 `validation` 段 |
 | `converge(meta, out, scales=(1.0, 0.6))` | → `{runs, convergence, doc}` | mesh 尺寸同比缩放、各档整片求解，`convergence.yaml` = 最细两档相对变化 |
+| `simulate_gates(hamiltonian, gates)` | → `[{name, kind, t_gate_ns, levels, error, leakage, …}]` | `hamiltonian` = results 的同名段（qubits 的 E_C_GHz / E_J_GHz，couplings 的 β）；`gates` = `load_meta(m).gates`（已校验、时长已转 ns）；要 `.[gates]` extra |
 | `tune(meta, out)` | → `{converged, iterations, meta, layout, results, tune, history}` | meta 须有 `layout:` + `targets:` + `tune:`；`out/iter_<k>/` 每轮完整配置与产物，`out/` 下终版配置 |
 | `assemble(cells, keep)` | → `AssembledMatrix(.labels, .maxwell_fF, .eliminated)` | keep 拼错 raise |
 | `lumped_cpw(freq, line_width, line_gap, substrate_thickness, film_thickness, *, eps_r, loss_tangent, london_penetration_depth)` | → `CpwLumped(Lk, Lext, C, G, Z0, eps_eff, q, lambda_g)` | ⚠ 入参 **SI 米 / Hz** |
@@ -161,6 +168,11 @@ hamiltonian:
   couplings: [{qubit_a, qubit_b, beta, g_MHz}, ...]
 validation:  # 仅 meta 有 targets: 时
   {source, passed, checks: [{qubit | pair, field, expected, tol, actual, deviation, pass}, ...]}
+gates:       # 仅 meta 有 gates: 时 (physics §15)
+  - {name, kind: x_drag, t_gate_ns, levels, qubit, f01_GHz, anharmonicity_MHz, error, leakage, gaussian_error,
+     amp, drag_beta, beta_first_order, lambda1, detuning_MHz[, max_error, pass]}
+  - {name, kind: cr, t_gate_ns, levels, control, target, ramp_ns, error, leakage, zz_static_MHz, detuning_MHz,
+     drive_MHz, drive_first_order_MHz, coupling_J_MHz[, max_error, pass]}
 ```
 
 分块（`extract.blocks`）在 v4.0 里只做到**派生 + 各块 mesh/config**；把各块 Palace 结果喂给

@@ -1,5 +1,5 @@
 # xmon_pair_tune.meta.yaml — 两比特小芯片的 FEM 在环综合: xmon_pair 版图, 11 个目标 + 11 个旋钮 (方阵), 两条读出腔复用一条馈线。
-# 跑法: quantum_dsl.tune("examples/xmon_pair_tune.meta.yaml", "build/xp_tune")。
+# 跑法: quantum_dsl.tune("examples/xmon_pair_tune.meta.yaml", "build/xp_tune")。文末 gates: 在终版上做 SuperGrad 门仿真。
 # 规格: 两比特 f01 4.8 / 5.0 GHz、α −250 MHz、直接耦合 g 8 MHz; 读出腔 7.2 / 7.45 GHz (复用间隔 250 MHz)、χ −0.2 MHz、κ/2π 0.4 MHz (= 2|χ|)。
 #   每比特: arm_L → α (law −1)、ro_gap → χ (law −1)、E_J → f01 (结, 缓存 C 上二分); 每腔: length.f_r → f_r (law 1)、tap_h → κ (law 2);
 #   Q1.at.1 → g_qq: Q2 在原点, 它就是两比特中心距, 臂尖隔地的耦合随距离陡降 (law −3, 只需趋势对); bounds 下限保证臂尖不相碰。
@@ -47,3 +47,9 @@ tune:
     - {param: Q1.E_J, target: Q1.f01_exact_GHz}
     - {param: Q2.E_J, target: Q2.f01_exact_GHz}
   max_iter: 8
+
+# 门仿真: 只在终版 (综合出的) 哈密顿量上跑一次 → out/results.yaml 的 gates 段 (各轮不跑)。规格 → 版图 → FEM → H → 门误差。
+gates:
+  - {name: X_Q1, kind: x_drag, qubit: Q1, t_gate: 20ns, max_error: 1.0e-4}
+  - {name: X_Q2, kind: x_drag, qubit: Q2, t_gate: 20ns, max_error: 1.0e-4}
+  - {name: CX_Q1Q2, kind: cr, control: Q1, target: Q2, t_gate: 240ns, ramp: 20ns, max_error: 1.0e-3}

@@ -1,6 +1,6 @@
 # quantum_dsl — Current Status
 
-每个 session 开工前读这份 + [`plan.md`](plan.md)。快照 **2026-10-14**。硬约束与跑法在 `CLAUDE.md`, 这里不重复。
+每个 session 开工前读这份 + [`plan.md`](plan.md)。快照 **2026-10-28**。硬约束与跑法在 `CLAUDE.md`, 这里不重复。
 
 ## 现在有什么
 
@@ -32,13 +32,19 @@
   `xmon_pair` 两比特臂尖直接耦合 + 两腔共馈线, 11 旋钮（g_qq 旋钮 = `Q1.at.1`, 旋钮路径可下钻列表）**7 次 FEM / 422 s 收敛**。
   同批: `transmon_from_spectrum`（f01, α → E_C, E_J; tune 第 0 步记 `closed_form`）、targets `tol:` 可逐字段、对数割线观测指数只在 law 的 ¼–4 倍内才用。
   **重网格噪声底实测**（200/20 演示网格平移重解）: κ σ ≈ 5 %、χ ≈ 3 %、C_Σ 0.3 % → tune 的 tol 须 ≥ 2σ（κ 5 % 时不收敛）; 细一档 κ −28 %（physics §8.1）。
+- **门仿真 = 管线最后一段**（2026-10-28, 分支 `supergrad-gates` ← `readout-followup`, session 2610281309; `src/quantum_dsl/gates.py`, physics §15）:
+  meta `gates:` → results `gates` 段; results 的 (E_C, E_J, β) → SuperGrad transmon + J·n·n（**J = 8β√E_C E_C**）, 对缀饰 H₀ 的精确相互作用绘景 + SuperGrad `ode_expm`（每步快相位 sinc 精确求积, 50 步/ns 收敛 <1%）。
+  **X 门** = Gambetta 2011（arXiv:1011.1949）DRAG, jax 梯度 L-BFGS 标定 (amp, β, δ₀) + 高斯基线; 论文 §III 高斯 0.198 / 0.0160 / 0.0030 逐个复现 + 一阶解排序进测试。
+  **CR 门** = 平顶 cos 斜坡驱动, 幅度一维标定, 误差 = 1 − max_局域 F(ZX90)（单比特门理想）。`tune` 只在终版跑门。真跑: xmon_pair 原版 X ~1e-8、CR 240 ns 8.3e-7（ZZ 13.1 MHz）;
+  综合终版（g 8 MHz）CR 7.7e-5（驱动 2.8×, 泄漏主导, ZZ 2.7 MHz）—— 门误差看不见 ZZ, g 的选择要把 ZZ 也写进规格。
+  坑: OpenBLAS 线程争抢让 jax `expm` 在 ≥ 24 维慢 500×（`threadpool_limits(1, "blas")`）; 教科书 ZZ 式假定 λ² = 2, transmon λ² ≈ 1.90 偏 4%。
 - **已知偏差**: QCQ 块解删掉块内比特伸向块外耦合器的爪 → 只影响多爪比特（新几何: 三只爪 ≈ +5.7 fF C_Σ, 读出爪 +2.6 fF; physics §13.2）; 读出焊盘 / λ/4 蛇形 / 载片走线不画（焊盘凸台离盘边 181 µm）。
 - **Chen 几何订正**（2026-10-14）: 旧几何（Nature 低清 JPEG + 标尺读错）整体偏小 ~22%; arXiv 原图 1.368 µm/px 重测 + subagent 复核 + λ/4 腔长独立印证标尺,
   模板与三个 chen 例子已按 `docs/design/paper-chen2025-geometry.md` §3.3 改（pitch 1770, 例子 d = 10）。**SI §D 电容表 ≈ 本几何在 d_eff 15–20 µm 下**, 与实测 α（d ≈ 10）不在同一 d → SI 表只作量级对照。
 
 ## 怎么跑
 
-- 全套: `~/miniconda3/envs/qdsl313/bin/python -m pytest tests/ -q` → **64 passed / 3 skipped**（~4 min; live 两条要 Palace）。
+- 全套: `~/miniconda3/envs/qdsl313/bin/python -m pytest tests/ -q` → **70 passed / 3 skipped**（~5 min; live 两条要 Palace; 门仿真 6 条要 `.[gates]` = supergrad + threadpoolctl, qdsl313 已装）。
 - Chen: `compile_layout` 0.7 s、`build_gds` 1 s、单块网格 22 s。只要块就 `build(m, out, solve=True, blocks=["H01"])`（本机 8 rank ~10 min, 75 万 tets order 2）;
   不带 `blocks=` 会先给全片出 ~9M tets 网格。PNG 在 gitignore 的 `build/` 下, 本地跑一次即有。
 - 上云跑法（2026-09-18 实测, c24a1 64c/128G 有 spack Palace 0.16、无 gmsh）: 本机 `build(..., solve=False)` 出 msh + json → `rr -p` 推 → 远端 `palace -np N cfg`（`OMPI_ALLOW_RUN_AS_ROOT=1`, mpirun 在 spack openmpi bin）→ `rr -f` 拉 `postpro/` → `parse_capacitance` + `solve_circuit_model`。
@@ -54,6 +60,7 @@
 | sung_2021_xmon（真版图, 无调参, 不断言） | C_Σ = 论文 ×0.874/0.701/0.873, β_qc +12~17%, **不命中**; 账 `docs/report/Aug27/04` §8 |
 | **Chen 十字 新几何（19 导体含读出爪, 100/4, 2026-10-14）** | d = 10: 中心 α* −193.0 ↔ 实测 −192.4 ± 5.9 **命中**（d = 9.9 ± 0.7）; g_qc 85–97 / g_qq 7.6 MHz ↔ 设计 90 / 5; 读出爪 E_C −2.4%; 块 + R11 网格 80/3 对照 E_C +0.3%（physics §13.2, `.claude/chen-evidence/v2_2610/`） |
 | Chen 3×3 整片（**旧几何**, 42 导体, d = 5, 100/4, 69 GB / 86 min） | 中心 Q11 E_C 214.5 = 十字; 角 / 边 / 中心 218.1 / 216.3 / 214.5（每爪 −1.8 MHz）; 最近邻 g_qq 3.7, 对角次近邻 0.03–0.05 MHz（SI 实测残余 ~2 MHz 非静电直接项） |
+| 门仿真（SuperGrad, 2026-10-28） | Gambetta 2011 §III d = 5 SNO 高斯 NOT: 0.1979 / 0.01596 / 0.003041 ↔ 论文 0.198 / 0.0160 / 0.0030; 一阶 DRAG σ = 1.5 时最优 1.13e-6; transmon 谱 = 电荷基精确能级 1e-9; ZZ = 非 RWA 二阶闭式 0.05%; 相互作用绘景 = SuperGrad 实验室系 Evolve 2e-3 |
 | Chen QCQ 块 H01（新几何, d 扫 5–25） | 对 SI §D 11 个电容: d = 10 时对地 ×1.2–1.5、互容 ×0.67–0.86; 半盘对地 d ≈ 15 命中、条 / 板 d ≈ 19, 互容 @25 ×0.86–0.95 ⇒ SI 表 ≈ d_eff 15–20（旧几何时互容 ×0.4–0.5 的缺口是几何账） |
 
 ## 开放决策
@@ -61,6 +68,8 @@
 - 自动布线 v1 遗留拍板（pad↔pad 的 net 命名、CCC; 腿数已定为最小可行）; v2 天花板见设计稿 §13; `cpw_meander` 退不退役待拍板（`plan.md` Backlog）。
 - **Chen 3×3 要不要按新几何重做**（9 只读出爪 + 9 腔; 规模估 ~12 M 未知量 @100/4 ≈ 100 GB 贴 128 G 上限, 或 150/6 ≈ 40 GB）: 比特级量十字已给, 3×3 只多阵列级耦合。待用户拍板。
 - 等效长度 / 爪电容的来源（依赖工艺栈）; 读出焊盘进不进版图（浮岛无结, 静电前须 Schur 消掉或标 `ground::`）。
+- **门仿真的规格口径**（2026-10-28）: CR 误差在「单比特修正理想」下看不见静态 ZZ, xmon_pair 综合把 g 18 → 8 MHz 后 CR 反而 ×90 差 —— 要不要把 `zz_static_MHz` / 门误差做成 targets / tune 旋钮的核对项, 待拍板（plan「门仿真后续」）。
+- `supergrad-gates` 分支还没合回 `readout-followup` / `main`（两者也都没合 main）。
 
 ## 文档入口
 

@@ -9,14 +9,15 @@
 - **做**: native Gmsh `.geo`（OpenCASCADE, µm）+ `*.meta.yaml` sidecar → { GDS（gdstk）·
   mesh（gmsh）→ Palace 静电 → 电容矩阵 } → 拼装（共享节点 + Schur）→ 电路模型
   （逆电容 LOM: E_C/f01/α/g、精确能级、SQUID、读出腔节点 + g/χ/κ/Purcell、CPW 解析）→ 结果/清单落盘;
-  FEM 在环综合 `tune`（声明旋钮 → targets, 输出普通配置）。
+  FEM 在环综合 `tune`（声明旋钮 → targets, 输出普通配置）→ **门仿真**（2026-10-28, SuperGrad: 哈密顿量 →
+  标定后的单比特 DRAG X 门 / 两比特 CR 门误差, 管线最后一段）。
   外加: 参数化**圆角多边形** cell → `.geo`。
   **版图编排**（2026-09-12）: 模板 = 局部坐标 `.geo` + yaml 接口（岛 / 外挂面 / 蚀刻 / 结 / 端口 / 层槽位），
   实例化在 `*.layout.yaml` 有序步骤（放置 / 连接 / 手写 `.geo`）里，全部写进**同一个 gmsh 模型**；层按芯片 `layers:` 表
   重定位；路由从端口出发、定长、并 net；编排器生成 `circuit_model.qubits` / `subsystems`。设计稿 `docs/design/component-library.md`。
 - **不做**（v3 舍弃项）: qiskit_metal 依赖（任何形式）、`.metal.yaml` 纯 YAML→QDesign 路径、
   emit-yaml 老库、v3 组件模板引擎（YAML 几何原语 DSL）。不发射 `.geo` 文本作模板、不 fork gmsh。
-- **平台**: Python ≥ 3.13。核心依赖只有 `pyyaml`/`shapely`; `gmsh`/`gdstk` 是
+- **平台**: Python ≥ 3.13。核心依赖只有 `pyyaml`/`shapely`; `gmsh`/`gdstk`/`supergrad`（门仿真, 拉 jax）是
   optional extra, `import quantum_dsl` 不得拉起它们。
 
 ## 从 v3 继承的三样东西（其余全部重新设计）
@@ -54,6 +55,9 @@ extract:                              # 可选: 分块
   blocks:
     - {name: A, components: [A]}
 subsystems: [...]                     # 可选: 记账透传（版图波长定长路由另生成 circuit_model.resonators）
+gates:                                # 可选: 门仿真 (SuperGrad), 整片求解后跑
+  - {name: XA, kind: x_drag, qubit: A, t_gate: 20ns, max_error: 1.0e-4}
+  # - {name: CX, kind: cr, control: A, target: B, t_gate: 240ns, ramp: 20ns}   # levels: 5 (默认)
 ```
 
 **绑定键 = component 段**: 电容矩阵行列标签、circuit_model 的 island、assemble 的节点名,
@@ -90,6 +94,7 @@ Maxwell 互容, 必须**在至少一次求解中共现**; 共享节点只提供�
 | 网格收敛（issue #26） | `converge(meta, out, scales=(1.0, 0.6)) → {runs, convergence, doc}`: `mesh.max/min_size_um` 同乘每个 scale, 各档整片 `build(solve=True)` 落 `out/mesh_x<s>/`; `convergence.yaml` 记最细两档每个 Maxwell 元素与 hamiltonian 数值字段的相对变化（细 − 次细）/|细| | `test_pipeline.py::test_converge_scales_mesh_and_diffs_finest_two`、`test_live.py::test_two_pads_converge` |
 | 读出链路 | `solve_circuit_model(..., resonators, ports, floating)`: 无结导体三种**显式**处置（不声明照旧 raise）——`floating` Schur 消元; `ports` AC 接地 + 互容给 Norton 衰减 `Γ = ω²ΣC_kp²R/C_eff`; `resonators` = TL 等效 LC 节点（`drawn: full` 时 C_r 换掉 FEM 对地电容, `claw` 时叠加; `mode` 无默认）→ `hamiltonian.resonators[{C_r, L_r, Z0, f_bare, 负载后 f_r, κ/2π, C_gnd_fem_over_tl}]` + `readout[{β, g, χ 单边, T1_purcell}]`; qubit 多 `f01_exact_GHz` / `anharmonicity_exact_MHz`（电荷基精确对角化, 渐近 golden 不动）/ `T1_port_us`; 版图波长定长路由自动生成 resonator（f_r = 画长裸频率）; targets 多 `resonators` / `readout` 段; `transmon_from_spectrum(f01, α)` = 精确能级的逆 → (E_C, E_J); 馈线例子 `xmon_feedline`（`feed_tap` 焊盘 + `pad` 馈线 = port）端到端出 κ / T1_port / Purcell | `test_physics.py::test_transmon_exact_levels_limits`、`::test_transmon_from_spectrum_inverts_exact_levels`、`::test_readout_chain_closed_form`、`::test_readout_chain_declarations_are_strict`、`test_frontend.py::test_load_meta_readout_targets_and_tune_strict`、`test_pipeline.py::test_readout_resonator_generated_from_layout_and_checked`、`::test_feedline_port_gives_kappa_and_port_t1` |
 | tune（FEM 在环综合） | meta `tune: {knobs: [{param, target, law, bounds}], max_iter, damping}`（方阵: param / target 各唯一, target = 一条 targets 核对项; 几何旋钮必给 `law`, 结旋钮 E_J / L_J 不收）→ `tune(meta, out) → {converged, iterations, meta, layout, results, tune, history}`: 每轮一次整片 FEM; 结旋钮在缓存 C 上对数二分; 几何旋钮比例律一步 + 对数割线（观测指数与 law 同号且在其 ¼–4 倍内才用）; 旋钮核对项全 pass 即停; qubit 同时有精确 f01 与 α 目标时第 0 步闭式反推 (C_Σ*, E_J*)（结旋钮从 E_J* 起步, 记进 tune.yaml `closed_form`）; 终版 = 普通 layout + meta（相对路径改写到 out, 可直接 build）+ results.yaml + tune.yaml | `test_pipeline.py::test_tune_closes_the_loop_and_emits_a_plain_config`、`test_frontend.py::test_load_meta_readout_targets_and_tune_strict` |
+| 门仿真（SuperGrad） | meta `gates: [{name, kind: x_drag│cr, qubit │ control + target, t_gate: 20ns, levels: 5, ramp: 20ns (cr), max_error}]`（按 kind 查键; 时长只收秒量纲; 名字在网格化之前查）→ `build(solve=True)` 整片 results 多 `gates` 段（`tune` 各轮不跑, 只在终版 results 上跑一次）; 也可单独 `simulate_gates(results["hamiltonian"], gates)`。模型: SuperGrad `Transmon`（电荷基, n_g = 0）+ `J·n_a·n_b`, **J = 8β√(E_C,a E_C,b)**（只用 results 已有量）; 演化 = 对缀饰 H₀ 的精确相互作用绘景（不做 RWA）+ SuperGrad `ode_expm`, 每步快相位精确求积。**X 门** = Gambetta 2011（arXiv:1011.1949）Eq. 3.2 截断高斯 t_g = 4σ + DRAG y 导数 + 常失谐（Eq. 4.46 族）, jax 梯度 L-BFGS 标定 (amp, β, δ₀), 初值 β = λ₁/2（Eq. 4.41）; 报 `error`（计算子空间平均门保真度含泄漏, = 论文 Eq. 3.4, 驱动系, 无虚 Z）/ `leakage` / 同法标定的 `gaussian_error` / `drag_beta` / `beta_first_order`。**CR 门** = 控制比特平顶 cos 斜坡驱动在目标缀饰频率, 幅度一维标定（初值 = 一阶闭式 Magesan & Gambetta 2020）; `error` = 1 − max_{前后任意单比特旋转} F(ZX90)（与 CNOT 局域等价, 单比特门理想）, 另报 `leakage` / `zz_static_MHz` / `drive_MHz` / `drive_first_order_MHz`。`max_error` 未达标只 warn（`pass: false`） | `test_gates.py` 5 条（论文 §III 高斯 0.198 / 0.0160 / 0.0030 + 一阶解排序 + 六轴态 = Pedersen; 谱 = 电荷基精确能级 + ZZ = 非 RWA 二阶闭式; 相互作用绘景 = SuperGrad 实验室系 Evolve; transmon DRAG 标定; CR 标定）、`test_frontend.py::test_load_meta_readout_targets_and_tune_strict`、`test_pipeline.py::test_gates_stage_in_build_and_tune` |
 | sung 外部锚（外部物理验证） | sung 例子（PRX 11.021058）live 解: C_Σ ×3 对论文 ±8%（2026-08-25 翻案: 原 ±5% 锚的 Elmer P1 档系偏置抵消产物, 账见例子 meta 头注与 `docs/physics.md` §12）, β_qc ±20%（判据 = 例子 meta 的 `targets:`, 测试锁死核对集合与容差; gate `QDSL_RUN_PALACE_SUNG=1`; 排除项见例子 meta） | `test_live.py::test_sung_2021_against_paper` |
 | 版图编排 | `compile_layout(meta) → Layout`（可调用几何源, `.qubits/.subsystems/.ports/.inputs`）; meta `layout:`+`layers:`; 模板 `.geo`+yaml; 手写 `.geo` 步骤只增不改; 路由只接正对端口（`planner: cpw` 模板除外, 见「自动布线」）、宽度继承、定长闭合 `guided_wavelength`; 编排器纪律全部 raise（NaN 置毒含 `port(i)` 简写 / 短路 / 未认领面 / 未连接外挂面 / 外挂端口背后无面 / 全名唯一 / 层 kind / 模板子字典键与 `kind` 取值 / `if:` 指向未声明参数 / `body:` 非岛键 / 连接型的 `at:`·`rot:`·`mirror: y` / 步骤键按类型查 / 路由体与手写金属须碰到每一端 / merge 文件里的 Macro / 手写 `etch` 的 `layers:`）；手写步骤 `connect: {net: [端口]}` 认领外挂面（与连接型同一条路）；`inputs` 含 `.geo` 递归 `Include` 到的宏库 | `test_layout.py` 全部 8 条（等价性、混用 + 路由 + 地、嵌套再导出、纪律、守卫、词汇、手写 connect） |
 | 自动布线 | `route.plan_cpw(start, end, R, length, region, n_legs, width, lead, axis) → [("line", …) \| ("arc", …)]`、`route.auto_radius(…) → R`（纯 math，不拉 gmsh）：两端各先沿端口法向直走 `lead`；**骨架**默认走曼哈顿框架（横平竖直，`axis` 可转角；`axis: free` = Dubins CSC 四型），端弧 + 直 / Z / U / L / 三折模板，模板全部不行时由 region 轨道图上的最少转弯 Dijkstra 兜底（任意折数），按（级, 转弯数, 长度）排序，出区域或自身两段太近（沿路间隔 ≥ πR 的原语 < 2R）的丢弃；`length` 时在骨架直段上放蛇形，**每个弯按该处余量独立外推（腿可不等长、随沿轴可用宽度变）**，余量精确（半圆取样点射线 + 界的角点 / 端点射进加厚半圆 + 两弧外切；界 = region 外框 / 缝 / 自身直段与弧 / 已放的块，净距 2R），腿数自动取最小可行；**单段装不下时按容量比例分摊到多段**（容量小的先放，先放的块进后面块的障碍集，拐角处不交叉；`n_legs` = 总腿数）；`R: auto` = 整数二分的最大可行弯半径（给定 R 装不下时提示能装下的最大 R）；`region` = 矩形或**矩形并集**（外框取样点精确 + 缝的精确距离，含缝宽）；弧段 ≤ π/2、G1 连续、记账 == 目标；输出前自检区域 / 净距 / 记账；两口正对共线且无 region 时与 `cpw_meander` 逐段相同；装不下 / 出界 / 非法输入 raise 并逐骨架说明。模板 `lib/cpw_route`（`planner: cpw`，两口不必正对，位姿恒等，原语按列表变量注入 `.geo`）；步骤键 `region:` / `axis:`（仅 planner 模板）；`mirror:` 对 planner raise；`subsystems` 记 `route_primitives` 与 `R_um`；例子 `cpw_route_demo`（四对 xmon：横平竖直 / 拼接区域绕路 / 自由角 / R 自动） | `test_route.py` 12 条（曼哈顿 L + 不等腿；轨道图 S 形走廊 4 转弯；拼接区域绕路 + 缝检查；转框架 + 自身净距 + axis 错误；多段分摊 + 拐角净距；逐弯精确余量（台阶肩部阈值 841.16）；自身净距淘汰；R 自动 = 70 / 提示；自由角四型 / G1 / 记账 / lead / 精确包围盒 / raise；退化一致性；纪律；demo 四条路 + GDS 落在 region 并集内） |
@@ -97,7 +102,7 @@ Maxwell 互容, 必须**在至少一次求解中共现**; 共享节点只提供�
 
 ## 验收
 
-1. Python 3.13 下 `pytest tests/ -q` **0 failed**（64 passed, live 三条默认 skip; 馈线 κ 端到端 + 能级反推 + 割线守卫加 3; 读出链路 + tune 加 6; 轨道图加 1; targets / 收敛加 3; v4.0 收口时 39, 版图编排 / Chen / 自动布线各加, 自动布线 v2 加 3, 多段分摊 / 精确余量 / 净距 / R 自动加 4）。
+1. Python 3.13 下 `pytest tests/ -q` **0 failed**（70 passed, live 三条默认 skip; 门仿真加 6（要 `.[gates]`, 没装则 skip）; 馈线 κ 端到端 + 能级反推 + 割线守卫加 3; 读出链路 + tune 加 6; 轨道图加 1; targets / 收敛加 3; v4.0 收口时 39, 版图编排 / Chen / 自动布线各加, 自动布线 v2 加 3, 多段分摊 / 精确余量 / 净距 / R 自动加 4）。
 2. `QDSL_RUN_PALACE=1` 下 two_pads live 通过（Palace 0.16, WSL; ⚠ 必须 `HWLOC_COMPONENTS=-gl`）。
 3. `QDSL_RUN_PALACE_SUNG=1` 下 sung live 通过（整片 order 2, 18.5M 未知量, 峰值内存 ~154 G,
    须 384G 级机器; two_pads 锚配方可复现, sung 锚论文真值——角色互补, 都要）。

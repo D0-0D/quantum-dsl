@@ -12,7 +12,7 @@
 | 文档 | 用途 | 谁看 / 何时看 |
 |---|---|---|
 | [`architecture.md`](architecture.md) | **架构**：数据流、模块地图与依赖图、绑定键、公共 API、`build()` 产物、设计原则、与 v3 的差异 | 上手开发；改任何模块之前 |
-| [`physics.md`](physics.md) | **物理口径与数值决策**：为什么静电就够、零厚度片 imprint、单位与 `Model.L0`、`Order=2`、网格收敛实测、LOM/SQUID/χ/CPW 公式与逐式出处、失效防线、分块拼装边界、sung 外部验证、flip-chip 口径与 Chen QCQ 首解、Palace 运行面 | 碰 mesh / Palace / 公式 / 容差之前**必读** |
+| [`physics.md`](physics.md) | **物理口径与数值决策**：为什么静电就够、零厚度片 imprint、单位与 `Model.L0`、`Order=2`、网格收敛实测、LOM/SQUID/χ/CPW 公式与逐式出处、失效防线、分块拼装边界、sung 外部验证、flip-chip 口径与 Chen QCQ 首解、Palace 运行面、门级时间演化（SuperGrad DRAG / CR, §15） | 碰 mesh / Palace / 公式 / 容差之前**必读** |
 | [`grammar.md`](grammar.md) | **语法参考**：`.geo` 作者约定 + `*.meta.yaml` 全字段（类型、默认值、必填）+ **版图与模板**（`*.layout.yaml`、模板 yaml 接口、端口 / 路由 / net 规则）+ 常见坑 | 写版图 / 写 sidecar / 写模板的人 |
 | [`design/component-library.md`](design/component-library.md) | **元件库设计稿 v3.1**：为什么是「一个 gmsh 模型 + `.geo`/模板混用 + 层按映射重定位」，查实（业界端口契约、等效长度物理、gmsh fork 评估、混用探针）与实现偏差 | 想改编排器 / 加模板之前 |
 | [`design/auto-route.md`](design/auto-route.md) | **自动布线设计稿**（一页）：`cpw_route` / `planner: cpw` 的输入、输出原语、Dubins CSC + 定长蛇形算法、限制、与手写 `.geo` 的分工、退化一致性锚 | 用 `cpw_route` 或改 `route.py` 之前 |

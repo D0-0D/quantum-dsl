@@ -4,7 +4,7 @@
 > 网格收敛实测、每条公式的文献出处、失效防线、分块拼装的适用边界、对论文的外部验证与容差账、Palace 运行面。
 > 读者：碰 `mesh.py` / `palace.py` / `circuit_model.py` / `cpw.py`、改容差、或要给真实器件报数的人。
 > 所有"实测"均为 2026-08-24/25 在 WSL2 + gmsh 4.15.2 + Palace 0.16.0（two_pads）与 96 核 / 384 G 远端机（sung）完成，
-> 原始 CSV 归档在 `v4-dev` 分支 `.claude/n15-evidence/`。文献列表在文末 §15。
+> 原始 CSV 归档在 `v4-dev` 分支 `.claude/n15-evidence/`。文献列表在文末 §16。
 
 ---
 
@@ -91,7 +91,7 @@ KQCircuits（IQM）默认 `metal_height = 0`；SQDMetal 2026 基准用 zero-thic
 且 ε 不单调（0.5 µm 反而产损坏拓扑），v3 最终缓解到 ε = 0.01 µm。方案 (a) **根本没有布尔减**——金属片印在界面上，
 共面是构造性精确，整个 ε-nudge 问题类连同 fragment scale ladder 一起消失。
 
-**内部边界在 Palace 里的机制**（源码取证，出处 §15 [P1]–[P3]）：Palace 有 `CrackInternalBoundaryElements`
+**内部边界在 Palace 里的机制**（源码取证，出处 §16 [P1]–[P3]）：Palace 有 `CrackInternalBoundaryElements`
 （默认开）——对内部 **PEC / Ground** 面复制节点、解耦两侧，所以带 ground plane 的设计走的是官方支持路径；
 **Terminal** 不在 crack 属性集合里，作为 essential Dirichlet 直接生效（静电里等势面两侧共节点无影响——本机实测可解
 且与挖空细网格一致 ~0.1%）。文档只明确禁止 wave port 在内部面，未禁 Terminal / Ground。
@@ -438,7 +438,105 @@ SI 网络 C01 = C05、C02 = C06 严格对称，而读出爪在 Q0 落在非耦�
 - **对称面减半**：偶对称 ZeroCharge、奇对称 Ground 原理可行，但完整 C 矩阵的逐 terminal 单位激励通常破坏对称性——不做。
 - 官方额外输出 `terminal-Cinv.csv` 可对照自家求逆做零成本交叉校验（v4.0 未接）。
 
-## 15. 参考文献与出处
+## 15. 门级时间演化：SuperGrad 上的 DRAG X 门与 CR 门（2026-10-28）
+
+管线的最后一段（`src/quantum_dsl/gates.py`，meta `gates:`）：逆电容 LOM 给出的 (E_C, E_J, β) 原样交给
+[SuperGrad](https://github.com/iqubit-org/supergrad)（Quantum 9, 1722 (2025)，JAX 可微哈密顿量模拟器，PyPI 0.2.6），
+在缀饰本征基里含时演化、**标定**脉冲、报门误差。不依赖 FEM 重跑：任何已有 `results.yaml` 的 `hamiltonian` 段都能直接喂。
+
+**模型**
+- 比特 = SuperGrad `Transmon`（电荷基 n ∈ [−31, 30]，n_g = 0），**与 §8.1 的电荷基精确能级同一个哈密顿量**：f01 / f12 逐位到 1e-9（测试锚）。
+  `levels`（默认 5）= 每个比特保留的本征态数。
+- 耦合：H = ½QᵀC'⁻¹Q，Q = 2e·n ⇒ 交叉项 4e²[C'⁻¹]_ab·n_a n_b，即 **J_ab = 4e²[C'⁻¹]_ab/h = 8β·√(E_C,a·E_C,b)**——只用 results 里已有的
+  β 与 E_C，接成 SuperGrad 的 `capacitive_coupling`（`strength·n_a·n_b`，非 RWA）。β 是绝对值：两比特对里 J 变号 = 对一个比特做宇称变换
+  （n → −n，缀饰基里对角 ±1，局域），不改任何保真度；多比特环路要符号时得从 C'⁻¹ 本身拿（§8 已注明 |·| 的边界）。
+- 驱动 = 直接电荷驱动 E(t)·n̂（论文 App. A 的 direct drive，λ_j = n_{j,j+1}/n_{01}；transmon λ₁² ≈ 1.90，不是谐振子的 2）。
+- **只演化门涉及的比特**（旁观比特、读出腔不进），无退相干（T1_port / Purcell 有数但没接进 mesolve）——`ponytail` 天花板，要加时往 SCGraph 加节点。
+
+**数值：相互作用绘景 + 步内振荡精确求积**
+- SuperGrad 的 `ode_expm` 是分段常数中点指数（二阶）。直接在实验室系演化，换位子误差里有 ~30 rad/ns 的 H₀：CR 240 ns 在 60 步/ns 时
+  酉阵差 0.07、960 步/ns 才到 ~1e-3。改为对缀饰 H₀ = diag(Λ) 的**精确**相互作用绘景（不做 RWA）：
+  `i dU_I/dt = E(t)·e^{iΛt} N e^{−iΛt} U_I`，静态部分精确消掉。
+- 但只在中点取样相位时，反旋转项（Λ_k − Λ_l + ω_d，到 5 能级两比特 ~4ω ≈ 120 rad/ns）会混叠成假跃迁：CR 在 50 步/ns 泄漏 9.2e-5、100 步/ns 7.6e-5，误差差 2×。
+  驱动写成 E(t) = Re[ε(t)e^{−iω_d t}]（ε 慢包络），每步用**步内平均**的 H_I：包络取中点、每个傅里叶分量的相位精确积分 = × sinc(ν·dt/2)
+  （一阶 Magnus + 振荡项精确求积，仍厄米）。50 步/ns 收敛到 <1%：
+
+  | 步/ns | X 20 ns | X 10 ns | CR 240 ns（5 能级） |
+  |---|---|---|---|
+  | 10 | 1.69e-8 | 1.431e-5 | 7.59e-5 |
+  | 50（默认 `STEPS_PER_NS`） | 1.07e-8 | 1.423e-5 | 7.66e-5 |
+  | 100 | 1.065e-8 | 1.428e-5 | 7.69e-5 |
+
+- 交叉验证（测试锚）：同一 rampcos CR 脉冲，模块的演化 = SuperGrad 自己的实验室系 `Evolve`（积基演化 + 本征基变换，2000 步/ns），计算块差 < 2e-3（只差基态能零点的全局相位）。
+- 两个性能坑（2026-10-28 实测，20 核 WSL，jax 0.12）：① **OpenBLAS 线程争抢**——jax CPU `expm` ≤ 20 维 ~20 µs/步，≥ 24 维（两比特 5 能级 = 25）
+  **12 ms/步**（慢 500×，CR 一次演化 145 s）；`threadpoolctl.threadpool_limits(1, "blas")` 后 60–80 µs/步。整个 `simulate_gates` 包在里面。
+  ② 反向求导穿过 16 维 × 1.4 万步的 expm：SuperGrad `Evolve` 的 LCAM 与前向模式都 ~150 s/次梯度（前向 0.4 s）——所以 CR 不用梯度，幅度一维搜索；
+  X 门 5 维 × 500–1000 步，jax 反向 ~20 ms/次，照用 SuperGrad 的 `scipy_minimize`（L-BFGS）。
+
+**保真度口径**
+- 计算子空间平均门保真度含泄漏：F = (Tr(M†M) + |Tr(U†M)|²)/(d(d+1))（Pedersen 2007，SuperGrad `compute_average_fidelity_with_leakage`；
+  M = 全空间酉阵的计算块）。d = 2 时 = Gambetta 2011 Eq. 3.4 的六轴态平均（六轴态是 2-design，测试逐位对过）。泄漏 = 1 − Tr(M†M)/d。
+- X 门在**驱动系**（ω_d 旋转）里比，不给虚 Z 补偿（论文口径：相位误差算误差）。CR 在每比特各自缀饰频率的旋转系里（计算块只剩 ZZ 相位），
+  `error` = 1 − max_{前后任意单比特旋转} F(ZX90)（SuperGrad `compute_fidelity_with_1q_rotation_axis`，arbit_single）——ZX90 与 CNOT 局域等价，
+  **即假定单比特门理想**；驱动相位 / 小失谐只是目标比特的局域系变换，被补偿吸收（实测相位 0 与 π 给同一误差），所以只标定幅度。
+
+**X 门：Gambetta, Motzoi, Merkel & Wilhelm, PRA 83, 012308 (2011) = arXiv:1011.1949**
+- 复现（测试锚，d = 5 标准非线性振子，旋转系 Eq. 2.8，Δ₂ = −2π，t_g = 4σ，Eq. 3.2 截断高斯 A = π，SuperGrad `sesolve`）：
+
+  | σ（2π/\|Δ₂\|） | 论文高斯 | 本实现高斯 | Z-only | Y-only（4.36） | Motzoi 2009（4.42） | 一阶最优（4.41） |
+  |---|---|---|---|---|---|---|
+  | 1/3 | 0.198 | 0.1979 | 0.0457 | 0.0475 | 0.0530 | 0.0458 |
+  | 2/3 | 0.0160 | 0.01596 | 1.08e-3 | 2.42e-4 | 7.70e-4 | 7.11e-5 |
+  | 3/2 | 0.0030 | 0.003041 | 3.61e-5 | 9.13e-6 | 2.25e-5 | 1.13e-6 |
+
+  σ ≥ 2/3 时排序 = 正文对 Fig. 3 的四条陈述（最优 < Y-only < Motzoi < Z-only < 高斯）。坑：这些式子里的 λ 是 **λ₁**（|1⟩→|2⟩ 相对强度 √2），
+  原型里误用 λ₀ = 1 时一阶解只比高斯好 4×，看起来像「DRAG 没用」。
+- transmon（实验室物理，不做 RWA）：E(t) = A·[Ω_G cos ω_d t − (β/Δ)·Ω̇_G sin ω_d t]，Δ = 2π·α，A = π/n₀₁ × amp；标定 (amp, β, δ₀ = ω₀₁ − ω_d)
+  = 论文 §IV C 的「x 高斯 + y 导数 + 常失谐」族（Eq. 4.46，γ = 0；论文猜想这就是最优的一阶族），初值 β = λ₁/2（Eq. 4.41）。
+  同法标定 β ≡ 0（amp + δ₀）给高斯基线。xmon_pair_tune 的 Q1（4.8 GHz，α −249 MHz，λ₁ = 1.377）：
+
+  | t_g | DRAG error（= 泄漏） | 高斯 error | 拟合 β | λ₁/2 | δ₀/2π |
+  |---|---|---|---|---|---|
+  | 20 ns | 1.07e-8 | 2.52e-5 | 0.99 | 0.688 | 3.1 MHz |
+  | 10 ns | 1.42e-5 | 2.63e-4 | 0.65 | 0.688 | 4.3 MHz |
+
+  标定后 DRAG 的残余**全是泄漏**（相位误差被 β + δ₀ 吃掉）；10 ns 时 β 落在一阶最优 −6%，20 ns 时漂向 1（误差已在 1e-8，β 方向很平）。
+
+**CR 门**
+- 控制比特上平顶 cos 斜坡脉冲（`ramp` 默认 20 ns），频率 = 目标比特缀饰频率。一阶闭式（Magesan & Gambetta, PRA 101, 052308 (2020)，
+  直接驱动三能级控制）H ⊃ c_ZX·Z⊗X，c_ZX = −(gΩ/2)·α_c/(Δ(Δ+α_c))，g = J·n₀₁·n₀₁，Δ = ω_c − ω_t → ZX90 需要 Ω₀ = (π/4)/(|c_ZX/Ω|·(t_g − ramp))。
+  它只当初值：有界搜索区间 [0.4, 2.2]·Ω₀ 只含 ZX 角 π/4 那一瓣（0、2× 处局域，3× 处是另一个 CNOT 等价点），落到边界 warn。
+- 静态 ZZ 的闭式要小心（测试锚）：非 RWA 二阶微扰、矩阵元用精确 λ（自推）
+  `ZZ = g²[λ_t²/(Δ−α_t) − λ_c²/(Δ+α_c)] + g²[λ_c²/(Σ+α_c) + λ_t²/(Σ+α_t) − λ_c²λ_t²/(Σ+α_c+α_t)]`（Σ = ω_c + ω_t）。
+  λ² = 2 时第一项就是教科书 2g²(α₁+α₂)/((Δ+α₁)(Δ−α₂))；但 transmon λ² ≈ 1.90，远失谐对（4.8 / 5.3 GHz，g 5 MHz）教科书式偏 +4.3%，
+  精确 λ 的 RWA 项 +0.26%，全式 +0.05%。xmon_pair_tune 这对（Δ − α_t = 49 MHz，g/(Δ−α_t) = 0.16）四阶项已到 5%，全式也偏 +5.0%——数字以缀饰谱为准。
+
+**闭环实跑**（真 Palace 8 rank，xmon_pair 演示网格 200/20，2026-10-28）
+
+两个例子的 meta 文末都带同一组 `gates:`（X 20 ns 预算 1e-4、CR 240 ns / 20 ns 斜坡 预算 1e-3）。`build(xmon_pair)` 8 rank 整片 + 门 = 98 s；
+`tune(xmon_pair_tune)` 7 次 FEM 收敛（与 10-14 逐位相同）+ 终版上跑一次门 = 494 s（门仿真 ~75 s，各轮 results 无 gates 段）：
+
+| | xmon_pair 原版 | xmon_pair_tune 终版（规格 4.8 / 5.0 GHz, α −250, g 8 MHz） |
+|---|---|---|
+| f01 Q1 / Q2（GHz）, α（MHz） | 4.167 / 4.350, −225.9 / −224.9 | 4.800 / 5.000, −249.3 / −248.4 |
+| g_qq / J（MHz） | 18.44 / 13.81 | 8.04 / 5.81 |
+| 静态 ZZ（缀饰谱） | **13.1 MHz** | 2.67 MHz |
+| X_Q1 / X_Q2 20 ns DRAG（高斯基线） | 2.9e-8 / 7.9e-9（3.9e-5 / 3.9e-5） | 1.07e-8 / 1.03e-8（2.5e-5 / 2.6e-5） |
+| CX_Q1Q2 240 ns error（泄漏） | **8.3e-7**（5.6e-7） | **7.7e-5**（7.6e-5） |
+| CR 驱动 Ω/2π（一阶闭式） | 23.6（21.3）MHz, ×1.11 | 66.6（51.4）MHz, ×1.30 |
+
+读法（门仿真给综合的反馈）：
+- 综合把 g 从 18.4 压到 8 MHz（规格来自读出 / 串扰考虑），**CR 门反而变差 90×**：同样 240 ns 拿到 ZX90 要 2.8× 驱动，控制比特 |1⟩→|2⟩
+  （4.55 GHz，离驱动 450 MHz）的泄漏随 Ω² 涨，误差几乎全是泄漏。原版 Q1 离 Q2 的 1→2 跃迁只有 42 MHz，静态 ZZ 13 MHz——
+  但在「单比特修正理想」的口径下，ZX 与 ZZ 合成仍是受控旋转、局域等价 CNOT，**门误差看不见 ZZ**；ZZ 是空转 / 旁观误差（240 ns 空转累积 ~20 rad）。
+  ⇒ g 不能只按门误差选；要把 ZZ 也写进规格（targets 现在没有这个字段，下一步候选），或给 CR 更长 t_g / 抵消音。
+- X 门两版都在 1e-8 量级（残余全是泄漏），20 ns 的预算 1e-4 远远够；高斯基线 ~3e-5 说明在这个 α / t_g 下 DRAG 收益 ~3 个量级。
+- 一阶闭式 Ω₀ 低估 11–30%（高阶 / 斜坡段 / 缀饰），作为初值足够；测试锁 1–1.6×。
+
+**天花板**：无退相干与旁观比特 / 读出腔；CR 的单比特修正理想（没做 echo / 抵消音，也没把修正门的误差串进来）；
+驱动是直接电荷驱动（经读出腔驱动时 λ_j 另算，论文 App. A）；`levels` 截断与 n_max 31 的收敛只在本节这些参数上查过。
+
+## 16. 参考文献与出处
 
 **LOM / 电路量子化**
 - [L1] Minev, Z. K. et al., "Circuit quantum electrodynamics (cQED) with modular quasi-lumped models", arXiv:2103.10344
@@ -466,6 +564,18 @@ SI 网络 C01 = C05、C02 = C06 严格对称，而读出爪在 Q0 落在非耦�
   Phys. Rev. X 11, 021058 (2021) / arXiv:2011.01261（补充材料：E_J、E_C、电容表、g）。
 - Goto, H., "Double-transmon coupler: Fast two-qubit gate with no residual coupling for highly detuned superconducting qubits",
   Phys. Rev. Applied 18, 034038 (2022)（直接 q–q 腿 0.4% 的样本）。
+
+**门仿真（§15）**
+- [G1] Gambetta, J. M., Motzoi, F., Merkel, S. T. & Wilhelm, F. K., "Analytic control methods for high-fidelity unitary operations in a weakly
+  nonlinear oscillator", Phys. Rev. A 83, 012308 (2011) / arXiv:1011.1949（Eq. 2.8 旋转系、3.2 截断高斯、3.4 六轴态保真度、4.36 / 4.41 / 4.42 一阶解、
+  4.46 数值优化族；§III 高斯误差 0.198 / 0.0160 / 0.0030；App. A λ_j）。
+- [G2] Motzoi, F., Gambetta, J. M., Rebentrost, P. & Wilhelm, F. K., "Simple pulses for elimination of leakage in weakly nonlinear qubits",
+  Phys. Rev. Lett. 103, 110501 (2009)（原始 DRAG）。
+- [G3] Wang, Z., Wu, F., Zhao, H.-H., Wan, X. & Ni, X., "SuperGrad: a differentiable simulator for superconducting processors",
+  Quantum 9, 1722 (2025)；代码 github.com/iqubit-org/supergrad（PyPI 0.2.6，本机 clone 0757f25）。
+- [G4] Magesan, E. & Gambetta, J. M., "Effective Hamiltonian models of the cross-resonance gate", Phys. Rev. A 101, 052308 (2020)（一阶 ZX / IX）。
+- [G5] Rigetti, C. & Devoret, M., Phys. Rev. B 81, 134507 (2010)；Chow, J. M. et al., Phys. Rev. Lett. 107, 080502 (2011)（CR 门）。
+- [G6] Pedersen, L. H., Møller, N. M. & Mølmer, K., "Fidelity of quantum operations", Phys. Lett. A 367, 47 (2007)（含泄漏的平均门保真度）。
 
 **Palace（awslabs/palace，源码与文档）**
 - [P1] `scripts/schema/config-schema.json`：`CrackInternalBoundaryElements`（默认 true）。

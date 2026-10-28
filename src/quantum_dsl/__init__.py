@@ -41,9 +41,11 @@ from .cells import emit_geo, rounded_polygon
 from .layout import Layout, Port, compile_layout
 from .build import build, converge
 from .tune import tune
+# 门仿真 (SuperGrad / jax 惰性 import 在函数内)
+from .gates import simulate_gates
 
 __all__ += [
     "build_gds", "render_gds_png", "Mesh", "build_mesh", "Cap", "palace_config",
     "parse_capacitance", "rounded_polygon", "emit_geo", "build", "converge", "tune",
-    "Layout", "Port", "compile_layout",
+    "Layout", "Port", "compile_layout", "simulate_gates",
 ]
