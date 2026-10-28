@@ -83,13 +83,13 @@ C 矩阵行序 = `Mesh.labels` = `sorted(metal component)`，是全链唯一真�
 | `gds.py` | 143 | `build_gds`：面 → gmsh 粗三角化（圆弧 180 段/2π）→ gdstk 布尔并 → GDS（`unit=1e-6`，µm 逐字；映射按 `layers` 表或 `gds.by_role`）；`render_gds_png`：GDS → PNG 预览（PIL 惰性 import） | GDS build 编排 |
 | `mesh.py` | 301 | `build_mesh`：合成计算域、一次 `fragment` 把导体面 imprint 进 z=0 界面、边缘尺寸场、失效防线、写 msh 2.2；有层表时 drawing 层不进网格、role 须与层 kind 一致 | 网格 |
 | `palace.py` | 135 | `palace_config`（`Model.L0=1e-6`，`Order=2`，Terminal 按 labels）；`parse_capacitance`（CSV 法拉 → fF，mutual 由 Maxwell 代数导出） | Palace |
-| `circuit_model.py` | 631 | `solve_circuit_model` 逆电容 LOM（含浮动双岛差模约化、SQUID；无结导体 resonators / ports / floating 显式处置 → 负载后 f_r、g_qr、χ、κ、Purcell、T1_port）；`transmon_levels_hz` 电荷基精确能级（numpy 惰性）与其逆 `transmon_from_spectrum`（f01, α → E_C, E_J）；`resonator_lumped_lc`；`dispersive_shift_hz`；物理常数 | 电路模型 子系统 读出链路 |
+| `circuit_model.py` | 631 | `solve_circuit_model` 逆电容 LOM（含浮动双岛差模约化、SQUID；无结导体 resonators / ports / floating 显式处置 → 负载后 f_r、g_qr、χ、κ、Purcell、T1_port）；`transmon_levels_hz` 电荷基精确能级（numpy 惰性）与其逆 `transmon_from_spectrum`（f01, α → E_C, E_J）；`static_zz_hz` 两 transmon 精确对角化的静态 ZZ（couplings 循环包在 `threadpool_limits(1, "blas")` 里，physics §8.2）；`resonator_lumped_lc`；`dispersive_shift_hz`；物理常数 | 电路模型 子系统 读出链路 |
 | `assemble.py` | 129 | `assemble(cells, keep)`：共享节点累加 + Schur 消元 | 拼装 |
 | `cpw.py` | 215 | `lumped_cpw` / `guided_wavelength` / `complete_elliptic_k`（AGM），自洽公式集 | CPW |
 | `cells.py` | 99 | `rounded_polygon`（shapely buffer 往返）；`emit_geo`（发射 OCC `.geo` 文本） | 圆角 cell |
-| `build.py` | 264 | `build(meta, out_dir, solve)` 编排（几何源 = `.geo` 或 `compile_layout`）+ manifest + 分块派生 + 跑 Palace + 写 `results.yaml` | build 编排 分块 two_pads 锚 sung 外部锚 版图编排 |
+| `build.py` | 264 | `build(meta, out_dir, solve, *, gates)` 编排（几何源 = `.geo` 或 `compile_layout`）+ manifest + 分块派生 + 跑 Palace + 写 `results.yaml`（先落盘再跑门） | build 编排 分块 two_pads 锚 sung 外部锚 版图编排 |
 | `gates.py` | 247 | **门仿真**（2026-10-28）：`simulate_gates(hamiltonian, gates)` → 每门一条结果；`_dressed` = SuperGrad `SCGraph` → `Transmon`（电荷基）+ `capacitive_coupling`（J = 8β√E_C E_C）→ 缀饰能级 Λ 与 n 算符；`_propagate` = 对 diag(Λ) 的精确相互作用绘景 + SuperGrad `ode_expm`（每步快相位 sinc 精确求积）；`_x_drag` = Gambetta 2011 高斯 + DRAG，SuperGrad `scipy_minimize`（jax 梯度 L-BFGS）标定 + 高斯基线；`_cr` = 平顶 CR，幅度有界一维搜索 + SuperGrad `compute_fidelity_with_1q_rotation_axis`；整段包在 `threadpool_limits(1, "blas")` 里（OpenBLAS 线程争抢让 ≥ 24 维 expm 慢 200×）；supergrad / jax / scipy 全部惰性 | 门仿真 |
-| `tune.py` | 218 | `tune(meta, out)` FEM 在环综合（ANMod 对角特例 + 对数割线，观测指数在 law 的 ¼–4 倍内才用；结旋钮在缓存 C 上二分；第 0 步闭式 C_Σ* / E_J*）：每轮写配置副本 → `build(solve=True)` → 更新旋钮；终版 = 普通 layout + meta | tune |
+| `tune.py` | 218 | `tune(meta, out)` FEM 在环综合（ANMod 对角特例 + 对数割线，观测指数在 law 的 ¼–4 倍内才用；结旋钮在缓存 C 上二分；第 0 步闭式 C_Σ* / E_J*）：每轮写配置副本 → `build(solve=True, gates=False)`（门名照查、不跑门）→ 更新旋钮；终版 = 普通 layout + meta，results / tune.yaml 落盘后才在终版上跑门 | tune |
 | `__init__.py` | 48 | 再导出；`import quantum_dsl` 不拉起 gmsh / gdstk / shapely | import 纯度 |
 
 ### 依赖图
@@ -111,7 +111,7 @@ C 矩阵行序 = `Mesh.labels` = `sorted(metal component)`，是全链唯一真�
 ```
 
 **读法**：箭头指向被依赖方。无环；`build` 是单次编排者，`tune` 在它之上循环；`cells` 没有内部消费者。
-第三方库全部在函数体内惰性 import：`gmsh`（geo / gds / mesh 经 `_gmsh`）、`gdstk`（gds）、`shapely`（cells）、`supergrad` / `jax` / `scipy` / `threadpoolctl`（gates）；
+第三方库全部在函数体内惰性 import：`gmsh`（geo / gds / mesh 经 `_gmsh`）、`gdstk`（gds）、`shapely`（cells）、`supergrad` / `jax` / `scipy`（gates）、`threadpoolctl`（核心依赖：circuit_model 的静态 ZZ 与 gates 都用它把小矩阵 BLAS 压单线程）；
 只有 `yaml` 是顶层 import。
 
 ## 5. 公共 API
@@ -127,7 +127,7 @@ C 矩阵行序 = `Mesh.labels` = `sorted(metal component)`，是全链唯一真�
 | `palace_config(mesh, meta, out)` | → `dict`（同时写 JSON） | |
 | `parse_capacitance(postpro_dir, labels)` | → `Cap(.labels, .maxwell_fF, .mutual_fF)` | NaN/Inf raise |
 | `solve_circuit_model(labels, maxwell_fF, junctions, resonators=(), ports=(), floating=())` | → `CircuitModelResult(.qubits, .couplings, .resonators[ResonatorResult], .readout[ReadoutResult])` | junction = `{name, islands:[1 或 2 个], L_J│E_J│squid}`；resonator = `{name, net, f_r, Z0, mode, drawn}`；port = `{name, net, R}`（SI） |
-| `build(meta, out, solve, blocks)` | → 产物路径 dict（§6）+ `circuit_model`（合并后的 meta + 版图生成条目） | meta 有 `targets:` 时整片 results 多 `validation` 段 |
+| `build(meta, out, solve, blocks, *, gates=True)` | → 产物路径 dict（§6）+ `circuit_model`（合并后的 meta + 版图生成条目） | meta 有 `targets:` 时整片 results 多 `validation` 段；有 `gates:` 时多 `gates` 段（`gates=False` 只查名字不跑，tune 各轮用；缺 `.[gates]` 在网格化之前 raise） |
 | `converge(meta, out, scales=(1.0, 0.6))` | → `{runs, convergence, doc}` | mesh 尺寸同比缩放、各档整片求解，`convergence.yaml` = 最细两档相对变化 |
 | `simulate_gates(hamiltonian, gates)` | → `[{name, kind, t_gate_ns, levels, error, leakage, …}]` | `hamiltonian` = results 的同名段（qubits 的 E_C_GHz / E_J_GHz，couplings 的 β）；`gates` = `load_meta(m).gates`（已校验、时长已转 ns）；要 `.[gates]` extra |
 | `tune(meta, out)` | → `{converged, iterations, meta, layout, results, tune, history}` | meta 须有 `layout:` + `targets:` + `tune:`；`out/iter_<k>/` 每轮完整配置与产物，`out/` 下终版配置 |
@@ -165,7 +165,7 @@ capacitance: {labels: [A, B], maxwell_fF: [[..],[..]], mutual_fF: [[..],[..]]}
 hamiltonian:
   method: lumped_oscillator_inverse_cap
   qubits:    [{name, islands, C_sigma_fF, E_C_GHz, E_J_GHz, f01_GHz, anharmonicity_MHz, EJ_over_EC}, ...]
-  couplings: [{qubit_a, qubit_b, beta, g_MHz}, ...]
+  couplings: [{qubit_a, qubit_b, beta, g_MHz, zz_MHz}, ...]   # zz_MHz = 静态 ZZ (physics §8.2)
 validation:  # 仅 meta 有 targets: 时
   {source, passed, checks: [{qubit | pair, field, expected, tol, actual, deviation, pass}, ...]}
 gates:       # 仅 meta 有 gates: 时 (physics §15)

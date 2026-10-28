@@ -41,11 +41,12 @@ _TWO_PI = 2.0 * math.pi
 
 
 def _supergrad():
+    """``.[gates]`` 装没装; build / tune 在第一次 FEM 之前就调 (缺依赖不能等解完才 raise)。"""
     try:
         import supergrad  # noqa: F401  (import 时打开 jax x64)
     except ImportError as exc:
         raise QuantumDslError("gates: needs SuperGrad — pip install -e '.[gates]' "
-                              "(supergrad + threadpoolctl; pulls jax / dm-haiku / scipy)") from exc
+                              "(pulls jax / dm-haiku / scipy)") from exc
 
 
 def _dressed(qubits, j_ghz: float, levels: int):

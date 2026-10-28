@@ -24,7 +24,7 @@
 ## 安装
 
 ```bash
-# Python ≥ 3.13。核心依赖只有 pyyaml / shapely；gmsh / gdstk 是 optional extra
+# Python ≥ 3.13。核心依赖只有 pyyaml / shapely / threadpoolctl；gmsh / gdstk 是 optional extra
 pip install -e '.[gmsh,gds,test]'
 # 本机既有 env: conda qdsl313 (Python 3.13.14 + gmsh 4.15.2 + gdstk 1.0.1 + shapely 2.1.2)
 ```

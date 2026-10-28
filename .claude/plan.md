@@ -6,7 +6,7 @@ Legend: `[ ]` not started · `[~]` in progress。
 ## Backlog
 
 - [ ] **门仿真后续（2026-10-28 列; 现状 = physics §15, session 2610281309）**:
-      ① 规格口径（**拍板**）: CR 误差看不见静态 ZZ → `zz_static_MHz` 进 targets（results 已有数, 只差 hamiltonian 段字段 + `_tables` 定位）, 或门误差本身当 tune 核对项（每轮多 ~1 min 门仿真）;
+      ① ZZ 预算（**拍板**; 字段已做 = `couplings.zz_MHz`, physics §8.2; 门误差不进 tune 已定, 理由 physics §15）: 预算取多少（固定频率 CR 一般 ≲ 100 kHz）; targets 要不要加单边判据（现在 `tol: 100%` 凑上限）; 耦合旋钮对准 ZZ 还是 g（f01 / α 定了 ZZ ∝ g², 二者只能选一个）; 频率分配避开 |11⟩↔|02⟩ 要不要成规则;
       ② CR 真实化: echo（两段 CR + 控制比特上**本模块的 DRAG π 脉冲**）/ 目标抵消音, 误差改成「只给虚 Z」口径（现在假定任意单比特修正理想）;
       ③ 退相干: SuperGrad `mesolve` + results 已有的 T1_port / T1_purcell（只差接线; 50 步/ns × 25 维密度矩阵 625 维要先测速）;
       ④ 旁观比特 / 读出腔进 SCGraph（腔用 SuperGrad `Resonator`; 多比特环路要 C'⁻¹ 符号, 不能用 |β|）; 经读出腔驱动时 λ_j 按论文 App. A;

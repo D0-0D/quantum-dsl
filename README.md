@@ -4,7 +4,7 @@
 { **GDS**（gdstk）· **3D 网格**（gmsh）→ **Palace** 静电 → 电容矩阵 } →
 拼装（共享节点 + Schur）→ 电路模型（逆电容 LOM / SQUID / TL 谐振器 + χ / CPW）。
 
-纯 Python ≥ 3.13，核心依赖只有 `pyyaml` / `shapely`；`gmsh` / `gdstk` 为 optional extra；无 qiskit_metal。
+纯 Python ≥ 3.13，核心依赖只有 `pyyaml` / `shapely` / `threadpoolctl`；`gmsh` / `gdstk` 为 optional extra；无 qiskit_metal。
 
 **v4.0**（2026-08-26）+ **版图编排**（2026-09-12）+ **Chen 2025 圆盘比特 3×3**（2026-09-13）。金属用**零厚度片 imprint** 表示（不是 v3 的挖空），整条链 ≈3 000 行；
 35 条测试；two_pads 回归锚实测**逐位复现**，Sung et al. PRX 11, 021058 论文器件 C_Σ 对论文在 ±8% 内。
@@ -15,7 +15,7 @@
 pip install -e '.[gmsh,gds,test]'          # 或用本机 conda env qdsl313; 门仿真另加 .[gates] (SuperGrad + jax)
 export PYTHONPATH=src                       # 未 pip install 时
 
-python -m pytest tests/ -q                  # 70 passed, 3 skipped (~5 min; 没装 supergrad 时 test_gates.py 整文件 + 1 条 skip)
+python -m pytest tests/ -q                  # 72 passed, 3 skipped (~5 min; 没装 supergrad 时 test_gates.py 整文件 + 1 条 skip)
 python -c "from quantum_dsl import build; print(build('examples/two_pads.meta.yaml', 'build/two_pads'))"
                                             # GDS + GDS 预览 PNG + 网格 + Palace config + manifest (~4 s, 不需要 Palace)
 

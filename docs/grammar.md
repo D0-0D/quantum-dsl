@@ -186,7 +186,7 @@ circuit_model:
 | `subsystems`                                  | list                                           | 可选                                  | 记账用：**原样透传**进 `results.yaml` 的 `subsystems` 段。版图路线的定长路由会往这里**追加**条目（§4.6），其中波长模式的条目同时生成 `circuit_model.resonators`（进电路模型的是后者） |
 | `targets.source` | str | 可选 | 期望值出处，原样进 `validation.source` |
 | `targets.qubits.<name>` | `{C_sigma_fF: 99.3, tol: 8%}` | 与 couplings 至少一个 | 键 = `results.yaml` qubit 的数值字段（`C_sigma_fF` `E_C_GHz` `E_J_GHz` `f01_GHz` `anharmonicity_MHz` `EJ_over_EC`），值裸数（单位在键名里），非零；`tol` 必填且只收百分比字串，或写成 `{字段: 百分比}` 逐字段（须恰好覆盖本条目的字段，如 `{f_r_GHz: 0.2%, kappa_MHz: 5%}`） |
-| `targets.couplings[]` | `{pair: [QB1, CPLR], beta: 0.0364, tol: 20%}` | 同上 | 字段 `beta` / `g_MHz`；pair 两个不同 qubit 名 |
+| `targets.couplings[]` | `{pair: [QB1, CPLR], beta: 0.0364, tol: 20%}` | 同上 | 字段 `beta` / `g_MHz` / `zz_MHz`（静态 ZZ，physics §8.2；只有双边判据，`zz_MHz: x, tol: 100%` = 「0 … 2x」即上限写法）；pair 两个不同 qubit 名 |
 | `targets.resonators.<name>` | `{f_r_GHz: 7.2, tol: 0.2%}` | 同上 | 字段 = results 的 resonator 数值字段（`f_r_GHz` `f_bare_GHz` `kappa_MHz` `C_r_fF` `L_r_nH` `Z0_ohm` `C_gnd_fem_over_tl`） |
 | `targets.readout[]` | `{pair: [Q1, R1], chi_MHz: -0.2, tol: 3%}` | 同上 | pair = [qubit, 腔]；字段 `beta` `g_MHz` `chi_MHz`（单边 cavity pull）`T1_purcell_us` |
 | `tune.knobs[]` | `{param: Q1.arm_L, target: Q1.anharmonicity_exact_MHz, law: -1, bounds: [150, 500]}` | `tune` 时必填 | FEM 在环综合（§3.5）。`param` = `<版图步骤>.<模板参数>` / `<步骤>.E_J│L_J`（步骤上没有就找 meta 同名 qubit）/ `<步骤>.length.f_r` / 列表下标如 `<步骤>.at.1`（放置 y；比例律要求值 > 0，所以让参照物在原点）；`target` = 一条 targets 核对项的引用名（`Q1.f01_exact_GHz` / `R1.f_r_GHz` / `Q1~R1.chi_MHz`）；**方阵**：param 与 target 各唯一。几何旋钮必须给 `law`（target ∝ param^law，只需趋势对），结旋钮不收；`bounds` 可选（几何 µm，E_J / f_r 用 SI） |
@@ -273,6 +273,8 @@ gates:
 | `max_error` | (0, 1) 的数 | 可选门误差预算 → 结果多 `pass`，未达标只 warn（不 raise）。写 `1.0e-4` 或 `1e-4` 都行（后者 PyYAML 读成字串，加载时转数） |
 
 - `build(solve=True)` 在整片 `results.yaml` 追加 `gates` 段（`validation` 之后）；`blocks=` 求解不跑（warn）；`tune` 各轮不跑，终版 results 上跑一次。
+- 没装 `.[gates]` 时 `build(solve=True)` / `tune` 在网格化之前就 raise；results.yaml（tune 还有 tune.yaml）先落盘再跑门，门阶段出错不丢 FEM 结果。
+- 门误差**看不见静态 ZZ**（CR 的误差口径允许前后任意单比特修正，physics §15）—— ZZ 在 `hamiltonian.couplings[].zz_MHz`，要管它就写进 `targets.couplings`。
 - 已有 results 不必重跑 FEM：`quantum_dsl.simulate_gates(yaml.safe_load(open(".../results.yaml"))["hamiltonian"], load_meta(m).gates)`。
 - 只演化门涉及的比特（旁观比特 / 读出腔不进），无退相干；口径、精度账与数字见 physics §15。
 

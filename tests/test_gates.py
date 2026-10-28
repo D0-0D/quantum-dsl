@@ -15,7 +15,6 @@ import math
 import pytest
 
 pytest.importorskip("supergrad")
-pytest.importorskip("threadpoolctl")
 
 # xmon_pair_tune 综合出的两比特 (build/xp_tune, 2026-10-14): f01 4.8 / 5.0 GHz, α ≈ −249 MHz, g ≈ 8 MHz
 Q1 = {"name": "Q1", "E_C_GHz": 0.22146443584270326, "E_J_GHz": 14.294990715992935}
@@ -75,12 +74,12 @@ def test_gaussian_and_first_order_drag_reproduce_gambetta_2011():
 
 
 def test_supergrad_spectrum_and_coupling_match_circuit_model():
-    """SuperGrad transmon (电荷基, n_g = 0) 的 f01 / α = circuit_model 电荷基精确能级 (逐位到 1e-9);
+    """SuperGrad transmon (电荷基, n_g = 0) 的 f01 / α = circuit_model 电荷基精确能级 (逐位到 1e-9), 静态 ZZ = static_zz_hz;
     J = 8β√(E_Ca E_Cb) 接成 J·n_a·n_b 后, 缀饰谱的静态 ZZ = 二阶微扰闭式 (自推, 非 RWA, 矩阵元用精确 λ = n₁₂/n₀₁):
     ``g²[λ_t²/(Δ−α_t) − λ_c²/(Δ+α_c)] + g²[λ_c²/(Σ+α_c) + λ_t²/(Σ+α_t) − λ_c²λ_t²/(Σ+α_c+α_t)]``, g = J·n₀₁·n₀₁,
     Δ = ω_c − ω_t, Σ = ω_c + ω_t。λ² = 2 时第一项 = 教科书 2g²(α₁+α₂)/((Δ+α₁)(Δ−α₂)); transmon 的 λ² ≈ 1.90,
     照抄教科书式差 4%, 反旋转项 ~1% 也不能丢。远失谐 Δ/2π ≈ −0.5 GHz, 四阶余项 (g/|Δ−α_t|)² ~ 3e-4。"""
-    from quantum_dsl.circuit_model import H_PLANCK, transmon_from_spectrum, transmon_levels_hz
+    from quantum_dsl.circuit_model import H_PLANCK, static_zz_hz, transmon_from_spectrum, transmon_levels_hz
     from quantum_dsl.gates import _dressed
 
     two_pi = 2 * math.pi
@@ -101,6 +100,9 @@ def test_supergrad_spectrum_and_coupling_match_circuit_model():
     zz_pert = g ** 2 * (l2 / (d - a2) - l1 / (d + a1) + l1 / (s + a1) + l2 / (s + a2) - l1 * l2 / (s + a1 + a2))
     zz = lam12[5 + 1] - lam12[5] - lam12[1]
     assert zz == pytest.approx(zz_pert, rel=2e-3)
+    h = 1e9 * H_PLANCK                                   # results 的 couplings.zz_MHz (numpy) = 同一个缀饰谱
+    assert static_zz_hz(Q1["E_C_GHz"] * h, Q1["E_J_GHz"] * h, ec2 * h, ej2 * h, j * h) * two_pi / 1e9 == \
+        pytest.approx(zz, rel=1e-6)
 
 
 def test_interaction_picture_matches_supergrad_lab_frame():

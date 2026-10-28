@@ -282,10 +282,12 @@ def _in_scope(items, labels, key) -> list:
     return out
 
 
-def build(meta, out_dir, solve: bool = False, blocks=None) -> dict:
+def build(meta, out_dir, solve: bool = False, blocks=None, *, gates: bool = True) -> dict:
     """meta (路径或 Meta) + 输出目录 → 产物路径 dict (键: gds/mesh/config/
     manifest[/blocks][/capacitance/results]; 有 gds 时另有 gds_png; 版图路线另有
     layout (Layout 记账: qubits / subsystems / ports))。
+
+    ``gates=False``: meta 的 ``gates:`` 只在网格化前查名字, 不做门仿真 (tune 各轮用; 门只在终版上跑)。
 
     ``blocks`` = ``extract.blocks`` 里的块名列表 (或 ``"all"``) 时**只做这些块**:
     跳过整片网格与 config (整片可能比单块大两个数量级, 本机跑不动), 于是 ``mesh`` /
@@ -314,6 +316,9 @@ def build(meta, out_dir, solve: bool = False, blocks=None) -> dict:
     else:
         src, stem, inputs = m.geo_path, m.geo_path.stem, [m.path, m.geo_path]
     _check_target_names(m.targets, circuit_model, m.gates)
+    if m.gates and gates and solve and blocks is None:   # 缺 .[gates] 同样不能等解完才 raise
+        from .gates import _supergrad
+        _supergrad()
 
     blocks_spec = (m.extract or {}).get("blocks") or []
     if blocks is not None:
@@ -392,12 +397,14 @@ def build(meta, out_dir, solve: bool = False, blocks=None) -> dict:
             doc = _results_doc(cap, subsystems, circuit_model)
             if m.targets:
                 doc["validation"] = _validation(doc, m.targets)
-            if m.gates:
+            results_path = out / "results.yaml"
+            dump = lambda: results_path.write_text(yaml.safe_dump(doc, sort_keys=False, allow_unicode=True),
+                                                   encoding="utf-8")
+            dump()                                     # 先落盘: 门阶段出错不丢 FEM 结果
+            if m.gates and gates:
                 from .gates import simulate_gates
                 doc["gates"] = simulate_gates(doc["hamiltonian"], m.gates)
-            results_path = out / "results.yaml"
-            results_path.write_text(yaml.safe_dump(doc, sort_keys=False, allow_unicode=True),
-                                    encoding="utf-8")
+                dump()
             result["results"] = results_path
         elif m.targets or m.gates:
             warnings.warn("build: meta targets / gates are evaluated on whole-chip results only — "
@@ -457,7 +464,7 @@ def converge(meta, out_dir, scales=(1.0, 0.6)) -> dict:
             "qubits": {qb["name"]: {k: _rel(qa[k], v) for k, v in qb.items() if isinstance(v, float)}
                        for qa, qb in zip(ha["qubits"], hb["qubits"])},
             "couplings": [{"pair": [cb["qubit_a"], cb["qubit_b"]],
-                           **{k: _rel(ca[k], cb[k]) for k in ("beta", "g_MHz")}}
+                           **{k: _rel(ca[k], cb[k]) for k in ("beta", "g_MHz", "zz_MHz")}}
                           for ca, cb in zip(ha["couplings"], hb["couplings"])]}
         for sec, key in (("resonators", "name"), ("readout", "resonator")):
             if sec in hb:

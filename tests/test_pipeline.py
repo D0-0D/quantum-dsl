@@ -183,16 +183,21 @@ def _two_pads_meta(tmp_path, **extra) -> Path:
 def test_targets_validation_in_results(tmp_path, monkeypatch):
     """契约「targets」: meta ``targets:`` → results.yaml 的 validation 段 (期望 / 实测 / 偏差 / pass),
     未命中只 warn 不 raise; 拼错 qubit 名在网格化之前 raise。
-    闭式: Maxwell [[25, −2], [−2, 25]] fF → C_Σ = (25² − 2²)/25 = 24.84 fF, β = 2/25。"""
+    闭式: Maxwell [[25, −2], [−2, 25]] fF → C_Σ = (25² − 2²)/25 = 24.84 fF, β = 2/25。
+    静态 ZZ (couplings.zz_MHz) 同样可核对; ``期望 x, tol 100%`` = 「0 … 2x」, 是单边上限的写法。"""
     from quantum_dsl import QuantumDslError, build
     _fake_palace(monkeypatch, lambda run: [[25.0, -2.0], [-2.0, 25.0]])
     meta = _two_pads_meta(tmp_path, targets={
         "source": "闭式",
         "qubits": {"A": {"C_sigma_fF": 24.84, "tol": "1%"}, "B": {"C_sigma_fF": 30, "tol": "5%"}},
-        "couplings": [{"pair": ["A", "B"], "beta": 0.08, "tol": "1%"}]})
-    with pytest.warns(UserWarning, match=r"targets: 1/3 missed — B\.C_sigma_fF"):
+        "couplings": [{"pair": ["A", "B"], "beta": 0.08, "zz_MHz": 1.0, "tol": {"beta": "1%", "zz_MHz": "100%"}}]})
+    with pytest.warns(UserWarning, match=r"targets: 2/4 missed — B\.C_sigma_fF.*zz_MHz"):
         r = build(meta, tmp_path / "out", solve=True)
-    v = yaml.safe_load(Path(r["results"]).read_text(encoding="utf-8"))["validation"]
+    doc = yaml.safe_load(Path(r["results"]).read_text(encoding="utf-8"))
+    v = doc["validation"]
+    zz = next(c for c in v["checks"] if c["field"] == "zz_MHz")    # 静态 ZZ 可核对 (两块焊盘强耦合: 远超 2 MHz)
+    assert zz["actual"] == doc["hamiltonian"]["couplings"][0]["zz_MHz"] and zz["actual"] > 2.0 and not zz["pass"]
+    v["checks"].remove(zz)
     assert v["source"] == "闭式" and v["passed"] is False
     rows = {(c.get("qubit") or tuple(c["pair"])): c for c in v["checks"]}
     assert rows["A"]["actual"] == pytest.approx(24.84) and rows["A"]["pass"]
@@ -208,8 +213,8 @@ def test_targets_validation_in_results(tmp_path, monkeypatch):
 
 def test_gates_stage_in_build_and_tune(tmp_path, monkeypatch):
     """契约「门仿真」: meta ``gates:`` → ``build(solve=True)`` 的整片 results 多 ``gates`` 段 (SuperGrad 门级演化,
-    管线最后一段); max_error 未达标只 warn, pass = False; 门里的 qubit 名拼错在网格化之前 raise;
-    ``tune`` 各轮不跑门, 只在终版 results 上跑一次。(要 SuperGrad, 没装 skip)"""
+    管线最后一段); max_error 未达标只 warn, pass = False; 门里的 qubit 名拼错在网格化之前 raise (build 与 tune 都是);
+    ``tune`` 各轮不跑门, 只在终版 results 上跑一次; 门阶段出错时 results.yaml / tune.yaml 已落盘。(要 SuperGrad, 没装 skip)"""
     pytest.importorskip("supergrad")
     from quantum_dsl import QuantumDslError, build, tune
     _fake_palace(monkeypatch, lambda run: [[25.0, -2.0], [-2.0, 25.0]])
@@ -234,6 +239,45 @@ def test_gates_stage_in_build_and_tune(tmp_path, monkeypatch):
     final = yaml.safe_load(t["results"].read_text(encoding="utf-8"))
     assert final["gates"][0]["pass"] is True and final["gates"][0]["f01_GHz"] == pytest.approx(6.0, rel=1e-6)
 
+    # 门阶段本身出错: results.yaml (tune 还有 tune.yaml) 已经落盘, FEM / 综合结果不丢
+    def boom(*_):
+        raise RuntimeError("gate stage blew up")
+    monkeypatch.setattr(sys.modules["quantum_dsl.gates"], "simulate_gates", boom)
+    with pytest.raises(RuntimeError, match="blew up"):
+        build(_two_pads_meta(tmp_path, gates=[gate]), tmp_path / "boom", solve=True)
+    assert "hamiltonian" in yaml.safe_load((tmp_path / "boom" / "results.yaml").read_text(encoding="utf-8"))
+    with pytest.raises(RuntimeError, match="blew up"):
+        tune(meta, tmp_path / "boom_tune")
+    assert (tmp_path / "boom_tune" / "results.yaml").exists() and (tmp_path / "boom_tune" / "tune.yaml").exists()
+
+    # tune 里门名拼错: 第一轮 build 在网格化之前就拦下 (各轮 meta 带 gates:, 只是 gates=False 不跑)
+    typo_tune = _meta_copy(tmp_path, "two_pads_layout.meta.yaml",
+                           targets={"qubits": {"A": {"f01_exact_GHz": 6.0, "tol": "0.5%"}}},
+                           tune={"knobs": [{"param": "A.L_J", "target": "A.f01_exact_GHz"}]},
+                           gates=[{**gate, "qubit": "C"}])
+    with pytest.raises(QuantumDslError, match=r"unknown qubit\(s\) \['C'\]"):
+        tune(typo_tune, tmp_path / "typo_tune")
+    assert not list((tmp_path / "typo_tune").rglob("*.msh"))
+
+
+def test_gates_missing_dependency_raises_before_fem(tmp_path, monkeypatch):
+    """契约「门仿真」: meta 有 ``gates:`` 而没装 ``.[gates]`` → build(solve=True) / tune 在网格化之前 raise
+    (门在管线最后, 不能等小时级求解完才发现)。"""
+    from quantum_dsl import QuantumDslError, build, tune
+    monkeypatch.setitem(sys.modules, "supergrad", None)          # = 没装
+    _fake_palace(monkeypatch, lambda run: [[25.0, -2.0], [-2.0, 25.0]])
+    gate = {"name": "XA", "kind": "x_drag", "qubit": "A", "t_gate": "10ns"}
+    with pytest.raises(QuantumDslError, match="needs SuperGrad"):
+        build(_two_pads_meta(tmp_path, gates=[gate]), tmp_path / "out", solve=True)
+    assert not list((tmp_path / "out").glob("*.msh"))
+    build(_two_pads_meta(tmp_path, gates=[gate]), tmp_path / "mesh_only")    # 不求解就不需要 SuperGrad
+    meta = _meta_copy(tmp_path, "two_pads_layout.meta.yaml",
+                      targets={"qubits": {"A": {"f01_exact_GHz": 6.0, "tol": "0.5%"}}},
+                      tune={"knobs": [{"param": "A.L_J", "target": "A.f01_exact_GHz"}]}, gates=[gate])
+    with pytest.raises(QuantumDslError, match="needs SuperGrad"):
+        tune(meta, tmp_path / "tuned")
+    assert not (tmp_path / "tuned").exists()
+
 
 def test_converge_scales_mesh_and_diffs_finest_two(tmp_path, monkeypatch):
     """契约「网格收敛」: 每档 mesh 尺寸同比缩放、各自整片求解, convergence.yaml 记最细两档的
@@ -253,7 +297,7 @@ def test_converge_scales_mesh_and_diffs_finest_two(tmp_path, monkeypatch):
     assert rel[0][1] == rel[1][0] == rel[1][1] == 0.0
     qa = doc["hamiltonian"]["qubits"]["A"]
     assert qa["C_sigma_fF"] > 0 and qa["E_C_GHz"] < 0 and qa["E_J_GHz"] == 0.0
-    assert set(doc["hamiltonian"]["couplings"][0]) == {"pair", "beta", "g_MHz"}
+    assert set(doc["hamiltonian"]["couplings"][0]) == {"pair", "beta", "g_MHz", "zz_MHz"}
     with pytest.raises(QuantumDslError, match="distinct positive scales"):
         converge(TWO_PADS_META, tmp_path, scales=(1.0, 1))
 

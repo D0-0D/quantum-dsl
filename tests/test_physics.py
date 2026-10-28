@@ -223,6 +223,40 @@ def test_transmon_exact_levels_limits():
         assert transmon_levels_hz(ec, ratio * ec, n_cut=40) == pytest.approx((f01, f12), rel=1e-12)
 
 
+def test_static_zz_exact_diagonalization():
+    """契约「电路模型」: couplings.zz_MHz = 两 transmon J·n·n (J = 4e²C'⁻¹_ab = 8β√(E_Ca E_Cb)) 精确对角化的
+    E₁₁ − E₁₀ − E₀₁ + E₀₀。闭式锚 (远失谐, 四阶余项 ~3e-4): 非 RWA 二阶微扰 + 精确 λ = n₁₂/n₀₁ (physics §8.2)
+    ``g²[λ_b²/(Δ−α_b) − λ_a²/(Δ+α_a) + λ_a²/(Σ+α_a) + λ_b²/(Σ+α_b) − λ_a²λ_b²/(Σ+α_a+α_b)]``;
+    J 变号不变 (宇称); 两比特完全简并 (|01⟩/|10⟩ 各半) 时连续 (取双重态之和); solve_circuit_model 接线一致。"""
+    import numpy as np
+
+    from quantum_dsl import H_PLANCK
+    from quantum_dsl.circuit_model import _charge_h, static_zz_hz
+    h = 1e9 * H_PLANCK                                        # GHz → J
+    qa, qb, j = (0.2215, 14.29), (0.2, 19.0), 0.0035          # (E_C, E_J) GHz, J GHz: f01 ≈ 4.80 / 5.33 GHz
+
+    def bare(e_c, e_j):
+        ham, n = _charge_h(e_c * h, e_j * h, 30)
+        e, v = np.linalg.eigh(ham)
+        n01, n12 = abs(v[:, 0] @ (n * v[:, 1])), abs(v[:, 1] @ (n * v[:, 2]))
+        return e[1] - e[0], e[2] - 2 * e[1] + e[0], n01, (n12 / n01) ** 2
+
+    (wa, aa, na, la), (wb, ab, nb, lb) = bare(*qa), bare(*qb)
+    g, d, s = j * 1e9 * na * nb, wa - wb, wa + wb
+    pert = g ** 2 * (lb / (d - ab) - la / (d + aa) + la / (s + aa) + lb / (s + ab) - la * lb / (s + aa + ab))
+    zz = static_zz_hz(qa[0] * h, qa[1] * h, qb[0] * h, qb[1] * h, j * h)
+    assert zz == pytest.approx(pert, rel=2e-3)
+    assert static_zz_hz(qa[0] * h, qa[1] * h, qb[0] * h, qb[1] * h, -j * h) == pytest.approx(zz, rel=1e-9)
+    same = static_zz_hz(qa[0] * h, qa[1] * h, qa[0] * h, qa[1] * h, j * h)
+    assert static_zz_hz(qa[0] * h, qa[1] * h, qa[0] * h, qa[1] * h * (1 + 1e-9), j * h) == pytest.approx(same, rel=1e-6)
+
+    (c,) = _two_pads().couplings
+    a, b = _two_pads().qubits
+    j2 = 8 * c.beta * math.sqrt(a.E_C_GHz * b.E_C_GHz) * h
+    assert c.zz_MHz * 1e6 == pytest.approx(
+        static_zz_hz(a.E_C_GHz * h, a.E_J_GHz * h, b.E_C_GHz * h, b.E_J_GHz * h, j2), rel=1e-9)
+
+
 def test_transmon_from_spectrum_inverts_exact_levels():
     """契约「读出链路」: ``transmon_from_spectrum`` 是精确能级的逆 —— (E_C, E_J) → transmon_levels_hz → 反推回原值;
     非 transmon 区 (α/f01 超出 E_J/E_C ∈ [2, 2000] 的范围) 与 α ≥ 0 raise。"""

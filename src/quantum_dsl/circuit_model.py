@@ -53,7 +53,7 @@ __all__ = [
     "ELEM_CHARGE", "H_PLANCK", "HBAR", "FLUX_QUANTUM_REDUCED",
     "QubitResult", "CouplingResult", "ResonatorResult", "ReadoutResult", "CircuitModelResult",
     "solve_circuit_model", "resonator_lumped_lc", "dispersive_shift_hz", "transmon_levels_hz",
-    "transmon_from_spectrum",
+    "transmon_from_spectrum", "static_zz_hz",
 ]
 
 # --- 常数: SI-2019 精确 (e/h 是定义值); ħ/φ0 派生, 不硬编码舍入字面量 -----
@@ -89,12 +89,14 @@ class QubitResult:
 
 @dataclass(frozen=True)
 class CouplingResult:
-    """一对 qubit 的电容耦合。β 纯几何 (无量纲), g = ½·β·√(f01_a·f01_b)。"""
+    """一对 qubit 的电容耦合。β 纯几何 (无量纲), g = ½·β·√(f01_a·f01_b);
+    ``zz_MHz`` = 两 transmon 直接耦合的静态 ZZ (``static_zz_hz``, 不含经腔 / 第三比特的路径)。"""
 
     qubit_a: str
     qubit_b: str
     beta: float
     g_MHz: float
+    zz_MHz: float
 
 
 @dataclass(frozen=True)
@@ -150,11 +152,43 @@ def transmon_levels_hz(e_c_joule: float, e_j_joule: float,
     numpy 惰性 import (``import quantum_dsl`` 不拉起它)。"""
     import numpy as np
 
+    e = np.linalg.eigvalsh(_charge_h(e_c_joule, e_j_joule, n_cut)[0])
+    return float(e[1] - e[0]), float(e[2] - e[1])
+
+
+def _charge_h(e_c_joule: float, e_j_joule: float, n_cut: int):
+    """电荷基 transmon 哈密顿量 (Hz) 与电荷数对角 n。"""
+    import numpy as np
+
     n = np.arange(-n_cut, n_cut + 1, dtype=float)
     off = np.full(2 * n_cut, -0.5 * e_j_joule / H_PLANCK)
-    e = np.linalg.eigvalsh(np.diag(4.0 * e_c_joule / H_PLANCK * n * n)
-                           + np.diag(off, 1) + np.diag(off, -1))
-    return float(e[1] - e[0]), float(e[2] - e[1])
+    return np.diag(4.0 * e_c_joule / H_PLANCK * n * n) + np.diag(off, 1) + np.diag(off, -1), n
+
+
+def static_zz_hz(e_c_a: float, e_j_a: float, e_c_b: float, e_j_b: float, j_joule: float,
+                 levels: int = 5, n_cut: int = 30) -> float:
+    """两个 transmon 经 ``J·n_a·n_b`` 电容耦合 (J = 4e²[C'⁻¹]_ab, 焦耳) 的静态 ZZ = E₁₁ − E₁₀ − E₀₁ + E₀₀ (Hz)。
+
+    各自电荷基精确本征态截断到 ``levels`` 能级, 积基上精确对角化 (不做 RWA / 微扰: 二阶闭式在 |11⟩↔|02⟩
+    近共振处发散, 而那正是 ZZ 要紧的地方, docs/physics.md §8.2)。缀饰态依次 (|00⟩ |01⟩ |10⟩ |11⟩) 取与裸积态
+    重叠最大、且还没被认领的本征态 —— 两比特共振 (|01⟩/|10⟩ 各半) 时 E₀₁ + E₁₀ 是双重态之和, 与谁认谁无关, 结果连续;
+    跨过 |11⟩↔|02⟩ 共振时 ZZ 变号 (标签互换, 物理如此)。与 gates.py 的 SuperGrad 缀饰谱是同一个模型。"""
+    import numpy as np
+
+    def trunc(e_c, e_j):
+        h, n = _charge_h(e_c, e_j, n_cut)
+        e, v = np.linalg.eigh(h)
+        v = v[:, :levels]
+        return e[:levels] - e[0], v.T @ (n[:, None] * v)
+
+    (ea, na), (eb, nb) = trunc(e_c_a, e_j_a), trunc(e_c_b, e_j_b)
+    e, v = np.linalg.eigh(np.diag(np.add.outer(ea, eb).ravel()) + j_joule / H_PLANCK * np.kron(na, nb))
+    idx = []
+    for k in (0, 1, levels, levels + 1):                 # 裸 |00⟩ |01⟩ |10⟩ |11⟩
+        w = np.abs(v[k]) ** 2
+        w[idx] = -1.0
+        idx.append(int(np.argmax(w)))
+    return float(e[idx[3]] - e[idx[2]] - e[idx[1]] + e[idx[0]])
 
 
 def transmon_from_spectrum(f01_hz: float, alpha_hz: float,
@@ -590,20 +624,28 @@ def solve_circuit_model(labels, maxwell_fF, junctions, resonators=(), ports=(),
             T1_port_us=1e6 / gamma if gamma > 0 else math.inf,
         ))
 
+    from threadpoolctl import threadpool_limits
+
     couplings: list[CouplingResult] = []
-    for i in range(len(parsed)):
-        for jq in range(i + 1, len(parsed)):
-            denom = math.sqrt(cinv[i][i] * cinv[jq][jq])
-            beta = abs(cinv[i][jq]) / denom if denom > 0 else 0.0
-            f_i = qubit_results[i].f01_GHz * 1e9
-            f_j = qubit_results[jq].f01_GHz * 1e9
-            g_hz = 0.5 * beta * math.sqrt(f_i * f_j)
-            couplings.append(CouplingResult(
-                qubit_a=parsed[i][0],
-                qubit_b=parsed[jq][0],
-                beta=beta,
-                g_MHz=g_hz / 1e6,
-            ))
+    # 静态 ZZ 的 61 维 eigh 带本征矢: OpenBLAS 多线程争抢 60 ms → 单线程 0.4 ms / 对 (实测 2026-10-28, 22 核 WSL)
+    with threadpool_limits(limits=1, user_api="blas"):
+        for i in range(len(parsed)):
+            for jq in range(i + 1, len(parsed)):
+                denom = math.sqrt(cinv[i][i] * cinv[jq][jq])
+                beta = abs(cinv[i][jq]) / denom if denom > 0 else 0.0
+                f_i = qubit_results[i].f01_GHz * 1e9
+                f_j = qubit_results[jq].f01_GHz * 1e9
+                g_hz = 0.5 * beta * math.sqrt(f_i * f_j)
+                zz = static_zz_hz(0.5 * ELEM_CHARGE ** 2 * cinv[i][i], parsed[i][2],
+                                  0.5 * ELEM_CHARGE ** 2 * cinv[jq][jq], parsed[jq][2],
+                                  4.0 * ELEM_CHARGE ** 2 * abs(cinv[i][jq]))   # J 的号 = 一侧宇称变换, ZZ 不变
+                couplings.append(CouplingResult(
+                    qubit_a=parsed[i][0],
+                    qubit_b=parsed[jq][0],
+                    beta=beta,
+                    g_MHz=g_hz / 1e6,
+                    zz_MHz=zz / 1e6,
+                ))
 
     res_results: list[ResonatorResult] = []
     readout: list[ReadoutResult] = []

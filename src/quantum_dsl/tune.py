@@ -154,14 +154,16 @@ def tune(meta, out_dir) -> dict:
                 if k["step"] == q and k["path"] in JUNCTION_KNOBS:
                     _put(k["slot"], e_j / H_PLANCK if k["path"] == "E_J" else FLUX_QUANTUM_REDUCED ** 2 / e_j)
 
+    if m.gates:                                 # 门在最后才跑, 缺 .[gates] 要在第一次 FEM 之前就知道
+        from .gates import _supergrad
+        _supergrad()
     history, prev, converged = [], {}, False
-    iter_meta = {k: v for k, v in raw_meta.items() if k != "gates"}   # 门仿真只在终版上跑一次
     for it in range(max_iter):
         d = out / f"iter_{it}"
         with warnings.catch_warnings():         # 这轮的 validation 用的是求根前的结参数, 下面重算
             warnings.filterwarnings("ignore", message="targets:")
-            r = build(_write(iter_meta, raw_lay, src_dir, names, d, f"quantum_dsl.tune iteration {it}"),
-                      d, solve=True)
+            r = build(_write(raw_meta, raw_lay, src_dir, names, d, f"quantum_dsl.tune iteration {it}"),
+                      d, solve=True, gates=False)   # 门名在网格化前查, 门仿真只在终版上跑一次
         cap, cm = r["capacitance"], copy.deepcopy(r["circuit_model"])
         subsystems = yaml.safe_load(Path(r["results"]).read_text(encoding="utf-8")).get("subsystems") or []
 
@@ -210,14 +212,16 @@ def tune(meta, out_dir) -> dict:
     final_meta = _write(raw_meta, raw_lay, src_dir, names, out,
                         f"quantum_dsl.tune: synthesized from {m.path.name} "
                         f"({'converged' if converged else 'NOT converged'}, {len(history)} FEM run(s))")
-    if m.gates:                                   # 综合出的哈密顿量 → 门误差 (闭环的最后一段)
-        from .gates import simulate_gates
-        doc["gates"] = simulate_gates(doc["hamiltonian"], m.gates)
     res_path = out / "results.yaml"
-    res_path.write_text(yaml.safe_dump(doc, sort_keys=False, allow_unicode=True), encoding="utf-8")
+    dump = lambda: res_path.write_text(yaml.safe_dump(doc, sort_keys=False, allow_unicode=True), encoding="utf-8")
+    dump()
     log = {"source": str(m.path), "converged": converged, "iterations": len(history),
            "results_from": history[-1]["dir"], "closed_form": closed, "history": history}
     tune_path = out / "tune.yaml"
     tune_path.write_text(yaml.safe_dump(log, sort_keys=False, allow_unicode=True), encoding="utf-8")
+    if m.gates:                                   # 综合出的哈密顿量 → 门误差 (闭环的最后一段; 上面已落盘, 出错不丢综合结果)
+        from .gates import simulate_gates
+        doc["gates"] = simulate_gates(doc["hamiltonian"], m.gates)
+        dump()
     return {"converged": converged, "iterations": len(history), "meta": final_meta,
             "layout": out / names[0], "results": res_path, "tune": tune_path, "history": history}
