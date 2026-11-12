@@ -1,0 +1,23 @@
+# two_pads_eigen_leads.meta.yaml — two_pads_eigen_leads.geo 的 sidecar (诊断变体; 其余同 two_pads_eigen.meta.yaml) (tools/eigen_check.py 用)。
+# 域 / 材料 / 网格 / 求解与 two_pads.meta.yaml 相同; 区别只在电路: 10 nH 结桥接 A–B (浮动 transmon),
+# 而不是 two_pads 的两只各自对地的单岛 transmon —— 本征模里结只能挂在两块真实导体之间。
+schema: quantum-dsl/meta/1
+
+geo: two_pads_eigen_leads.geo
+
+materials:
+  substrate: {eps_r: 11.45, thickness_um: 100}
+
+airbox: {top_um: 120, bottom_um: 120, side_um: 80}
+
+mesh: {max_size_um: 40, min_size_um: 4}
+
+solver: {type: electrostatic, order: 2}
+
+gds:
+  by_role:
+    metal: {layer: 1, datatype: 0}
+
+circuit_model:
+  qubits:
+    - {name: Q, islands: [A, B], L_J: 10nH}

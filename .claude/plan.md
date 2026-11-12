@@ -5,12 +5,14 @@ Legend: `[ ]` not started · `[~]` in progress。
 
 ## Backlog
 
-- [ ] **门仿真后续（2026-10-28 列; 现状 = physics §15, session 2610281309）**:
-      ① ZZ 预算（**拍板**; 字段已做 = `couplings.zz_MHz`, physics §8.2; 门误差不进 tune 已定, 理由 physics §15）: 预算取多少（固定频率 CR 一般 ≲ 100 kHz）; targets 要不要加单边判据（现在 `tol: 100%` 凑上限）; 耦合旋钮对准 ZZ 还是 g（f01 / α 定了 ZZ ∝ g², 二者只能选一个）; 频率分配避开 |11⟩↔|02⟩ 要不要成规则;
+- [ ] **门仿真后续（2026-10-28 列, ⑥ 10-29 加, ④⑥ 10-30 部分做完; 现状 = physics §15 / §15.1 / §15.2, session 2610281309 / 2610290400 / 2610300011）**:
+      ① ZZ 预算（**拍板**; 字段已做 = `couplings.zz_MHz`, physics §8.2; 门误差不进 tune 已定, 理由 physics §15）: 预算取多少（固定频率 CR 一般 ≲ 100 kHz）; targets 要不要加单边判据（现在 `tol: 100%` 凑上限）; 耦合旋钮对准 ZZ 还是 g（f01 / α 定了 ZZ ∝ g², 二者只能选一个）; 频率分配避开 |11⟩↔|02⟩ 要不要成规则 —— **单比特门侧的数已有（physics §15.2）**: ζ 0.69 / 2.66 MHz → 重标定后 6e-4 / 6e-3（40 ns）; 拥挤 f01_j − f12_k ≈ 48 MHz 让 ≤ 20 ns 门卡在 1e-2 ⇒ 频率规则要管 |f01_j − f12_k|, 不只 ζ; 间距扫描 + v2 重综合已做（4.8 / 4.7 GHz, 间距 352 MHz, 20 ns 重标定 6.1e-04, physics §15.2）, 碰撞表 (Hertzberg 2021 表 I) 核对 v2 全满足; v3 (g 4 MHz) ζ 0.29 MHz、20 ns 2.2e-04、CR 240 ns 3.5e-05; 剩: 碰撞表 4 类要不要进 targets (界限按我们的 g 重定)、g 目标取 8 还是 4;
       ② CR 真实化: echo（两段 CR + 控制比特上**本模块的 DRAG π 脉冲**）/ 目标抵消音, 误差改成「只给虚 Z」口径（现在假定任意单比特修正理想）;
       ③ 退相干: SuperGrad `mesolve` + results 已有的 T1_port / T1_purcell（只差接线; 50 步/ns × 25 维密度矩阵 625 维要先测速）;
-      ④ 旁观比特 / 读出腔进 SCGraph（腔用 SuperGrad `Resonator`; 多比特环路要 C'⁻¹ 符号, 不能用 |β|）; 经读出腔驱动时 λ_j 按论文 App. A;
+      ④ 旁观比特进 SCGraph **已在工具里做**（`tools/crosstalk_1q.py`, 两比特, physics §15.2）; 剩读出腔进 SCGraph（SuperGrad `Resonator`）、多比特环路的 C'⁻¹ 符号（不能用 |β|）、经读出腔驱动时 λ_j 按论文 App. A; 要不要把旁观比特做成 `gates:` 的一种 kind（如 `x_drag` 加 `spectator:`）待拍板; 拥挤线在带宽内时的整形（GRAPE 式, 卡 ⑤; 两零点 DRAG 已试不行）;
       ⑤ 多参数梯度: 16 维 × 1.4 万步反向 ~150 s/次（SuperGrad LCAM 要 KronObj, 本模块是稠密阵）—— 真要上 GRAPE 式整形, 先做自己的伴随或分段 checkpoint。
+      ⑥ `x_drag` 的 γ 族已做（opt-in `drag_gamma`, physics §15.1; 8–12 ns 降 24–320×）。遗留: 长门（≥ 16 ns）L-BFGS 线搜索失败、结果随起点散 —— 试参数无量纲化
+         （δ₀·t_g、γ·Ω_max²t_g/|Δ|）或 Nelder–Mead 收尾; 8–12 ns 的残余全是泄漏, 要再降得加形状自由度（三次项 c₃, 或 GRAPE 式整形, 见 ⑤）。
 - [ ] **读出 / 综合的后续（2026-10-04 列, 按调研优先级; ①②③ 2026-10-14 做完移出 → physics §8.1 / examples `xmon_feedline*` `xmon_pair*` / session 2610141107）**:
       ④ 求解可信度（调研**未取证**, 先补查再做）: converge 三档 + Richardson 观测阶、airbox 尺寸扫、工艺参数 ±δ 有限差分灵敏度 → 线性协方差进 validation;
          **重网格噪声已实测一次**（2026-10-14, 200/20 演示网格平移重解: κ σ ≈ 5 %、χ ≈ 3 %、C_Σ 0.3 %; κ tol 5 % 时 tune 不收敛 → 现在靠 tol ≥ 2σ + 割线守卫）——
@@ -27,7 +29,7 @@ Legend: `[ ]` not started · `[~]` in progress。
          线性正规模（多模 LOM）→ Purcell 滤波器节点 + 读出复用（Google: 每腔一滤波器, 间隔 ~160 MHz, J/2π 10 / κ_P/2π 40 MHz 抗 5 MHz 失谐）;
          `process:` 块 σ 传播（f01 离散 Rn 主导: IBM σf 2.3% / σR 4.6%; 但 Chalmers σEC 0.8% 与 Rn 相当, 只算结低估 √2; α/g/χ 几何是主项）+ 碰撞良率 MC（规则表用户声明, 与门架构绑定; Morvan 2112.01634 九族线性约束, Zhang 2410.20283 MILP 开源）。
          贵: 盲验证 = SQuADDS_DB `measured_device_database`（3 器件带公开设计代码, WM1 六对 qubit–腔实测 f01/α/g/χ/f_r）—— 要把 Qiskit Metal 设计移植成模板（无 GDS 导入）;
-         对照基线 SQDMetal 8 只 transmon RMSE f 6.0 / α 13.3 / g 24.5 / f_r 3.5%; Palace 本征模 / driven 第二、三 pass（2511.09041: 腔频 <0.3%, κ 3/4 在 16% 内; 收敛设置 r1.5o4）; AMR 透传（先验证零厚度 imprint 兼容）。
+         对照基线 SQDMetal 8 只 transmon RMSE f 6.0 / α 13.3 / g 24.5 / f_r 3.5%; Palace 本征模 / driven 第二、三 pass（2511.09041: 腔频 <0.3%, κ 3/4 在 16% 内; 收敛设置 r1.5o4）; AMR 透传已做（2026-10-29, 零厚度 imprint 兼容已验证）。
       ⑥ 天花板: tune 只支持版图路线顶层步骤参数与步骤键路径（`length.f_r`、列表下标 `at.1`; 比例律要求值 > 0, 位置旋钮得让参照物在原点）; 耦合比例律（χ ∝ (w_rq/w_q)² 那种 2D 子问题）未做, 现在靠对数割线吸收串扰; 终版配置丢 YAML 注释。
 
 - [ ] **`cpw_meander` 退不退役**（拍板）: 它是 `cpw_route` 的退化情形（直段需求也由 `cpw_route` 无 `length:` 覆盖）。退役要迁 `xmon_readout`（= `xmon_readout_tune` 底版, `R1.length.f_r` 旋钮）
@@ -41,8 +43,11 @@ Legend: `[ ]` not started · `[~]` in progress。
       ③ 读出焊盘 / λ/4 蛇形进不进版图（焊盘凸台离盘边 181 µm; 腔裸频率要按负载上调 ~7% 才对实测 f_read）; ④ 薄板厚度方向 Box 尺寸场（d 已到 10, 优先级更低）。
 - [ ] **`readout_pad.geo` demo 落仓**（2026-09-16 `.claude/session/2609161007.md`）: 9/14 演示过的 `{geo: readout_pad.geo, frame: Q00}` 文件没进仓, chen 版图头注引的就是它;
       `frame:` 至今无测试。做法: 文件进 `examples/`, chen 头注改「取消注释这一步即可」（不进正式步骤: 会多一个无结浮岛, 动 87 名 / 12 块 / 物理口径）, `tests/test_layout.py` 加一条 `frame:` 断言。
-- [ ] **Palace AMR 试点**: `Model.Refinement`（0.12 起支持 Electrostatic）是边缘 seed 网格之上的二次自适应, 不能取代 Distance/Threshold 尺寸场; 大网格（sung 级）再试,
-      1–2 轮、设 MaxSize, 避开 `SaveAdaptMesh+SaveAdaptIterations` 组合（0.16.1 覆盖 bug）。
+- [ ] **AMR 后续**（试点 2026-10-29 已落地 `solver.amr`, physics §6 / §14）: ① `update_fraction` 0.8–0.9 能否省掉第 1 轮空转; ② `nonconformal: false`（纯四面体）对比;
+      ③ 大网格（Chen 十字 / sung）用「粗一档 seed + 3 轮 AMR」替代细 seed, 看内存是否 ÷3 以上; ④ `converge()` 直接用 AMR 最后两轮当「两档」, 或按 C = C∞ + kη² 报外推值;
+      ⑤ two_pads golden 只加注「离散收敛值 ≈ 24.13」, 不改锚（golden 是可复现配方锚）。
+- [ ] **本征模交叉验证收尾**（工具 `tools/eigen_check.py`, physics §8.3）: (a) xmon 跑产品网格 200/20 + 更细一档, 看 −0.5% 与 p 是否稳定（~1 M 未知量, 上云）;
+      (b) 开 `Eigenmode.Save` 辨识 3.92 GHz 低 EPR 模与腔模; (c) 跑一次 `--outer absorbing`（Palace 例子口径）; (d) 几何电感修正 L_J → L_J/p 作为 LOM 可选输入（|α| 系统性偏大 ~5%, 用精确 α 定 C_Σ 时要算进去）。
 - [ ] **域尺寸扫**: sung 例子 airbox 取自 v3 实测档, two_pads 的 side=80 是刻意小型化; 给真实器件报数前应做 1×/1.5×/2× 扫（C 变化 <0.2–0.5% 验收）。
 - [ ] **CI**: 默认 `pytest -q` 在 CI 上就是 39 passed / 2 skipped, 只需 Python 3.13 + `pip install -e '.[gmsh,gds,test]'`（gmsh 装得起, Palace 装不起——live 正好 skip）。
 - [ ] **sung 求解产物缓存**: 一次 build 现已同时断言 C_Σ 与 β（不再重复求解）; 要在同一 results.yaml 上加断言, 直接读 `v4-dev` 分支 `.claude/n15-evidence/results_o2_contract.yaml` 归档件, 不必重跑。

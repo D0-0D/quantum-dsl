@@ -31,7 +31,7 @@ _SCHEMA = "quantum-dsl/meta/1"
 _TOP_KEYS = frozenset({"schema", "geo", "layout", "layers", "materials", "airbox", "mesh",
                        "solver", "gds", "circuit_model", "extract", "subsystems", "targets", "tune", "gates"})
 # 门仿真 (quantum_dsl.gates): 每种门的键白名单 (公共键 + 定位键)
-_GATE_KEYS = {"x_drag": frozenset({"name", "kind", "t_gate", "levels", "max_error", "qubit"}),
+_GATE_KEYS = {"x_drag": frozenset({"name", "kind", "t_gate", "levels", "max_error", "qubit", "drag_gamma"}),
               "cr": frozenset({"name", "kind", "t_gate", "levels", "max_error", "control", "target", "ramp"})}
 _CM_KEYS = frozenset({"qubits", "resonators", "ports", "floating"})
 _TUNE_KEYS = frozenset({"knobs", "max_iter", "damping"})
@@ -226,6 +226,10 @@ def _gates(tbl, path) -> list:
              "levels": g.get("levels", 5)}
         if isinstance(e["levels"], bool) or not isinstance(e["levels"], int) or e["levels"] < 3:
             raise QuantumDslError(f"{w}: levels must be an int >= 3 (|2> carries the leakage), got {e['levels']!r}")
+        if "drag_gamma" in g:                    # x_drag opt-in: γ 时变失谐 + 多起点标定 (gates._drag_starts)
+            if not isinstance(g["drag_gamma"], bool):
+                raise QuantumDslError(f"{w}: drag_gamma must be true / false, got {g['drag_gamma']!r}")
+            e["drag_gamma"] = g["drag_gamma"]
         if g["kind"] == "cr":
             e["ramp_ns"] = ns("ramp", "20ns")
             if not 2 * e["ramp_ns"] < e["t_gate_ns"]:

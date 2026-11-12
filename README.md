@@ -15,7 +15,7 @@
 pip install -e '.[gmsh,gds,test]'          # 或用本机 conda env qdsl313; 门仿真另加 .[gates] (SuperGrad + jax)
 export PYTHONPATH=src                       # 未 pip install 时
 
-python -m pytest tests/ -q                  # 72 passed, 3 skipped (~5 min; 没装 supergrad 时 test_gates.py 整文件 + 1 条 skip)
+python -m pytest tests/ -q                  # 98 passed, 5 skipped (~5 min; 没装 supergrad 时 test_gates.py / test_crosstalk_1q.py 整文件 + test_gates_gamma 3 条 + 1 条 skip)
 python -c "from quantum_dsl import build; print(build('examples/two_pads.meta.yaml', 'build/two_pads'))"
                                             # GDS + GDS 预览 PNG + 网格 + Palace config + manifest (~4 s, 不需要 Palace)
 

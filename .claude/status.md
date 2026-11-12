@@ -1,6 +1,6 @@
 # quantum_dsl — Current Status
 
-每个 session 开工前读这份 + [`plan.md`](plan.md)。快照 **2026-10-28**。硬约束与跑法在 `CLAUDE.md`, 这里不重复。
+每个 session 开工前读这份 + [`plan.md`](plan.md)。快照 **2026-10-30**。硬约束与跑法在 `CLAUDE.md`, 这里不重复。
 
 ## 现在有什么
 
@@ -39,6 +39,8 @@
   综合终版（g 8 MHz）CR 7.7e-5（驱动 2.8×, 泄漏主导, ZZ 2.7 MHz）—— 门误差看不见 ZZ, g 的选择要把 ZZ 也写进规格。
   **静态 ZZ 进 `hamiltonian.couplings[].zz_MHz`**（`static_zz_hz`, numpy 两 transmon 精确对角化, 与 SuperGrad 缀饰谱 5 位一致, physics §8.2）→ targets 可核对（只有双边判据: `tol: 100%` = 上限写法）。
   缺 `.[gates]` / 门名拼错在网格化之前 raise（tune 各轮 `build(gates=False)` 照查名字）; results / tune.yaml 先落盘再跑门。threadpoolctl 进核心依赖, `.[gates]` 钉 supergrad 0.2.6 / jax 0.12（jaxopt 已停维护）。
+  **Gambetta 2011 全文覆盖**（2026-10-29, physics §15.1, `tools/gambetta2011.py` → `build/gambetta2011/`）: Fig. 2–5、7–9 逐图复现 + 附录 A/B; 二阶解 σ = 1.5 Motzoi 2.25e-5 → 4.97e-10; **Eq. 5.18 = v2 排印回归（v1 完整）, Eq. 5.28 与 5.25 不自洽**（照印比高斯 / Z-only 还差, 推导式对上图; 独立复核 10-30）; Fig. 5 同一 ansatz 论文是局部最优（Motzoi 解调幅 0.4% → 1e-11, 论文 ~1e-6; 「时变 δ 无改进」只在长脉冲端成立）; 真实版图 transmon: t_g ≤ 8 ns 解析解全 > 1e-3、只有标定行, ≥ 16 ns 二阶 Motzoi 开环逼近标定但被反旋转项卡在 ~1e-8（约 70×）; 经读出腔 λ₁ = 1.25–1.27、直接驱动 1.375（≠ √2）。
+  **10-30 冲刺**（session 2610300011, 未提交）: `x_drag` opt-in `drag_gamma`（γ 时变失谐 + 四起点, 8–12 ns 降 24–320×; 曲线不单调是族本身性质）; **两比特系统里的单比特门**（`tools/crosstalk_1q.py`, physics §15.2: 孤立 1e-8 → 旁观比特在场 1e-2, 卡在 f01(Q1) ≈ f12(Q2) + 50 MHz 的频率拥挤, 不是脉冲问题）; `solver.amr` 静电 AMR（physics §6/§14: golden 离散误差 ≈ +1.6%, 粗网格 + 3–4 轮胜过均匀加密）; `tools/eigen_check.py` 静电 LOM vs Palace 本征模（physics §8.3: 线性频率差 < 1%, 差额 = 结外几何电感, LOM 高估裸 |α| ~5%）。
   坑: OpenBLAS 线程争抢让 jax `expm` 在 ≥ 24 维慢 500×（`threadpool_limits(1, "blas")`）; 教科书 ZZ 式假定 λ² = 2, transmon λ² ≈ 1.90 偏 4%。
 - **已知偏差**: QCQ 块解删掉块内比特伸向块外耦合器的爪 → 只影响多爪比特（新几何: 三只爪 ≈ +5.7 fF C_Σ, 读出爪 +2.6 fF; physics §13.2）; 读出焊盘 / λ/4 蛇形 / 载片走线不画（焊盘凸台离盘边 181 µm）。
 - **Chen 几何订正**（2026-10-14）: 旧几何（Nature 低清 JPEG + 标尺读错）整体偏小 ~22%; arXiv 原图 1.368 µm/px 重测 + subagent 复核 + λ/4 腔长独立印证标尺,
@@ -46,7 +48,7 @@
 
 ## 怎么跑
 
-- 全套: `~/miniconda3/envs/qdsl313/bin/python -m pytest tests/ -q` → **72 passed / 3 skipped**（~5 min; live 两条要 Palace; 门仿真 6 条要 `.[gates]` = supergrad, qdsl313 已装）。
+- 全套: `~/miniconda3/envs/qdsl313/bin/python -m pytest tests/ -q` → **98 passed / 5 skipped**（~5 min; live 四条要 Palace（AMR / 本征模各一）; 门仿真 7 条要 `.[gates]` = supergrad, qdsl313 已装）。
 - Chen: `compile_layout` 0.7 s、`build_gds` 1 s、单块网格 22 s。只要块就 `build(m, out, solve=True, blocks=["H01"])`（本机 8 rank ~10 min, 75 万 tets order 2）;
   不带 `blocks=` 会先给全片出 ~9M tets 网格。PNG 在 gitignore 的 `build/` 下, 本地跑一次即有。
 - 上云跑法（2026-09-18 实测, c24a1 64c/128G 有 spack Palace 0.16、无 gmsh）: 本机 `build(..., solve=False)` 出 msh + json → `rr -p` 推 → 远端 `palace -np N cfg`（`OMPI_ALLOW_RUN_AS_ROOT=1`, mpirun 在 spack openmpi bin）→ `rr -f` 拉 `postpro/` → `parse_capacitance` + `solve_circuit_model`。
@@ -62,7 +64,7 @@
 | sung_2021_xmon（真版图, 无调参, 不断言） | C_Σ = 论文 ×0.874/0.701/0.873, β_qc +12~17%, **不命中**; 账 `docs/report/Aug27/04` §8 |
 | **Chen 十字 新几何（19 导体含读出爪, 100/4, 2026-10-14）** | d = 10: 中心 α* −193.0 ↔ 实测 −192.4 ± 5.9 **命中**（d = 9.9 ± 0.7）; g_qc 85–97 / g_qq 7.6 MHz ↔ 设计 90 / 5; 读出爪 E_C −2.4%; 块 + R11 网格 80/3 对照 E_C +0.3%（physics §13.2, `.claude/chen-evidence/v2_2610/`） |
 | Chen 3×3 整片（**旧几何**, 42 导体, d = 5, 100/4, 69 GB / 86 min） | 中心 Q11 E_C 214.5 = 十字; 角 / 边 / 中心 218.1 / 216.3 / 214.5（每爪 −1.8 MHz）; 最近邻 g_qq 3.7, 对角次近邻 0.03–0.05 MHz（SI 实测残余 ~2 MHz 非静电直接项） |
-| 门仿真（SuperGrad, 2026-10-28） | Gambetta 2011 §III d = 5 SNO 高斯 NOT: 0.1979 / 0.01596 / 0.003041 ↔ 论文 0.198 / 0.0160 / 0.0030; 一阶 DRAG σ = 1.5 时最优 1.13e-6; transmon 谱 = 电荷基精确能级 1e-9; ZZ = 非 RWA 二阶闭式 0.05%; 相互作用绘景 = SuperGrad 实验室系 Evolve 2e-3 |
+| 门仿真（SuperGrad, 2026-10-28） | Gambetta 2011 §III d = 5 SNO 高斯 NOT: 0.1979 / 0.01596 / 0.003041 ↔ 论文 0.198 / 0.0160 / 0.0030; Fig. 4 二阶 Motzoi σ = 2.5 → 7.7e-12（图 ~1e-11）; Fig. 7 / 8 最优 1.37e-5 / 1.26e-6 @σ 1.5; 一阶 DRAG σ = 1.5 时最优 1.13e-6; transmon 谱 = 电荷基精确能级 1e-9; ZZ = 非 RWA 二阶闭式 0.05%; 相互作用绘景 = SuperGrad 实验室系 Evolve 2e-3 |
 | Chen QCQ 块 H01（新几何, d 扫 5–25） | 对 SI §D 11 个电容: d = 10 时对地 ×1.2–1.5、互容 ×0.67–0.86; 半盘对地 d ≈ 15 命中、条 / 板 d ≈ 19, 互容 @25 ×0.86–0.95 ⇒ SI 表 ≈ d_eff 15–20（旧几何时互容 ×0.4–0.5 的缺口是几何账） |
 
 ## 开放决策
@@ -70,7 +72,7 @@
 - 自动布线 v1 遗留拍板（pad↔pad 的 net 命名、CCC; 腿数已定为最小可行）; v2 天花板见设计稿 §13; `cpw_meander` 退不退役待拍板（`plan.md` Backlog）。
 - **Chen 3×3 要不要按新几何重做**（9 只读出爪 + 9 腔; 规模估 ~12 M 未知量 @100/4 ≈ 100 GB 贴 128 G 上限, 或 150/6 ≈ 40 GB）: 比特级量十字已给, 3×3 只多阵列级耦合。待用户拍板。
 - 等效长度 / 爪电容的来源（依赖工艺栈）; 读出焊盘进不进版图（浮岛无结, 静电前须 Schur 消掉或标 `ground::`）。
-- **ZZ 预算**（2026-10-28）: 已定门误差**不**进 tune（结构上看不见 ZZ, 且推 g 往大走）, ZZ 进 couplings 可核对; 剩下待拍板的是**预算取多少**（固定频率 CR 一般 ≲ 100 kHz）、以及 targets 要不要加单边判据 / 耦合旋钮改对准 ZZ 而不是 g（plan「门仿真后续」①）。xmon_pair_tune 的 2.67 MHz 主要来自频率分配（|11⟩ 与 |02⟩ 只差 48 MHz）。
+- **ZZ 预算**（2026-10-28）: 已定门误差**不**进 tune（结构上看不见 ZZ, 且推 g 往大走）, ZZ 进 couplings 可核对; 剩下待拍板的是**预算取多少**（固定频率 CR 一般 ≲ 100 kHz）、以及 targets 要不要加单边判据 / 耦合旋钮改对准 ZZ 而不是 g（plan「门仿真后续」①）。xmon_pair_tune 的 2.67 MHz 主要来自频率分配（|11⟩ 与 |02⟩ 只差 48 MHz）—— 同一拥挤让旁观比特在场时单比特门卡在 1e-2（physics §15.2）, 频率规则要管 |f01_j − f12_k|。
 
 ## 文档入口
 

@@ -14,6 +14,7 @@
   Eq. 3.2 截断高斯 (t_g = 4σ, 单位面积) → ``E(t) = A·[Ω_G cos ω_d t − (β/Δ)·Ω̇_G sin ω_d t]``, Δ = 2π·α (rad/ns),
   A = π/n₀₁ × ``amp``。标定 (amp, β, δ₀ = ω₀₁ − ω_d) = 论文 §IV C 的「x 高斯 + y 导数 + 常失谐」族 (Eq. 4.46, γ = 0),
   SuperGrad 的 jax 梯度 + L-BFGS 最小化 log₁₀(1 − F), 初值 = 一阶最优闭式 β = λ₁/2 (Eq. 4.41, λ₁ = n₁₂/n₀₁)。
+  opt-in ``drag_gamma: true``: 再放开时变失谐 γ (δ = δ₀ + γΩ_G²/Δ, App. B 相位斜坡) + 论文一阶解多起点 (``_drag_starts``)。
   同法标定 β ≡ 0 给高斯基线 (DRAG 的收益 = 两者之比)。F = 计算子空间平均门保真度含泄漏 (Pedersen 2007; d = 2 时
   = 论文 Eq. 3.4 的六轴态平均, 测试逐位对过), 在驱动系里比, **不给**虚 Z 补偿 (论文口径: 相位误差算误差)。
 * **CR 门** (Rigetti & Devoret 2010; Chow 2011): 控制比特上平顶 cos 斜坡脉冲, 频率 = 目标比特缀饰频率;
@@ -120,6 +121,27 @@ def gaussian(t, t_g, sigma):
     return (e - off) / norm, -(t - t_g / 2) / sigma ** 2 * e / norm
 
 
+def _gaussian_sq_integral(t, t_g, sigma):
+    """∫₀ᵗ g² dt' (g = ``gaussian`` 的单位面积截断高斯) 的 erf 闭式 —— γ 失谐的相位斜坡 ∫δ 用它 (jax 可导, 不做数值累加)。
+    g = (e − off)/norm ⇒ ∫g² = (∫e² − 2·off·∫e + off²·t)/norm², e = exp(−(t − c)²/2σ²) 与 e² 的积分各是一个 erf。"""
+    from jax.scipy.special import erf
+
+    c, s2 = t_g / 2, math.sqrt(2) * sigma
+    off = math.exp(-t_g ** 2 / (8 * sigma ** 2))
+    norm = math.sqrt(2 * math.pi) * sigma * math.erf(c / s2) - t_g * off
+    i1 = sigma * math.sqrt(math.pi / 2) * (erf((t - c) / s2) + math.erf(c / s2))
+    i2 = sigma * math.sqrt(math.pi) / 2 * (erf((t - c) / sigma) + math.erf(c / sigma))
+    return (i2 - 2 * off * i1 + off ** 2 * t) / norm ** 2
+
+
+def _drag_starts(lam1: float) -> dict:
+    """``drag_gamma`` 的多起点 (β, γ) = 论文 §IV B 的一阶闭式解 + 默认族的起点 (amp = 1, δ₀ = 0 都一样); 标定取误差最小的。"""
+    return {"optimal": {"beta": lam1 / 2, "gamma": (lam1 ** 2 - 2 * lam1) / 4},   # Eq. 4.41
+            "motzoi": {"beta": 1.0, "gamma": (lam1 ** 2 - 4) / 4},               # Eq. 4.42 (Motzoi 2009)
+            "y_only": {"beta": lam1 ** 2 / 4, "gamma": 0.0},                     # Eq. 4.36
+            "default": {"beta": lam1 / 2, "gamma": 0.0}}                         # 默认族的起点, γ 从 0 放开
+
+
 def _x_drag(spec: dict, q: dict) -> dict:
     import jax.numpy as jnp
     import numpy as np
@@ -132,15 +154,25 @@ def _x_drag(spec: dict, q: dict) -> dict:
     lam1 = abs(n[1, 2]) / n01
     t_g = spec["t_gate_ns"]
     target = jnp.array([[0, 1], [1, 0]], dtype=complex)
+    # γ 族 (opt-in ``drag_gamma``, Eq. 4.46 全族): δ(t) = δ₀ + γ·Ω_G²/Δ, Ω_G = π·g (论文 A = π 的参考高斯, rad/ns, 不乘 amp),
+    # Δ = 2π·α = alpha (rad/ns, < 0), γ 无量纲 (= tools/gambetta2011.py 的 g)。固定频率比特按 App. B 用驱动相位实现:
+    # ε → ε·e^{iγ·k·Φ(t)}, k = π²/Δ, Φ = ∫₀ᵗ g²; 末端驱动系帧多转 γ·k·Φ(T) (δ₀ 那份已在 ω_d 与下面的帧因子里)。
+    k_gamma, phi_end = math.pi ** 2 / alpha, float(_gaussian_sq_integral(t_g, t_g, t_g / 4))
 
     def block(x):
         """驱动系 (ω_d = ω01 − δ₀) 里的 2×2 计算块: U = e^{−i(Λ − ω_d·N)T}·U_I。"""
         def eps(t):                                   # ε = Ωx + iΩy ⇔ E = Ωx cos ω_d t + Ωy sin ω_d t
             g, dg = gaussian(t, t_g, t_g / 4)
-            return math.pi / n01 * x["amp"] * (g - 1j * x["beta"] / alpha * dg)
+            e = math.pi / n01 * x["amp"] * (g - 1j * x["beta"] / alpha * dg)
+            if "gamma" in x:
+                e = e * jnp.exp(1j * x["gamma"] * k_gamma * _gaussian_sq_integral(t, t_g, t_g / 4))
+            return e
 
         m = _propagate(lam, n, eps, w01 - x["detuning"], t_g)[:2, :2]
-        return jnp.array([1.0, jnp.exp(-1j * x["detuning"] * t_g)])[:, None] * m
+        frame = jnp.array([1.0, jnp.exp(-1j * x["detuning"] * t_g)])
+        if "gamma" in x:
+            frame = frame * jnp.array([1.0, jnp.exp(-1j * x["gamma"] * k_gamma * phi_end)])
+        return frame[:, None] * m
 
     def calibrate(x0, **fixed):
         res = scipy_minimize(lambda x: jnp.log10(1 - fid(target, block({**x, **fixed}))), x0,
@@ -150,12 +182,20 @@ def _x_drag(spec: dict, q: dict) -> dict:
         return x, 1 - float(fid(target, m)), 1 - float(np.trace(m.conj().T @ m).real) / 2
 
     one, zero = jnp.asarray(1.0), jnp.asarray(0.0)
-    x, err, leak = calibrate({"amp": one, "beta": jnp.asarray(lam1 / 2), "detuning": zero})
+    extra = {}
+    if spec.get("drag_gamma"):        # 误差零点孤立、曲面多盆地 (physics §15.1): 多起点 L-BFGS, 留最好的
+        runs = {k: calibrate({"amp": one, "detuning": zero, **{p: jnp.asarray(v) for p, v in s.items()}})
+                for k, s in _drag_starts(lam1).items()}
+        start = min(runs, key=lambda k: runs[k][1])
+        x, err, leak = runs[start]
+        extra = {"drag_gamma": float(x["gamma"]), "drag_start": start}
+    else:
+        x, err, leak = calibrate({"amp": one, "beta": jnp.asarray(lam1 / 2), "detuning": zero})
     err_g = calibrate({"amp": one, "detuning": zero}, beta=zero)[1]
     return {"qubit": spec["qubit"], "f01_GHz": w01 / _TWO_PI, "anharmonicity_MHz": alpha / _TWO_PI * 1e3,
             "error": err, "leakage": leak, "gaussian_error": err_g,
             "amp": float(x["amp"]), "drag_beta": float(x["beta"]), "beta_first_order": lam1 / 2,
-            "lambda1": lam1, "detuning_MHz": float(x["detuning"]) / _TWO_PI * 1e3}
+            "lambda1": lam1, "detuning_MHz": float(x["detuning"]) / _TWO_PI * 1e3, **extra}
 
 
 def _cr(spec: dict, qc: dict, qt: dict, beta: float) -> dict:
@@ -211,7 +251,7 @@ def _cr(spec: dict, qc: dict, qt: dict, beta: float) -> dict:
 
 def simulate_gates(hamiltonian: dict, gates) -> list[dict]:
     """results.yaml 的 ``hamiltonian`` 段 (qubits 的 E_C_GHz / E_J_GHz, couplings 的 β) + 门声明 (``load_meta`` 校验后的
-    ``gates`` 条目: name, kind, t_gate_ns, levels, qubit │ control + target [, ramp_ns][, max_error]) → 每门一条结果。
+    ``gates`` 条目: name, kind, t_gate_ns, levels, qubit [, drag_gamma] │ control + target [, ramp_ns][, max_error]) → 每门一条结果。
     声明了 ``max_error`` 的门另有 ``pass``, 未达标只 warn (与 targets 同: 偏差是要报的信息)。"""
     _supergrad()
     from threadpoolctl import threadpool_limits

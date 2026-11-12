@@ -2,8 +2,9 @@
 """门仿真 (契约「门仿真」; 要 SuperGrad: ``pip install -e '.[gates]'``, 没装整文件 skip)。
 
 锚只锚论文与闭式 (docs/physics.md §15):
-* Gambetta, Motzoi, Merkel & Wilhelm PRA 83, 012308 (2011) = arXiv:1011.1949 §III–IV: d = 5 标准非线性振子
-  旋转系 NOT 门, 高斯误差 0.198 / 0.0160 / 0.0030 与一阶 DRAG 解的排序 (Fig. 3 正文);
+* Gambetta, Motzoi, Merkel & Wilhelm PRA 83, 012308 (2011) = arXiv:1011.1949 §III–V: d = 5 标准非线性振子
+  旋转系 NOT 门, 高斯误差 0.198 / 0.0160 / 0.0030 与一阶 DRAG 解的排序 (Fig. 3 正文); 二阶解 (Fig. 4 正文);
+  多泄漏通道 (Fig. 7 / 8, 含 Eq. 5.18 / 5.28 排印错误的证据)。逐图复现 = ``tools/gambetta2011.py`` (另一套积分器);
 * SuperGrad transmon 谱 = circuit_model 的电荷基精确能级; J = 8β√(E_Ca E_Cb) 的静态 ZZ = 二阶微扰闭式;
 * 相互作用绘景 (模块) = SuperGrad 自己的实验室系 ``Evolve`` (同一 CR 脉冲); 步数加倍门误差不变;
 * transmon 上标定后: DRAG 比高斯好一个量级以上、β 落在一阶最优 λ₁/2 附近; CR 幅度在一阶闭式附近。
@@ -22,9 +23,11 @@ Q2 = {"name": "Q2", "E_C_GHz": 0.22182758856060428, "E_J_GHz": 15.42798078404402
 PAIR = {"qubits": [Q1, Q2], "couplings": [{"qubit_a": "Q2", "qubit_b": "Q1", "beta": 0.00327566610257095}]}
 
 
-def _sno_not_error(sigma, cy=0.0, cz=0.0):
-    """论文 Eq. 2.8: d = 5 SNO (Δ_j = Δ₂ j(j−1)/2, λ_{j−1} = √j), 旋转系, Δ₂ = −2π (时间单位 2π/|Δ₂|), t_g = 4σ。
-    Ωx = Ω_G (Eq. 3.2, A = π), Ωy = cy·Ω̇_G/Δ₂, δ = cz·Ω_G²/Δ₂ → (1 − F_Pedersen, 1 − F_六轴态 Eq. 3.4)。"""
+def _sno_not_error(sigma, cy=0.0, cz=0.0, c3=0.0, levels="sno"):
+    """论文 Eq. 2.8 旋转系, Δ₂ = −2π (时间单位 2π/|Δ₂|), t_g = 4σ, Ω_G = Eq. 3.2 (A = π):
+    Ωx = Ω_G + c3·Ω_G³/Δ₂², Ωy = cy·Ω̇_G/Δ₂, δ = cz·Ω_G²/Δ₂ → (1 − F_Pedersen, 1 − F_六轴态 Eq. 3.4)。能级结构 ``levels``:
+    "sno" = d = 5 SNO (Δ_j = Δ₂ j(j−1)/2, λ_{j−1} = √j; §III–IV); "both" = §V A (d = 6 SNO 的 2→3 跃迁当比特, 重标号
+    j = −2…3 后 Δ_j 同式, λ = √(k/3)); "star" = §V B (|1⟩ 同时连 |2⟩…|5⟩, λ = 1, Δ_k = (k−1)Δ₂)。"""
     import jax.numpy as jnp
     import numpy as np
     import supergrad
@@ -32,22 +35,29 @@ def _sno_not_error(sigma, cy=0.0, cz=0.0):
 
     from quantum_dsl.gates import gaussian
 
-    d, d2, tg = 5, -2 * math.pi, 4 * sigma
-    lam = np.sqrt(np.arange(1, d))
-    h0 = np.diag([d2 * j * (j - 1) / 2 for j in range(d)]).astype(complex)
-    hz = np.diag(np.arange(d)).astype(complex)
-    hx = (np.diag(lam, 1) + np.diag(lam, -1)).astype(complex)
-    hy = -1j * np.diag(lam, 1) + 1j * np.diag(lam, -1)     # σy_{j−1,j} = −i|j−1⟩⟨j| + i|j⟩⟨j−1|
+    d2, tg = -2 * math.pi, 4 * sigma
+    if levels == "star":
+        hx = np.zeros((6, 6))
+        hx[0, 1] = hx[1, 0] = 1
+        hx[1, 2:] = hx[2:, 1] = 1
+        h0, hz, q = np.diag([0, 0, d2, 2 * d2, 3 * d2, 4 * d2]), np.diag([0, 1, 2, 2, 2, 2]), [0, 1]
+    else:
+        j = np.arange(5) if levels == "sno" else np.arange(-2, 4)
+        lam = np.sqrt(np.arange(1, 5)) if levels == "sno" else np.sqrt(np.arange(1, 6) / 3)
+        hx, h0, hz = np.diag(lam, 1) + np.diag(lam, -1), np.diag(d2 * j * (j - 1) / 2), np.diag(j)
+        q = [0, 1] if levels == "sno" else [2, 3]
+    hy = -1j * np.triu(hx) + 1j * np.tril(hx)              # σy_{j,k} = −i|j⟩⟨k| + i|k⟩⟨j| (k > j)
 
     def omega(t):
         g, dg = gaussian(t, tg, sigma)
         return math.pi * g, math.pi * dg
 
-    ham = [jnp.asarray(h0), [jnp.asarray(hx), lambda t, a: omega(t)[0] / 2],
+    ham = [jnp.asarray(h0, dtype=complex), [jnp.asarray(hx, dtype=complex),
+                                            lambda t, a: (omega(t)[0] + c3 * omega(t)[0] ** 3 / d2 ** 2) / 2],
            [jnp.asarray(hy), lambda t, a: cy * omega(t)[1] / d2 / 2],
-           [jnp.asarray(hz), lambda t, a: cz * omega(t)[0] ** 2 / d2]]
-    m = np.asarray(supergrad.sesolve(ham, jnp.eye(d, dtype=complex)[:, :2], jnp.array([0.0, tg]),
-                                     options={"astep": 4000, "trotter_order": None})[-1])[:2]
+           [jnp.asarray(hz, dtype=complex), lambda t, a: cz * omega(t)[0] ** 2 / d2]]
+    m = np.asarray(supergrad.sesolve(ham, jnp.eye(len(h0), dtype=complex)[:, q], jnp.array([0.0, tg]),
+                                     options={"astep": 4000, "trotter_order": None})[-1])[q]
     x = np.array([[0, 1], [1, 0]], dtype=complex)
     axial = [np.array(v, complex) / np.linalg.norm(v) for v in ([1, 1], [1, -1], [1, 1j], [1, -1j], [1, 0], [0, 1])]
     six = np.mean([abs(np.vdot(x @ p, m @ p)) ** 2 for p in axial])
@@ -71,6 +81,29 @@ def test_gaussian_and_first_order_drag_reproduce_gambetta_2011():
                _sno_not_error(sigma)[0]]                                        # 高斯
         assert err == sorted(err), (sigma, err)
     assert err[0] < err[-1] / 1000                       # σ = 1.5: 一阶最优把高斯压三个量级以上
+
+
+def test_second_order_and_leakage_extension_reproduce_gambetta_2011():
+    """契约「门仿真」: 论文 §IV B 3 与 §V 的数值结论 (physics §15.1), σ = 1.5·2π/|Δ₂|。
+    二阶解只改 Ωx 的三次项 (Eq. 4.43–4.45): Z-only / Y-only 只小幅改善, Motzoi 2009 大幅改善并反超一阶最优 (Fig. 4 正文)。
+    §V A (上下都有泄漏, Fig. 7) / §V B (多个泄漏能级, Fig. 8): DRAG 各解远好于高斯, 最优 < Y-only, Z-only —— 最优解的 δ 用
+    Eq. 5.13 / 5.25 推出的 g = (S − 2λ̃)/4 (§V A: S = λ₁² − (Δ₂/Δ₋₁)λ₋₁²; §V B: S = Σ (Δ₂/Δ_k)λ²_{k−1};
+    λ̃² = Σ (Δ₂/Δ_k)²λ²); 照印的 Eq. 5.18 (排印) / 5.28 (与 5.25 不自洽) 比 Z-only 还差, 与图矛盾。"""
+    l1, s = math.sqrt(2), 1.5
+    z1, y1, m1, o1 = (_sno_not_error(s, cy, cz)[0] for cy, cz in
+                      ((0, l1 ** 2 / 4), (-l1 ** 2 / 4, 0), (-1, (l1 ** 2 - 4) / 4), (-l1 / 2, (l1 ** 2 - 2 * l1) / 4)))
+    z2 = _sno_not_error(s, 0, l1 ** 2 / 4, c3=l1 ** 2 / 8)[0]
+    y2 = _sno_not_error(s, -l1 ** 2 / 4, 0, c3=-l1 ** 2 * (l1 ** 2 - 4) / 32)[0]
+    m2 = _sno_not_error(s, -1, (l1 ** 2 - 4) / 4, c3=(l1 ** 2 - 4) / 8)[0]
+    assert z1 / 5 < z2 < z1 and y1 / 5 < y2 < y1
+    assert m2 < m1 / 1e3 and m2 < o1 / 100
+    lam_t = math.sqrt(205 / 144)                        # §V B: Δ₂/Δ_k = 1, ½, ⅓, ¼
+    for levels, S, lt, printed in (("both", 2 / 3, math.sqrt(2), (4 / 3 - math.sqrt(2 / 3)) / 4),
+                                   ("star", 25 / 12, lam_t, (lam_t ** 2 - 2 * lam_t) / 4)):
+        gauss_, z, y, o, o_printed = (_sno_not_error(s, cy, cz, levels=levels)[0] for cy, cz in
+                                      ((0, 0), (0, S / 4), (-S / 4, 0), (-lt / 2, (S - 2 * lt) / 4), (-lt / 2, printed)))
+        assert o < min(y, z) and max(y, z) < gauss_ / 5, (levels, gauss_, z, y, o)
+        assert o_printed > z, (levels, o_printed, z)
 
 
 def test_supergrad_spectrum_and_coupling_match_circuit_model():
