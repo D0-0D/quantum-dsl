@@ -1,0 +1,47 @@
+<svg viewBox="0 0 700 290" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;font-family:RTimes,RSong,'Noto Serif CJK SC','Songti SC',SimSun,serif">
+<rect width="700" height="290" fill="#fff"/>
+<defs>
+<marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#1f3f7a"/></marker>
+<marker id="ag" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#777"/></marker>
+</defs>
+<g stroke="#1f3f7a" stroke-width="1.3">
+<rect x="8" y="6" width="150" height="90" rx="4" fill="#e3ecfb"/>
+<rect x="186" y="6" width="150" height="90" rx="4" fill="#f1f1f1" stroke="#9a9a9a"/>
+<rect x="364" y="6" width="150" height="90" rx="4" fill="#e3ecfb"/>
+<rect x="542" y="6" width="150" height="90" rx="4" fill="#e3ecfb"/>
+<rect x="542" y="152" width="150" height="90" rx="4" fill="#e3ecfb"/>
+<rect x="364" y="152" width="150" height="90" rx="4" fill="#fff" stroke-dasharray="5 3"/>
+<rect x="186" y="152" width="150" height="90" rx="4" fill="#e3ecfb"/>
+<rect x="8" y="152" width="150" height="90" rx="4" fill="#fff" stroke-dasharray="5 3"/>
+</g>
+<g stroke="#1f3f7a" stroke-width="1.3" fill="none" marker-end="url(#ah)">
+<path d="M158,51 H184"/><path d="M336,51 H362"/><path d="M514,51 H540"/>
+<path d="M617,96 V150"/>
+<path d="M542,197 H516"/><path d="M364,197 H338"/><path d="M186,197 H160"/>
+</g>
+<path d="M261,152 V98" stroke="#777" stroke-width="1.3" stroke-dasharray="4 3" fill="none" marker-end="url(#ag)"/>
+<text x="271" y="129" font-size="11.5" fill="#444">不满足规格时：修改规格、频率分配或版图，重新走一遍</text>
+<g font-size="14" font-family="RTimes,RHei,'Noto Sans CJK SC','PingFang SC','Microsoft YaHei',sans-serif" fill="#111">
+<text x="18" y="27">① 规格</text><text x="196" y="27">② 架构与频率分配</text><text x="374" y="27">③ 元件与版图</text><text x="552" y="27">④ 电磁仿真</text>
+<text x="552" y="173">⑤ 参数提取与量子化</text><text x="374" y="173">⑥ 门与脉冲仿真</text><text x="196" y="173">⑦ 核对与迭代</text><text x="18" y="173">⑧ 掩膜输出</text>
+</g>
+<g font-size="11.5" fill="#222">
+<text x="18" y="47">比特频率、非谐性、耦合</text><text x="18" y="63">读出参数、门误差预算</text>
+<text x="196" y="47">比特类型、拓扑</text><text x="196" y="63">频率碰撞规则</text>
+<text x="374" y="47">模板实例、放置</text><text x="374" y="63">CPW 自动布线</text>
+<text x="552" y="47">网格、静电求解</text><text x="552" y="63">得到电容矩阵</text>
+<text x="552" y="193">比特与读出腔参数</text><text x="552" y="209">耦合、静态 ZZ</text>
+<text x="374" y="193">DRAG X 门、CR 门</text><text x="374" y="209">标定后的门误差</text>
+<text x="196" y="193">逐项偏差报告</text><text x="196" y="209">参数到版图的综合</text>
+<text x="18" y="193">GDS 版图</text><text x="18" y="209">（无设计规则检查）</text>
+</g>
+<g font-size="10.5" font-family="RMono,Consolas,RSong,monospace" fill="#1f3f7a">
+<text x="18" y="85">targets:</text><text x="196" y="85" fill="#777">人工给定</text><text x="374" y="85">layout.yaml / .geo</text><text x="552" y="85">mesh: solver:</text>
+<text x="552" y="231">circuit_model:</text><text x="374" y="231">gates:</text><text x="196" y="231">targets: tune:</text><text x="18" y="231">layers: gds:</text>
+</g>
+<g font-size="11" fill="#222">
+<rect x="150" y="262" width="22" height="13" fill="#e3ecfb" stroke="#1f3f7a"/><text x="178" y="273">本项目已覆盖</text>
+<rect x="290" y="262" width="22" height="13" fill="#fff" stroke="#1f3f7a" stroke-dasharray="4 2.5"/><text x="318" y="273">部分覆盖</text>
+<rect x="400" y="262" width="22" height="13" fill="#f1f1f1" stroke="#9a9a9a"/><text x="428" y="273">未覆盖</text>
+</g>
+</svg>

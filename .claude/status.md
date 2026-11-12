@@ -76,4 +76,5 @@
 
 ## 文档入口
 
+**SRT 结题报告初稿**（2026-11-12）: `docs/report/结题报告/report.md`（`build.py` 出 PDF; 数字基线 `3abdc30`, 出处见其附录 A）。
 `docs/README.md`; 物理口径与数值决策 `docs/physics.md`（§13 / §13.1 = 旧几何账, **§13.2 = 新几何 d 标定与 SI 口径**）; 汇报材料 `docs/report/`（04 = sung 论文验证闭环账）。
